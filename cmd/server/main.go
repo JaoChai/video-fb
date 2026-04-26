@@ -46,7 +46,7 @@ func main() {
 		return
 	}
 
-	ragEngine := rag.NewEngine(pool, cfg.ClaudeAPIKey)
+	ragEngine := rag.NewEngine(pool)
 	crawl := crawler.NewCrawler(pool, ragEngine)
 
 	if *crawlFlag {

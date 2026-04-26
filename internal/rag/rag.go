@@ -14,24 +14,34 @@ import (
 
 type Engine struct {
 	pool   *pgxpool.Pool
-	apiKey string
 	client *http.Client
 }
 
-func NewEngine(pool *pgxpool.Pool, claudeAPIKey string) *Engine {
+func NewEngine(pool *pgxpool.Pool) *Engine {
 	return &Engine{
 		pool:   pool,
-		apiKey: claudeAPIKey,
 		client: &http.Client{},
 	}
 }
 
-type voyageRequest struct {
+func (e *Engine) getAPIKey(ctx context.Context) (string, error) {
+	var key string
+	err := e.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'openrouter_api_key'`).Scan(&key)
+	if err != nil {
+		return "", fmt.Errorf("get openrouter_api_key from settings: %w", err)
+	}
+	if key == "" {
+		return "", fmt.Errorf("openrouter_api_key is empty")
+	}
+	return key, nil
+}
+
+type embeddingRequest struct {
 	Input []string `json:"input"`
 	Model string   `json:"model"`
 }
 
-type voyageResponse struct {
+type embeddingResponse struct {
 	Data []struct {
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
@@ -41,9 +51,14 @@ type voyageResponse struct {
 }
 
 func (e *Engine) GenerateEmbedding(ctx context.Context, text string) ([]float64, error) {
-	reqBody := voyageRequest{
+	apiKey, err := e.getAPIKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := embeddingRequest{
 		Input: []string{text},
-		Model: "voyage-3",
+		Model: "openai/text-embedding-3-small",
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -51,13 +66,13 @@ func (e *Engine) GenerateEmbedding(ctx context.Context, text string) ([]float64,
 		return nil, fmt.Errorf("marshal embedding request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.voyageai.com/v1/embeddings", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://openrouter.ai/api/v1/embeddings", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create embedding request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+e.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := e.client.Do(req)
 	if err != nil {
@@ -70,7 +85,7 @@ func (e *Engine) GenerateEmbedding(ctx context.Context, text string) ([]float64,
 		return nil, fmt.Errorf("read embedding response: %w", err)
 	}
 
-	var result voyageResponse
+	var result embeddingResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parse embedding response: %w", err)
 	}
