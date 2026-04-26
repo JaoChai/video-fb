@@ -53,7 +53,6 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	allowed := map[string]bool{
 		"openrouter_api_key": true,
-		"default_model":      true,
 		"kie_api_key":        true,
 		"elevenlabs_voice":   true,
 		"zernio_api_key":     true,

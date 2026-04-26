@@ -24,7 +24,6 @@ interface Agent {
 
 const FIELDS = [
   { key: 'openrouter_api_key', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', secret: true, testable: true },
-  { key: 'default_model', label: 'Default Model', placeholder: 'openai/gpt-5.5-pro', secret: false, testable: false },
   { key: 'kie_api_key', label: 'Kie AI API Key', placeholder: 'kie-...', secret: true, testable: false },
   { key: 'elevenlabs_voice', label: 'ElevenLabs Voice', placeholder: 'Adam', secret: false, testable: false },
   { key: 'zernio_api_key', label: 'Zernio API Key', placeholder: 'zrn-...', secret: true, testable: false },
@@ -220,7 +219,7 @@ export default function SettingsPage() {
                 type="text"
                 value={agentModels[agent.id] ?? agent.model}
                 onChange={e => handleAgentModelChange(agent.id, e.target.value)}
-                placeholder={form['default_model'] || 'openai/gpt-4.1'}
+                placeholder="openai/gpt-4.1"
                 style={{ ...inputStyle, fontSize: 13 }}
                 onFocus={e => (e.target.style.borderColor = '#444')}
                 onBlur={e => (e.target.style.borderColor = '#222')}
