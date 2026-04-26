@@ -2,99 +2,66 @@
 
 ## Overview
 
-Automated content pipeline for YouTube channel **@adsvance** that produces 1 short video per day (30-60 seconds) about Facebook Ads account tips/tricks in Thai language. Goal: remove channel owner from daily production loop entirely.
+Automated content pipeline for YouTube channel **@adsvance** that produces 1 short video per day (30-60 seconds) about Facebook Ads account tips/tricks in Thai language. Goal: remove channel owner from production loop **completely** — zero hours per month.
 
 **Output:** 1 clip/day, uploaded at midnight, Thai language only.
-**Owner involvement:** ~2-3 hours/month (batch screenshot capture only).
+**Owner involvement:** 0 hours/month (fully automated).
+**Video format:** 1 AI-generated image + AI voiceover narration per clip.
 
 ---
 
 ## Architecture
 
 ```
-MONTHLY PREP (owner ~2 hr)        WEEKLY PRODUCE (automated)         DAILY PUBLISH (automated)
-┌──────────────────────┐    ┌──────────────────────────────┐    ┌────────────────────────┐
-│ Screenshot Library   │    │ ① Claude: 7 scripts          │    │ QC check (human/AI)    │
-│ + Screenshot Index   │───>│ ② GPT Image 2: thumbnails    │───>│ YouTube scheduled      │
-│                      │    │ ③ ElevenLabs V3: Thai voice   │    │ upload at 00:00        │
-│                      │    │ ④ FFmpeg: assemble video      │    │                        │
-└──────────────────────┘    └──────────────────────────────┘    └────────────────────────┘
+WEEKLY PRODUCE (fully automated)                    DAILY PUBLISH (fully automated)
+┌─────────────────────────────────────────┐    ┌────────────────────────────┐
+│ ① Claude: generate 7 topics + scripts   │    │ Automated QC checks        │
+│ ② GPT Image 2: 1 infographic per clip   │───>│ YouTube scheduled upload    │
+│ ③ ElevenLabs V3: Thai voiceover         │    │ at 00:00 every day         │
+│ ④ FFmpeg: assemble video                │    │                            │
+└─────────────────────────────────────────┘    └────────────────────────────┘
+
+Owner involvement: NONE — fully hands-off after initial setup.
 ```
 
 ---
 
-## Phase 1: Monthly Prep
+## Video Format
 
-### 1.1 Screenshot Library
-
-Owner opens Facebook Ads Manager / Business Manager and captures screenshots of all key screens, organized by category:
+Each clip is a single AI-generated infographic image with AI voiceover narration on top.
+To keep viewers engaged despite a single image, the video includes motion effects:
 
 ```
-screenshots/
-├── account/
-│   ├── account-overview.png
-│   ├── account-quality.png
-│   ├── account-settings.png
-│   └── account-error-restricted.png
-├── payment/
-│   ├── payment-settings.png
-│   ├── billing-summary.png
-│   ├── add-payment-method.png
-│   └── payment-failed-error.png
-├── campaign/
-│   ├── campaign-creation.png
-│   ├── ad-set-settings.png
-│   ├── ad-level.png
-│   ├── ad-rejected.png
-│   └── special-ad-category.png
-├── pixel/
-│   ├── events-manager.png
-│   ├── pixel-setup.png
-│   ├── custom-conversions.png
-│   └── pixel-not-found-error.png
-├── business-manager/
-│   ├── bm-settings.png
-│   ├── bm-people.png
-│   ├── bm-pages.png
-│   └── bm-ad-accounts.png
-├── verification/
-│   ├── identity-verification.png
-│   ├── two-factor-auth.png
-│   └── business-verification.png
-└── errors/
-    ├── common-error-1.png
-    └── common-error-2.png
+┌──────────────────────────────────────┐
+│                                      │
+│   1 AI-generated infographic         │
+│   (explains the tip visually)        │
+│                                      │
+│   + Slow zoom/pan (Ken Burns)        │
+│   + Text overlays appear over time   │
+│   + Highlight circles/arrows         │
+│                                      │
+│   + AI voiceover narrating           │
+│                                      │
+│   Duration: 30-60 seconds            │
+│                                      │
+└──────────────────────────────────────┘
 ```
 
-**Naming convention:** `{category}/{descriptive-name}.png`
-**Storage:** Google Drive shared folder or local project directory.
-**Update cadence:** Monthly. Only add new screenshots when Facebook updates UI.
-
-### 1.2 Screenshot Index
-
-A JSON file mapping screenshot paths to descriptions and tags for AI script generation:
-
-```json
-{
-  "screenshots": [
-    {
-      "path": "account/account-quality.png",
-      "description": "Facebook Account Quality page showing account health score",
-      "tags": ["account", "quality", "health", "restriction"],
-      "added": "2026-04-26"
-    }
-  ]
-}
-```
+**Why 1 image works for this content:**
+- Clips are very short (30-60s) — viewers don't need scene changes
+- The VALUE is in the spoken tip/solution — the image supports, not leads
+- Infographic format is common and trusted in the Facebook Ads tutorial space
+- Ken Burns effect + text overlays prevent static-image boredom
 
 ---
 
-## Phase 2: Weekly Produce (Automated)
+## Pipeline Steps
 
 ### Step ① Script Generation (Claude API)
 
 **Trigger:** Weekly cron job (every Monday)
-**Input:** Topic Bank + Screenshot Index
+**Input:** Topic category rotation + previous topics (dedup)
 **Output:** 7 structured scripts in JSON format
 
 Each script contains:
@@ -104,57 +71,25 @@ Each script contains:
   "id": "clip-2026-04-28",
   "title": "แอดถูก reject เพราะ Special Ad Category แก้ยังไง?",
   "youtube_title": "แอดโดน Reject! แก้ปัญหา Special Ad Category ใน 1 นาที {Ads Vance}",
-  "youtube_description": "วิธีแก้ปัญหาแอดถูก reject...\n\nติดต่อทีมงาน line id : @adsvance\nเข้ากลุ่มเทเลแกรม: https://t.me/adsvancech",
+  "youtube_description": "วิธีแก้ปัญหาแอดถูก reject เพราะ Special Ad Category\n\nติดต่อทีมงาน line id : @adsvance\nเข้ากลุ่มเทเลแกรม: https://t.me/adsvancech",
   "youtube_tags": ["facebook ads", "โฆษณาเฟสบุ๊ค", "แอดถูก reject", "special ad category"],
   "duration_target_seconds": 50,
-  "scenes": [
-    {
-      "scene": 1,
-      "duration_seconds": 5,
-      "voice_text": "แอดคุณถูก reject เพราะ Special Ad Category ใช่ไหม? แก้ได้ง่ายมาก",
-      "audio_tags": "[confident]",
-      "visual_type": "screenshot",
-      "visual_source": "campaign/ad-rejected.png",
-      "text_overlay": "แอดถูก Reject!",
-      "zoom_target": null
-    },
-    {
-      "scene": 2,
-      "duration_seconds": 15,
-      "voice_text": "เข้า Ads Manager... กดที่แคมเปญที่มีปัญหา... แล้วดูตรง Special Ad Categories",
-      "audio_tags": "",
-      "visual_type": "screenshot",
-      "visual_source": "campaign/special-ad-category.png",
-      "text_overlay": "ขั้นตอนที่ 1: เข้า Campaign Settings",
-      "zoom_target": { "x": 200, "y": 300, "w": 400, "h": 200 }
-    },
-    {
-      "scene": 3,
-      "duration_seconds": 20,
-      "voice_text": "ปัญหาคือคุณเลือก category ผิด หรือไม่ได้เลือกทั้งที่ต้องเลือก",
-      "audio_tags": "",
-      "visual_type": "generated_infographic",
-      "visual_prompt": "Clean infographic showing Facebook Special Ad Categories: Credit, Employment, Housing, Social Issues. Thai language labels. Modern flat design, dark background, colorful icons.",
-      "text_overlay": "เช็คหมวดหมู่ให้ถูกต้อง",
-      "zoom_target": null
-    },
-    {
-      "scene": 4,
-      "duration_seconds": 10,
-      "voice_text": "แก้แล้วกด publish ใหม่ได้เลย ถ้ายังติดปัญหา ทักมาที่ไลน์ @adsvance",
-      "audio_tags": "[friendly]",
-      "visual_type": "screenshot",
-      "visual_source": "campaign/publish-button.png",
-      "text_overlay": "ติดต่อ @adsvance",
-      "zoom_target": null
-    }
+  "voice_script": "[confident] แอดคุณถูก reject เพราะ Special Ad Category ใช่ไหม? แก้ได้ง่ายมาก... เข้า Ads Manager แล้วกดที่แคมเปญที่มีปัญหา— ดูตรง Special Ad Categories... ปัญหาคือคุณเลือก category ผิด หรือไม่ได้เลือกทั้งที่ต้องเลือก สินค้าที่เกี่ยวกับ สินเชื่อ การจ้างงาน ที่อยู่อาศัย หรือประเด็นสังคม ต้องเลือก category ให้ถูก... แก้แล้วกด publish ใหม่ได้เลย! [friendly] ถ้ายังติดปัญหา ทักมาที่ไลน์ @adsvance",
+  "image_prompt": "Clean professional infographic in Thai language explaining how to fix Facebook Ad rejection due to Special Ad Category. Show 4 categories with icons: สินเชื่อ (Credit - dollar icon), การจ้างงาน (Employment - briefcase icon), ที่อยู่อาศัย (Housing - house icon), ประเด็นสังคม (Social Issues - people icon). Include step arrows: ① เปิด Ads Manager → ② เลือก Campaign → ③ ตรวจ Special Ad Category → ④ แก้ไขแล้ว Publish. Dark gradient background (#1a1a2e to #16213e), accent color #e94560, modern flat design. Brand text 'Ads Vance' bottom-right corner. 16:9 ratio.",
+  "thumbnail_prompt": "Eye-catching YouTube thumbnail. Large bold Thai text 'แอดถูก Reject!' in white with red glow effect. Facebook Ads Manager icon with red X mark. Dark dramatic background. Professional, click-worthy. 16:9 ratio.",
+  "text_overlays": [
+    {"text": "แอดถูก Reject!", "appear_at_seconds": 0, "duration_seconds": 5, "position": "top"},
+    {"text": "① เปิด Ads Manager", "appear_at_seconds": 5, "duration_seconds": 10, "position": "bottom"},
+    {"text": "② เช็ค Special Ad Category", "appear_at_seconds": 15, "duration_seconds": 15, "position": "bottom"},
+    {"text": "③ แก้ไข → Publish ใหม่", "appear_at_seconds": 30, "duration_seconds": 10, "position": "bottom"},
+    {"text": "ติดต่อ @adsvance", "appear_at_seconds": 40, "duration_seconds": 10, "position": "center"}
   ]
 }
 ```
 
 **Topic generation strategy:**
-- Analyze common Facebook Ads problems from communities/groups
-- Rotate categories: account issues, payment, pixel, campaign errors, verification, BM settings
+- Rotate through categories weekly (account, payment, campaign, pixel)
+- Analyze common Facebook Ads problems from communities
 - Avoid duplicate topics within 60 days
 - Prioritize trending issues (Facebook platform updates, policy changes)
 
@@ -163,20 +98,27 @@ Each script contains:
 **API:** `POST https://api.kie.ai/api/v1/jobs/createTask`
 **Model:** `gpt-image-2-text-to-image`
 
-Used for:
-- **Thumbnails** (1 per clip): 16:9 ratio, 2K resolution, bold Thai text, eye-catching
-- **Infographics** (when script specifies `visual_type: "generated_infographic"`): diagrams, flowcharts, comparison graphics
+Generates 2 images per clip:
 
-Not used for: Facebook Ads Manager UI screenshots (use real screenshots instead).
+1. **Main infographic** (shown in video): 16:9, 2K resolution
+   - Uses `image_prompt` from script
+   - Style: dark gradient background, Thai text, icons, step-by-step arrows
+   - Consistent brand colors (#1a1a2e, #e94560) and "Ads Vance" watermark
 
-**Thumbnail prompt template:**
-```
-YouTube thumbnail for Facebook Ads tutorial video.
-Topic: {topic_thai}
-Style: Bold Thai text "{short_title}" in center, {accent_color} accent,
-dark gradient background, relevant icon ({icon_description}).
-Professional, clean, 16:9 ratio.
-Brand: "Ads Vance" small logo bottom-right.
+2. **Thumbnail** (for YouTube): 16:9, 2K resolution
+   - Uses `thumbnail_prompt` from script
+   - Bold, eye-catching, optimized for click-through
+
+**API call example:**
+```json
+{
+  "model": "gpt-image-2-text-to-image",
+  "input": {
+    "prompt": "{image_prompt from script}",
+    "aspect_ratio": "16:9",
+    "resolution": "2K"
+  }
+}
 ```
 
 ### Step ③ Voice Generation (ElevenLabs V3 via Kie.ai)
@@ -184,89 +126,89 @@ Brand: "Ads Vance" small logo bottom-right.
 **API:** `POST https://api.kie.ai/api/v1/jobs/createTask`
 **Model:** `elevenlabs/text-to-dialogue-v3`
 
-Configuration:
-- `language_code`: `"th"` (Thai)
-- `stability`: `0.5` (balanced)
-- Single speaker per clip (consistent voice identity)
-- Audio tags for expressiveness: `[confident]`, `[friendly]`, `[excited]`, `[serious]`
+Takes the `voice_script` field and generates Thai voiceover.
 
-**Voice selection:** Choose one consistent voice for channel identity. Test multiple voices initially (Adam, Brian, Roger) and pick the one that sounds most natural in Thai.
-
-**Script preprocessing:**
-- Add ellipses (`...`) for natural pauses between steps
-- Add dashes (`—`) for emphasis/interruptions
-- Audio tags at emotional beats only (not every line)
-- Max 5000 characters per API call (split if needed)
-
-**Output:** One MP3/WAV file per clip, with all scenes concatenated.
-
-### Step ④ Video Assembly (FFmpeg)
-
-**Input per clip:**
-- Voice audio file (from Step ③)
-- Screenshot images + generated images (from Step ②)
-- Script JSON (timing, text overlays, zoom targets)
-
-**Assembly process:**
-1. Create intro (2s branded animation — made once, reused)
-2. For each scene:
-   - Display image (screenshot or infographic)
-   - Apply zoom/pan effect if `zoom_target` specified
-   - Overlay text with consistent font/style
-   - Sync with voice audio timing
-3. Add outro (2s — Line ID, Telegram link)
-4. Export: MP4, 1080p, H.264
-
-**Text overlay style:**
-- Font: TH Sarabun or Noto Sans Thai (bold)
-- Position: bottom third or top, depending on image content
-- Background: semi-transparent dark bar
-- Color: white text, accent color for keywords
-
-**FFmpeg command structure (conceptual):**
-```bash
-ffmpeg -i voice.mp3 \
-  -loop 1 -i scene1.png -t {duration1} \
-  -loop 1 -i scene2.png -t {duration2} \
-  ... \
-  -filter_complex "[scene assembly + text overlays + zoom effects]" \
-  -c:v libx264 -c:a aac -shortest output.mp4
+**API call example:**
+```json
+{
+  "model": "elevenlabs/text-to-dialogue-v3",
+  "input": {
+    "dialogue": [
+      {
+        "text": "{voice_script from script}",
+        "voice": "Adam"
+      }
+    ],
+    "language_code": "th",
+    "stability": 0.5
+  }
+}
 ```
 
-Actual implementation will use a Python script wrapping FFmpeg for complex scene assembly.
+**Script formatting conventions for natural Thai delivery:**
+- `...` (ellipses) = natural pauses between steps
+- `—` (dash) = emphasis or direction change
+- `[confident]`, `[friendly]`, `[excited]`, `[serious]` = audio tags for emotion
+- Audio tags only at key emotional beats, not every sentence
+
+**Voice selection:** Test Adam, Brian, Roger initially. Pick the one that sounds most natural in Thai. Use that same voice for all clips (channel identity).
+
+**Max 5000 characters per API call.** For scripts under 60 seconds, this is more than sufficient.
+
+### Step ④ Video Assembly (FFmpeg + Python)
+
+**Input per clip:**
+- 1 infographic image (from Step ②)
+- 1 voice audio file (from Step ③)
+- Script JSON with text overlay timings
+
+**Assembly process:**
+1. **Intro** (2-3 seconds): Branded "Ads Vance" animation (made once, reused forever)
+2. **Main content:** Single infographic image displayed for full duration with:
+   - **Ken Burns effect:** Slow zoom-in from 100% to 110% over the clip duration
+   - **Text overlays:** Appear/disappear at specified times with fade-in animation
+   - **Highlight effects:** Subtle glow/pulse on relevant parts of the infographic
+3. **Outro** (2-3 seconds): "ติดต่อ @adsvance" + Line ID + Telegram link
+4. **Export:** MP4, 1080p, H.264, AAC audio
+
+**Text overlay style:**
+- Font: Noto Sans Thai (bold) — free, supports Thai fully
+- Position: bottom third or top, per script specification
+- Background: semi-transparent dark bar (rgba 0,0,0,0.6)
+- Color: white text, accent color (#e94560) for keywords
+- Animation: fade-in 0.3s
+
+**Python + FFmpeg wrapper** handles:
+- Reading script JSON
+- Constructing FFmpeg filter_complex for zoom, text overlays, timing
+- Outputting final MP4
 
 ---
 
-## Phase 3: Daily Publish
+## Daily Publish (Automated)
 
 ### QC Process
 
-Before upload, each clip goes through:
+Automated checks before upload:
+- Video duration within 25-120 seconds
+- Audio track present and not silent
+- Resolution is 1080p
+- File size between 1MB and 50MB
 
-1. **Automated checks:**
-   - Video duration within 30-120 seconds
-   - Audio present and synced
-   - Resolution is 1080p
-   - File size reasonable
-
-2. **Human QC (optional but recommended initially):**
-   - Watch 1-minute clip
-   - Check voice sounds natural
-   - Check screenshots match topic
-   - Approve or flag for regeneration
+Human QC is optional but recommended for the first 2 weeks. After confirming quality is consistent, switch to fully automated.
 
 ### YouTube Upload
 
-**Method:** YouTube Data API v3 (scheduled upload)
-**Schedule:** Every day at 00:00 (midnight) Bangkok time (UTC+7)
+**Method:** YouTube Data API v3
+**Schedule:** Every day at 00:00 Bangkok time (UTC+7)
 
-Upload metadata from script:
-- Title: `youtube_title` from script
-- Description: `youtube_description` (includes Line ID, Telegram link)
+Upload metadata pulled directly from script JSON:
+- Title: `youtube_title`
+- Description: `youtube_description`
 - Tags: `youtube_tags`
-- Category: Education or People & Blogs
+- Category: Education (27)
 - Thumbnail: generated thumbnail from Step ②
-- Visibility: Scheduled (public at midnight)
+- Visibility: Scheduled public at midnight
 
 ---
 
@@ -274,13 +216,12 @@ Upload metadata from script:
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| Script Generation | Claude API (Opus/Sonnet) | Generate topics + structured scripts |
+| Script Generation | Claude API (Sonnet 4.6) | Generate topics + structured scripts |
 | Voice Generation | ElevenLabs V3 via Kie.ai | Thai AI voiceover |
-| Image Generation | GPT Image 2 via Kie.ai | Thumbnails + infographics |
-| Video Assembly | Python + FFmpeg | Combine images + audio + text |
-| Scheduling | Cron (VPS) or GitHub Actions | Trigger weekly production |
+| Image Generation | GPT Image 2 via Kie.ai | Infographics + thumbnails |
+| Video Assembly | Python + FFmpeg | Combine image + audio + text overlays |
+| Scheduling | Cron (VPS) or GitHub Actions | Trigger weekly production + daily upload |
 | Upload | YouTube Data API v3 | Scheduled midnight upload |
-| Storage | Google Drive or local | Screenshot library |
 | Orchestration | Python script | Pipeline coordinator |
 
 ---
@@ -290,12 +231,12 @@ Upload metadata from script:
 | Item | Est. Monthly Cost |
 |------|------------------|
 | Kie.ai Voice (30 clips x ~1 min each) | ~$5-15 |
-| Kie.ai Image (30 thumbnails + ~15 infographics) | ~$5-10 |
+| Kie.ai Image (30 infographics + 30 thumbnails) | ~$5-15 |
 | Claude API (script generation) | ~$2-5 |
 | VPS for automation | ~$5-10 |
 | YouTube API | Free |
-| **Total** | **~$17-40/month** |
-| Owner time | ~2-3 hours/month |
+| **Total** | **~$17-45/month** |
+| **Owner time** | **0 hours/month** |
 
 ---
 
@@ -306,8 +247,8 @@ Voice module is swappable without changing the rest of the pipeline:
 | Option | When to use |
 |--------|------------|
 | ElevenLabs V3 (default) | Primary — best quality AI Thai voice |
-| Human VO freelancer | If AI voice doesn't test well with audience |
-| Owner batch recording | Fallback — owner reads 30 scripts in ~1 hour/month |
+| Human VO freelancer | If AI voice doesn't test well (~50-200 THB/clip) |
+| Owner batch recording | Fallback — read 30 scripts in ~1 hour/month |
 
 Script JSON output is the same regardless — only the voice generation step changes.
 
@@ -315,16 +256,16 @@ Script JSON output is the same regardless — only the voice generation step cha
 
 ## Content Categories & Rotation
 
-To maintain variety, rotate through these categories weekly:
+Rotate through categories weekly for variety:
 
 | Week | Focus Category | Example Topics |
 |------|---------------|---------------|
-| 1 | Account & Access | บัญชีถูกจำกัด, ยืนยันตัวตน, 2FA |
+| 1 | Account & Access | บัญชีถูกจำกัด, ยืนยันตัวตน, 2FA, เฟสปลิว |
 | 2 | Payment & Billing | ชำระเงินไม่ผ่าน, เติมเงินไม่ขึ้น, เปลี่ยนบัตร |
-| 3 | Campaign & Ads | แอดไม่วิ่ง, ถูก reject, targeting ผิด |
+| 3 | Campaign & Ads | แอดไม่วิ่ง, ถูก reject, targeting ผิด, ad review |
 | 4 | Pixel & Tracking | ติดตั้ง pixel, custom conversion, event setup |
 
-Repeat cycle monthly, with new specific topics each time.
+Repeat cycle monthly with new specific topics each time.
 
 ---
 
@@ -333,10 +274,11 @@ Repeat cycle monthly, with new specific topics each time.
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
 | AI voice sounds unnatural in Thai | Viewers leave | Test first 7 clips, measure retention. Swap to human VO if needed. |
-| Facebook UI changes frequently | Screenshots outdated | Monthly refresh cycle. AI detects when screenshot doesn't match topic context. |
-| Kie.ai API downtime | Production stops | Queue-based system with retry. 7-day buffer (produce weekly, publish daily). |
-| YouTube API quota limits | Upload fails | YouTube daily quota is 10,000 units. Upload costs ~1,600 units. Well within limit. |
-| Content becomes repetitive | Audience boredom | Topic dedup within 60 days. Monitor engagement metrics. |
+| AI-generated infographic has errors | Misleading content | Automated QC + human review first 2 weeks. Adjust prompts. |
+| Kie.ai API downtime | Production stops | Queue-based with retry. 7-day buffer (produce weekly, publish daily). |
+| YouTube API quota limits | Upload fails | Daily quota 10,000 units. Upload ~1,600 units. Well within limit. |
+| Content becomes repetitive | Audience boredom | Topic dedup within 60 days. Category rotation. Monitor engagement. |
+| GPT Image 2 generates incorrect Thai text | Unreadable text on image | Include English fallback for critical text. Review first batch. |
 
 ---
 
@@ -347,5 +289,20 @@ Repeat cycle monthly, with new specific topics each time.
 | Upload consistency | 30/30 days per month |
 | Average view duration | >50% of clip length |
 | Subscriber growth | 10% month-over-month |
-| Owner time per month | <3 hours |
+| Owner time per month | 0 hours (after setup) |
 | Cost per clip | <$1.50 |
+
+---
+
+## Initial Setup (One-time)
+
+What needs to happen before the pipeline runs:
+
+1. Set up Kie.ai account + credits
+2. Set up Claude API key
+3. Set up YouTube Data API credentials + OAuth
+4. Create branded intro/outro video (2-3 seconds each)
+5. Choose and lock ElevenLabs voice (test 3 voices, pick best Thai)
+6. Deploy Python pipeline to VPS or GitHub Actions
+7. Configure cron jobs: weekly production (Monday), daily upload (23:30 UTC)
+8. Run first 7 clips manually, QC, then switch to auto
