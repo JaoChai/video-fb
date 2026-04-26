@@ -7,29 +7,42 @@ export default function AnalyticsPage() {
   const { data: clips, isLoading } = useQuery({ queryKey: ['clips'], queryFn: () => apiFetch<Clip[]>('/api/v1/clips') });
   const published = clips?.filter(c => c.status === 'published') || [];
 
+  const stats = [
+    { label: 'Total', value: clips?.length || 0 },
+    { label: 'Published', value: published.length },
+    { label: 'Ready', value: clips?.filter(c => c.status === 'ready').length || 0 },
+    { label: 'Draft', value: clips?.filter(c => c.status === 'draft').length || 0 },
+  ];
+
   return (
     <div>
-      <h1 style={{ fontSize: 24, marginBottom: 24 }}>Analytics Dashboard</h1>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
-        {[
-          { label: 'Total Clips', value: clips?.length || 0, color: '#3b82f6' },
-          { label: 'Published', value: published.length, color: '#059669' },
-          { label: 'Ready', value: clips?.filter(c => c.status === 'ready').length || 0, color: '#f5851f' },
-          { label: 'Draft', value: clips?.filter(c => c.status === 'draft').length || 0, color: '#64748b' },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: '#1e293b', borderRadius: 12, padding: 20, borderLeft: `4px solid ${color}` }}>
-            <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>{label}</p>
-            <p style={{ fontSize: 32, fontWeight: 'bold' }}>{value}</p>
+      <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 32 }}>Analytics</h1>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 40 }}>
+        {stats.map(({ label, value }) => (
+          <div key={label} style={{
+            background: '#111', borderRadius: 8, padding: '20px 24px',
+            border: '1px solid #1a1a1a',
+          }}>
+            <div style={{ fontSize: 12, color: '#555', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
           </div>
         ))}
       </div>
-      <h2 style={{ fontSize: 18, marginBottom: 16 }}>Published Clips</h2>
-      {isLoading ? <p>Loading...</p> : published.length === 0 ? <p style={{ color: '#64748b' }}>No published clips yet</p> : (
-        <div style={{ display: 'grid', gap: 12 }}>
+
+      <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Published Clips</h2>
+      {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : published.length === 0 ? (
+        <p style={{ color: '#555', fontSize: 14 }}>No published clips yet.</p>
+      ) : (
+        <div style={{ display: 'grid', gap: 8 }}>
           {published.map(clip => (
-            <div key={clip.id} style={{ background: '#1e293b', borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between' }}>
-              <span>{clip.title}</span>
-              <span style={{ color: '#94a3b8', fontSize: 12 }}>{clip.category}</span>
+            <div key={clip.id} style={{
+              background: '#111', borderRadius: 6, padding: '12px 16px',
+              border: '1px solid #1a1a1a',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span style={{ fontSize: 14 }}>{clip.title}</span>
+              <span style={{ fontSize: 12, color: '#555' }}>{clip.category}</span>
             </div>
           ))}
         </div>

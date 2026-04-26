@@ -8,20 +8,31 @@ export default function AgentsPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, marginBottom: 24 }}>Agent Configuration</h1>
-      {isLoading ? <p>Loading...</p> : (
-        <div style={{ display: 'grid', gap: 16 }}>
+      <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 32 }}>Agents</h1>
+      {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : (
+        <div style={{ display: 'grid', gap: 12 }}>
           {agents?.map(agent => (
-            <div key={agent.id} style={{ background: '#1e293b', borderRadius: 12, padding: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <h3 style={{ color: '#f5851f', fontSize: 18 }}>{agent.agent_name}</h3>
-                <span style={{ background: agent.enabled ? '#059669' : '#dc2626', padding: '4px 12px', borderRadius: 12, fontSize: 12 }}>
+            <div key={agent.id} style={{
+              background: '#111', borderRadius: 8, padding: '20px 24px',
+              border: '1px solid #1a1a1a', transition: 'border-color 0.15s',
+            }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = '#333')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = '#1a1a1a')}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600 }}>{agent.agent_name}</h3>
+                <span style={{
+                  fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 4,
+                  background: agent.enabled ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                  color: agent.enabled ? '#22c55e' : '#ef4444',
+                }}>
                   {agent.enabled ? 'Active' : 'Disabled'}
                 </span>
               </div>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Model: {agent.model}</p>
-              <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8 }}>Temperature: {agent.temperature}</p>
-              <p style={{ fontSize: 13, color: '#cbd5e1' }}>{agent.system_prompt}</p>
+              <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#555', marginBottom: 10 }}>
+                <span>{agent.model}</span>
+                <span>temp {agent.temperature}</span>
+              </div>
+              <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>{agent.system_prompt}</p>
             </div>
           ))}
         </div>

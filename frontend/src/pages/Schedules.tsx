@@ -8,18 +8,31 @@ export default function SchedulesPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, marginBottom: 24 }}>Schedules</h1>
-      {isLoading ? <p>Loading...</p> : (
-        <div style={{ display: 'grid', gap: 16 }}>
+      <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 32 }}>Schedules</h1>
+      {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : (
+        <div style={{ display: 'grid', gap: 12 }}>
           {schedules?.map(s => (
-            <div key={s.id} style={{ background: '#1e293b', borderRadius: 12, padding: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={s.id} style={{
+              background: '#111', borderRadius: 8, padding: '16px 24px',
+              border: '1px solid #1a1a1a',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              transition: 'border-color 0.15s',
+            }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = '#333')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = '#1a1a1a')}>
               <div>
-                <h3 style={{ fontSize: 16, marginBottom: 4 }}>{s.name}</h3>
-                <p style={{ fontSize: 13, color: '#94a3b8' }}>Action: {s.action}</p>
-                <p style={{ fontSize: 13, color: '#94a3b8' }}>Cron: {s.cron_expression}</p>
-                {s.last_run_at && <p style={{ fontSize: 12, color: '#64748b' }}>Last run: {new Date(s.last_run_at).toLocaleString('th-TH')}</p>}
+                <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 4 }}>{s.name}</div>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#555' }}>
+                  <span>{s.action}</span>
+                  <span style={{ fontFamily: 'monospace' }}>{s.cron_expression}</span>
+                  {s.last_run_at && <span>Last: {new Date(s.last_run_at).toLocaleString('th-TH')}</span>}
+                </div>
               </div>
-              <span style={{ background: s.enabled ? '#059669' : '#dc2626', padding: '6px 16px', borderRadius: 12, fontSize: 13 }}>
+              <span style={{
+                fontSize: 11, fontWeight: 500, padding: '3px 10px', borderRadius: 4,
+                background: s.enabled ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+                color: s.enabled ? '#22c55e' : '#ef4444',
+              }}>
                 {s.enabled ? 'Active' : 'Paused'}
               </span>
             </div>

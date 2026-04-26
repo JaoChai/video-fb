@@ -9,29 +9,47 @@ import SettingsPage from './pages/Settings';
 
 const queryClient = new QueryClient();
 
+const NAV = [
+  { to: '/', label: 'Content' },
+  { to: '/agents', label: 'Agents' },
+  { to: '/knowledge', label: 'Knowledge' },
+  { to: '/schedules', label: 'Schedules' },
+  { to: '/analytics', label: 'Analytics' },
+  { to: '/settings', label: 'Settings' },
+];
+
+const navLinkStyle = (isActive: boolean): React.CSSProperties => ({
+  display: 'block',
+  padding: '8px 16px',
+  borderRadius: 6,
+  background: isActive ? '#fff' : 'transparent',
+  color: isActive ? '#000' : '#888',
+  fontSize: 14,
+  fontWeight: isActive ? 600 : 400,
+  transition: 'all 0.15s ease',
+  cursor: 'pointer',
+});
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div style={{ display: 'flex', minHeight: '100vh', background: '#0f172a', color: '#fff' }}>
-          <nav style={{ width: 220, background: '#1a3a8f', padding: '24px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <h2 style={{ color: '#f5851f', fontSize: 20, marginBottom: 24 }}>Ads Vance</h2>
-            {[
-              { to: '/', label: 'Content' },
-              { to: '/agents', label: 'Agents' },
-              { to: '/knowledge', label: 'Knowledge' },
-              { to: '/schedules', label: 'Schedules' },
-              { to: '/analytics', label: 'Analytics' },
-              { to: '/settings', label: 'Settings' },
-            ].map(({ to, label }) => (
-              <NavLink key={to} to={to} style={({ isActive }) => ({
-                display: 'block', padding: '10px 16px', borderRadius: 8,
-                background: isActive ? '#f5851f' : 'transparent',
-                color: '#fff', textDecoration: 'none', fontSize: 14,
-              })}>{label}</NavLink>
+        <div style={{ display: 'flex', minHeight: '100vh' }}>
+          <nav style={{
+            width: 200, borderRight: '1px solid #1a1a1a',
+            padding: '24px 12px', display: 'flex', flexDirection: 'column', gap: 2,
+            position: 'sticky', top: 0, height: '100vh',
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em', padding: '0 16px', marginBottom: 24 }}>
+              Ads Vance
+            </div>
+            {NAV.map(({ to, label }) => (
+              <NavLink key={to} to={to} style={({ isActive }) => navLinkStyle(isActive)}>
+                {label}
+              </NavLink>
             ))}
           </nav>
-          <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
+          <main style={{ flex: 1, padding: '32px 40px', maxWidth: 1200, overflowY: 'auto' }}>
             <Routes>
               <Route path="/" element={<ContentPage />} />
               <Route path="/agents" element={<AgentsPage />} />
