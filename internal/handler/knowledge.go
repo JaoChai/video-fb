@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -105,33 +106,44 @@ func (h *KnowledgeHandler) RebuildAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go func() {
-		for _, s := range sources {
-			if !s.Enabled || strings.TrimSpace(s.Content) == "" {
-				continue
-			}
-			h.rebuildChunks(s.ID, s.Content)
+	total := 0
+	var errors []string
+	for _, s := range sources {
+		if !s.Enabled || strings.TrimSpace(s.Content) == "" {
+			continue
 		}
-		log.Println("Rebuild all embeddings complete")
-	}()
+		n, err := h.rebuildChunks(s.ID, s.Content)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", s.Name, err))
+			continue
+		}
+		total += n
+	}
 
-	writeJSON(w, http.StatusOK, models.APIResponse{Message: "rebuilding embeddings in background"})
+	result := map[string]any{"total_chunks": total, "sources_processed": len(sources)}
+	if len(errors) > 0 {
+		result["errors"] = errors
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: result})
 }
 
 func (h *KnowledgeHandler) embedSource(sourceID, content string) {
-	h.rebuildChunks(sourceID, content)
+	go func() {
+		if _, err := h.rebuildChunks(sourceID, content); err != nil {
+			log.Printf("embed source %s failed: %v", sourceID, err)
+		}
+	}()
 }
 
-func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) {
+func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) (int, error) {
 	ctx := context.Background()
 
 	if err := h.repo.DeleteChunksBySource(ctx, sourceID); err != nil {
-		log.Printf("delete chunks for %s: %v", sourceID, err)
-		return
+		return 0, fmt.Errorf("delete chunks: %w", err)
 	}
 
 	if strings.TrimSpace(content) == "" {
-		return
+		return 0, nil
 	}
 
 	chunks := rag.ChunkText(content, 200, 30)
@@ -142,14 +154,13 @@ func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) {
 		}
 		embedding, err := h.engine.GenerateEmbedding(ctx, chunk)
 		if err != nil {
-			log.Printf("embedding failed: %v", err)
-			continue
+			return stored, fmt.Errorf("embedding chunk %d: %w", stored+1, err)
 		}
 		if err := h.engine.StoreChunk(ctx, sourceID, chunk, "", embedding); err != nil {
-			log.Printf("store chunk failed: %v", err)
-			continue
+			return stored, fmt.Errorf("store chunk %d: %w", stored+1, err)
 		}
 		stored++
 	}
 	log.Printf("Embedded %d/%d chunks for source %s", stored, len(chunks), sourceID)
+	return stored, nil
 }
