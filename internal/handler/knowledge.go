@@ -71,9 +71,18 @@ func (h *KnowledgeHandler) UpdateSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	go h.rebuildChunks(id, req.Content)
-
-	writeJSON(w, http.StatusOK, models.APIResponse{Message: "updated"})
+	n, embedErr := h.rebuildChunks(id, req.Content)
+	if embedErr != nil {
+		writeJSON(w, http.StatusOK, models.APIResponse{
+			Message: "updated",
+			Data:    map[string]any{"chunks": n, "embed_error": embedErr.Error()},
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{
+		Message: "updated",
+		Data:    map[string]any{"chunks": n},
+	})
 }
 
 func (h *KnowledgeHandler) ToggleSource(w http.ResponseWriter, r *http.Request) {
