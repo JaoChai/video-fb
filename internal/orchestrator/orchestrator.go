@@ -1,0 +1,158 @@
+package orchestrator
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/models"
+	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/repository"
+)
+
+var categories = []string{"account", "payment", "campaign", "pixel"}
+
+type Orchestrator struct {
+	pool          *pgxpool.Pool
+	questionAgent *agent.QuestionAgent
+	scriptAgent   *agent.ScriptAgent
+	imageAgent    *agent.ImageAgent
+	producer      *producer.Producer
+	clipsRepo     *repository.ClipsRepo
+	scenesRepo    *repository.ScenesRepo
+	themesRepo    *repository.ThemesRepo
+	agentsRepo    *repository.AgentsRepo
+}
+
+func New(
+	pool *pgxpool.Pool,
+	qa *agent.QuestionAgent,
+	sa *agent.ScriptAgent,
+	ia *agent.ImageAgent,
+	prod *producer.Producer,
+	clips *repository.ClipsRepo,
+	scenes *repository.ScenesRepo,
+	themes *repository.ThemesRepo,
+	agents *repository.AgentsRepo,
+) *Orchestrator {
+	return &Orchestrator{
+		pool: pool, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
+		producer: prod, clipsRepo: clips, scenesRepo: scenes,
+		themesRepo: themes, agentsRepo: agents,
+	}
+}
+
+func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
+	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+	category := categories[weekNum%len(categories)]
+	log.Printf("Producing %d clips for category: %s", count, category)
+
+	qaCfg, err := o.agentsRepo.GetByName(ctx, "question")
+	if err != nil {
+		return fmt.Errorf("get question agent config: %w", err)
+	}
+
+	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.SystemPrompt)
+	if err != nil {
+		return fmt.Errorf("generate questions: %w", err)
+	}
+	log.Printf("Generated %d questions", len(questions))
+
+	theme, err := o.themesRepo.GetActive(ctx)
+	if err != nil {
+		return fmt.Errorf("get active theme: %w", err)
+	}
+
+	scriptCfg, _ := o.agentsRepo.GetByName(ctx, "script")
+	imageCfg, _ := o.agentsRepo.GetByName(ctx, "image")
+
+	for i, q := range questions {
+		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg); err != nil {
+			log.Printf("Failed to produce clip: %v", err)
+			continue
+		}
+	}
+
+	log.Println("Weekly production complete")
+	return nil
+}
+
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig) error {
+	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
+		Title:          q.Question,
+		Question:       q.Question,
+		QuestionerName: q.QuestionerName,
+		Category:       q.Category,
+	})
+	if err != nil {
+		return fmt.Errorf("create clip: %w", err)
+	}
+
+	status := "producing"
+	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
+
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.SystemPrompt)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("script: %w", err))
+	}
+
+	for _, scene := range script.Scenes {
+		overlays := scene.TextOverlays
+		if overlays == nil {
+			overlays = []byte("[]")
+		}
+		o.scenesRepo.Create(ctx, models.CreateSceneRequest{
+			ClipID:          clip.ID,
+			SceneNumber:     scene.SceneNumber,
+			SceneType:       scene.SceneType,
+			TextContent:     scene.TextContent,
+			VoiceText:       scene.VoiceText,
+			DurationSeconds: scene.DurationSeconds,
+			TextOverlays:    overlays,
+		})
+	}
+
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.SystemPrompt)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("image prompts: %w", err))
+	}
+
+	var fullVoice string
+	for _, s := range script.Scenes {
+		fullVoice += s.VoiceText + " "
+	}
+
+	result, err := o.producer.Produce(ctx, clip.ID, script.Scenes, imagePrompts, fullVoice)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("produce: %w", err))
+	}
+
+	readyStatus := "ready"
+	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{
+		Status:       &readyStatus,
+		Video169URL:  &result.Video169Path,
+		Video916URL:  &result.Video916Path,
+		ThumbnailURL: &result.ThumbnailPath,
+		AnswerScript: &fullVoice,
+		VoiceScript:  &fullVoice,
+	})
+
+	o.pool.Exec(ctx,
+		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (clip_id) DO UPDATE SET youtube_title=$2, youtube_description=$3, youtube_tags=$4`,
+		clip.ID, script.YoutubeTitle, script.YoutubeDescription, script.YoutubeTags)
+
+	log.Printf("Clip ready: %s — %s", clip.ID, q.Question)
+	return nil
+}
+
+func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
+	status := "failed"
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &status})
+	return err
+}

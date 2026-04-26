@@ -1,0 +1,86 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/rag"
+)
+
+type QuestionAgent struct {
+	claude *ClaudeClient
+	rag    *rag.Engine
+	pool   *pgxpool.Pool
+}
+
+func NewQuestionAgent(claude *ClaudeClient, ragEngine *rag.Engine, pool *pgxpool.Pool) *QuestionAgent {
+	return &QuestionAgent{claude: claude, rag: ragEngine, pool: pool}
+}
+
+type GeneratedQuestion struct {
+	Question       string `json:"question"`
+	QuestionerName string `json:"questioner_name"`
+	Category       string `json:"category"`
+	PainPoint      string `json:"pain_point"`
+}
+
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, systemPrompt string) ([]GeneratedQuestion, error) {
+	ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s problems common issues", category), 5)
+	if err != nil {
+		return nil, fmt.Errorf("RAG search: %w", err)
+	}
+
+	var ragContext strings.Builder
+	for _, r := range ragResults {
+		ragContext.WriteString(r.Content)
+		ragContext.WriteString("\n---\n")
+	}
+
+	recentRows, err := a.pool.Query(ctx,
+		`SELECT title FROM topic_history WHERE created_at > NOW() - INTERVAL '60 days' ORDER BY created_at DESC LIMIT 30`)
+	if err != nil {
+		return nil, fmt.Errorf("query recent topics: %w", err)
+	}
+	defer recentRows.Close()
+
+	var recent []string
+	for recentRows.Next() {
+		var t string
+		recentRows.Scan(&t)
+		recent = append(recent, t)
+	}
+
+	previousList := ""
+	if len(recent) > 0 {
+		previousList = "\n\nห้ามซ้ำกับหัวข้อเหล่านี้:\n- " + strings.Join(recent, "\n- ")
+	}
+
+	userPrompt := fmt.Sprintf(`สร้าง %d คำถามจากลูกค้าเกี่ยวกับ Facebook Ads หมวด "%s"
+
+ข้อมูลอ้างอิงจาก knowledge base:
+%s
+%s
+
+ตอบเป็น JSON array เท่านั้น แต่ละ object มี:
+- "question": คำถามภาษาไทย สั้น กระชับ เหมือนลูกค้าถามจริง
+- "questioner_name": ชื่อไทย เช่น "คุณ สมชาย" "คุณ มานี"
+- "category": "%s"
+- "pain_point": ปัญหาหลักเป็นภาษาอังกฤษ เช่น "account_banned" "payment_failed"
+
+ห้ามสร้างคำถามที่แนะนำการทำผิดนโยบาย Facebook`, count, category, ragContext.String(), previousList, category)
+
+	var questions []GeneratedQuestion
+	if err := a.claude.GenerateJSON(ctx, systemPrompt, userPrompt, 0.8, &questions); err != nil {
+		return nil, fmt.Errorf("generate questions: %w", err)
+	}
+
+	for _, q := range questions {
+		a.pool.Exec(ctx,
+			`INSERT INTO topic_history (title, category) VALUES ($1, $2)`,
+			q.Question, q.Category)
+	}
+
+	return questions, nil
+}

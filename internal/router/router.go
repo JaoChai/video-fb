@@ -73,3 +73,7 @@ func New(pool *pgxpool.Pool, apiKey string) *chi.Mux {
 
 	return r
 }
+
+func SetOrchestrator(r *chi.Mux, h *handler.OrchestratorHandler) {
+	r.Post("/api/v1/orchestrator/produce", h.TriggerWeekly)
+}
