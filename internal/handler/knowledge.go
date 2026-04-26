@@ -71,18 +71,9 @@ func (h *KnowledgeHandler) UpdateSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	n, embedErr := h.rebuildChunks(id, req.Content)
-	if embedErr != nil {
-		writeJSON(w, http.StatusOK, models.APIResponse{
-			Message: "updated",
-			Data:    map[string]any{"chunks": n, "embed_error": embedErr.Error()},
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, models.APIResponse{
-		Message: "updated",
-		Data:    map[string]any{"chunks": n},
-	})
+	h.embedSource(id, req.Content)
+
+	writeJSON(w, http.StatusOK, models.APIResponse{Message: "updated"})
 }
 
 func (h *KnowledgeHandler) ToggleSource(w http.ResponseWriter, r *http.Request) {
@@ -115,29 +106,38 @@ func (h *KnowledgeHandler) RebuildAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total := 0
-	var errors []string
-	for _, s := range sources {
-		if !s.Enabled || strings.TrimSpace(s.Content) == "" {
-			continue
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC in RebuildAll: %v", r)
+			}
+		}()
+		for _, s := range sources {
+			if !s.Enabled || strings.TrimSpace(s.Content) == "" {
+				continue
+			}
+			n, err := h.rebuildChunks(s.ID, s.Content)
+			if err != nil {
+				log.Printf("rebuild %s failed: %v", s.Name, err)
+				continue
+			}
+			log.Printf("rebuild %s: %d chunks", s.Name, n)
 		}
-		n, err := h.rebuildChunks(s.ID, s.Content)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", s.Name, err))
-			continue
-		}
-		total += n
-	}
+		log.Println("Rebuild all complete")
+	}()
 
-	result := map[string]any{"total_chunks": total, "sources_processed": len(sources)}
-	if len(errors) > 0 {
-		result["errors"] = errors
-	}
-	writeJSON(w, http.StatusOK, models.APIResponse{Data: result})
+	writeJSON(w, http.StatusOK, models.APIResponse{
+		Message: fmt.Sprintf("rebuilding %d sources in background", len(sources)),
+	})
 }
 
 func (h *KnowledgeHandler) embedSource(sourceID, content string) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("PANIC in embedSource %s: %v", sourceID, r)
+			}
+		}()
 		if _, err := h.rebuildChunks(sourceID, content); err != nil {
 			log.Printf("embed source %s failed: %v", sourceID, err)
 		}

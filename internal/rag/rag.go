@@ -8,13 +8,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Engine struct {
-	pool   *pgxpool.Pool
-	client *http.Client
+	pool      *pgxpool.Pool
+	client    *http.Client
+	cachedKey string
+	keyMu     sync.RWMutex
 }
 
 func NewEngine(pool *pgxpool.Pool) *Engine {
@@ -25,6 +28,13 @@ func NewEngine(pool *pgxpool.Pool) *Engine {
 }
 
 func (e *Engine) getAPIKey(ctx context.Context) (string, error) {
+	e.keyMu.RLock()
+	if e.cachedKey != "" {
+		defer e.keyMu.RUnlock()
+		return e.cachedKey, nil
+	}
+	e.keyMu.RUnlock()
+
 	var key string
 	err := e.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'openrouter_api_key'`).Scan(&key)
 	if err != nil {
@@ -33,6 +43,10 @@ func (e *Engine) getAPIKey(ctx context.Context) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("openrouter_api_key is empty")
 	}
+
+	e.keyMu.Lock()
+	e.cachedKey = key
+	e.keyMu.Unlock()
 	return key, nil
 }
 
