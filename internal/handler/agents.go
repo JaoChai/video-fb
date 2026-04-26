@@ -33,12 +33,13 @@ func (h *AgentsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Model        string  `json:"model"`
 		Temperature  float64 `json:"temperature"`
 		Enabled      bool    `json:"enabled"`
+		Skills       string  `json:"skills"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, models.APIResponse{Error: "invalid request"})
 		return
 	}
-	if err := h.repo.Update(r.Context(), id, req.SystemPrompt, req.Model, req.Temperature, req.Enabled); err != nil {
+	if err := h.repo.Update(r.Context(), id, req.SystemPrompt, req.Model, req.Temperature, req.Enabled, req.Skills); err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}

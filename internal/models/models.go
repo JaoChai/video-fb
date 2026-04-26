@@ -94,6 +94,7 @@ type AgentConfig struct {
 	Model        string          `json:"model"`
 	Temperature  float64         `json:"temperature"`
 	Enabled      bool            `json:"enabled"`
+	Skills       string          `json:"skills"`
 	Config       json.RawMessage `json:"config"`
 }
 
