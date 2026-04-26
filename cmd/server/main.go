@@ -13,15 +13,19 @@ import (
 	"github.com/jaochai/video-fb/internal/handler"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jaochai/video-fb/internal/router"
+	"github.com/jaochai/video-fb/internal/scheduler"
 )
 
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations")
 	crawlFlag := flag.Bool("crawl", false, "Run knowledge crawler")
 	produceFlag := flag.Int("produce", 0, "Produce N clips")
+	publishFlag := flag.Bool("publish", false, "Publish ready clips")
+	analyticsFlag := flag.Bool("analytics", false, "Fetch analytics for published clips")
 	flag.Parse()
 
 	cfg := config.Load()
@@ -43,10 +47,10 @@ func main() {
 	}
 
 	ragEngine := rag.NewEngine(pool, cfg.ClaudeAPIKey)
+	crawl := crawler.NewCrawler(pool, ragEngine)
 
 	if *crawlFlag {
-		c := crawler.NewCrawler(pool, ragEngine)
-		if err := c.CrawlAll(ctx); err != nil {
+		if err := crawl.CrawlAll(ctx); err != nil {
 			log.Fatalf("Crawl failed: %v", err)
 		}
 		return
@@ -65,9 +69,13 @@ func main() {
 	scenesRepo := repository.NewScenesRepo(pool)
 	themesRepo := repository.NewThemesRepo(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
+	analyticsRepo := repository.NewAnalyticsRepo(pool)
 
 	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
 		clipsRepo, scenesRepo, themesRepo, agentsRepo)
+
+	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey)
+	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
 
 	if *produceFlag > 0 {
 		if err := orch.ProduceWeekly(ctx, *produceFlag); err != nil {
@@ -75,6 +83,23 @@ func main() {
 		}
 		return
 	}
+
+	if *publishFlag {
+		if err := pub.PublishReady(ctx); err != nil {
+			log.Fatalf("Publish failed: %v", err)
+		}
+		return
+	}
+
+	if *analyticsFlag {
+		if err := pub.FetchAnalytics(ctx); err != nil {
+			log.Fatalf("Analytics failed: %v", err)
+		}
+		return
+	}
+
+	sched := scheduler.New(orch, pub, crawl)
+	sched.Start(ctx)
 
 	r := router.New(pool, cfg.APIKey)
 	orchHandler := handler.NewOrchestratorHandler(orch)

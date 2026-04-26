@@ -14,6 +14,7 @@ type Config struct {
 	KieAPIKey       string
 	ElevenLabsVoice string
 	FFmpegPath      string
+	ZernioAPIKey    string
 }
 
 func Load() *Config {
@@ -42,5 +43,6 @@ func Load() *Config {
 		KieAPIKey:       os.Getenv("KIE_API_KEY"),
 		ElevenLabsVoice: voice,
 		FFmpegPath:      ffmpeg,
+		ZernioAPIKey:    os.Getenv("ZERNIO_API_KEY"),
 	}
 }
