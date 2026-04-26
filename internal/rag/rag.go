@@ -172,7 +172,7 @@ func ChunkText(text string, maxChunkSize int, overlap int) []string {
 		chunk := strings.Join(words[start:end], " ")
 		chunks = append(chunks, chunk)
 		start = end - overlap
-		if start >= end {
+		if start >= end || start < 1 {
 			break
 		}
 	}
