@@ -49,8 +49,8 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
 		r.Put("/{id}", knowledge.UpdateSource)
 		r.Patch("/{id}", knowledge.ToggleSource)
 		r.Delete("/{id}", knowledge.DeleteSource)
+		r.Post("/{id}/embed", knowledge.EmbedSource)
 	})
-	r.Post("/api/v1/knowledge/rebuild", knowledge.RebuildAll)
 
 	agents := handler.NewAgentsHandler(repository.NewAgentsRepo(pool))
 	r.Route("/api/v1/agents", func(r chi.Router) {

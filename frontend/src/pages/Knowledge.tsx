@@ -83,16 +83,37 @@ export default function KnowledgePage() {
     },
   });
 
+  const embedSource = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<{ chunks: number }>(`/api/v1/knowledge/sources/${id}/embed`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
+  });
+
   const deleteSource = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/knowledge/sources/${id}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
   });
 
-  const rebuildAll = useMutation({
-    mutationFn: () =>
-      apiFetch('/api/v1/knowledge/rebuild', { method: 'POST' }),
-  });
+  const [rebuildingAll, setRebuildingAll] = useState(false);
+  const [rebuildProgress, setRebuildProgress] = useState('');
+
+  const rebuildAll = async () => {
+    if (!sources) return;
+    setRebuildingAll(true);
+    for (let i = 0; i < sources.length; i++) {
+      const s = sources[i];
+      setRebuildProgress(`${i + 1}/${sources.length} — ${s.name}`);
+      try {
+        await apiFetch(`/api/v1/knowledge/sources/${s.id}/embed`, { method: 'POST' });
+      } catch (e) {
+        console.error(`embed ${s.name} failed`, e);
+      }
+    }
+    setRebuildingAll(false);
+    setRebuildProgress('');
+    qc.invalidateQueries({ queryKey: ['knowledge'] });
+  };
 
   const handleEdit = (id: string, field: keyof Source, value: string) => {
     setEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
@@ -121,14 +142,14 @@ export default function KnowledgePage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600 }}>Knowledge Base</h1>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => rebuildAll.mutate()}
-            disabled={rebuildAll.isPending}
+          <button onClick={rebuildAll}
+            disabled={rebuildingAll}
             style={{
               padding: '8px 16px', borderRadius: 6, border: '1px solid #222',
-              background: 'transparent', color: rebuildAll.isPending ? '#333' : '#888',
+              background: 'transparent', color: rebuildingAll ? '#333' : '#888',
               fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
             }}>
-            {rebuildAll.isPending ? 'Rebuilding...' : 'Rebuild Embeddings'}
+            {rebuildingAll ? `Embedding ${rebuildProgress}` : 'Rebuild Embeddings'}
           </button>
           <button onClick={() => setShowNew(true)}
             style={{
@@ -141,15 +162,6 @@ export default function KnowledgePage() {
         </div>
       </div>
 
-      {rebuildAll.isSuccess && (
-        <div style={{
-          marginBottom: 16, padding: '8px 14px', borderRadius: 6, fontSize: 12,
-          background: 'rgba(34,197,94,0.1)', color: '#22c55e',
-          border: '1px solid rgba(34,197,94,0.2)',
-        }}>
-          Embeddings are rebuilding in background. Refresh to see updated chunk counts.
-        </div>
-      )}
 
       {/* New document form */}
       {showNew && (
@@ -296,7 +308,7 @@ export default function KnowledgePage() {
                             onFocus={ev => (ev.target.style.borderColor = '#444')}
                             onBlur={ev => (ev.target.style.borderColor = '#222')}
                           />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button onClick={() => handleSave(source.id)}
                               disabled={updateSource.isPending || !isDirty}
                               style={{
@@ -305,7 +317,16 @@ export default function KnowledgePage() {
                                 fontSize: 13, fontWeight: 600,
                                 cursor: isDirty ? 'pointer' : 'default',
                               }}>
-                              {updateSource.isPending ? 'Saving...' : 'Save & Re-embed'}
+                              {updateSource.isPending ? 'Saving...' : 'Save'}
+                            </button>
+                            <button onClick={() => embedSource.mutate(source.id)}
+                              disabled={embedSource.isPending}
+                              style={{
+                                padding: '9px 16px', borderRadius: 6, border: '1px solid #222',
+                                background: 'transparent', color: embedSource.isPending ? '#333' : '#fafafa',
+                                fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
+                              }}>
+                              {embedSource.isPending ? 'Embedding...' : 'Embed'}
                             </button>
                             <button onClick={() => {
                               if (confirm('Delete this document?')) deleteSource.mutate(source.id);
@@ -318,7 +339,7 @@ export default function KnowledgePage() {
                               Delete
                             </button>
                             {updateSource.isSuccess && !isDirty && (
-                              <span style={{ fontSize: 12, color: '#22c55e' }}>Saved — re-embedding in background</span>
+                              <span style={{ fontSize: 12, color: '#22c55e' }}>Saved</span>
                             )}
                           </div>
                         </div>

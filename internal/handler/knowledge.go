@@ -48,10 +48,6 @@ func (h *KnowledgeHandler) CreateSource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if strings.TrimSpace(req.Content) != "" {
-		go h.embedSource(source.ID, req.Content)
-	}
-
 	writeJSON(w, http.StatusCreated, models.APIResponse{Data: source})
 }
 
@@ -70,8 +66,6 @@ func (h *KnowledgeHandler) UpdateSource(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}
-
-	h.embedSource(id, req.Content)
 
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "updated"})
 }
@@ -99,49 +93,30 @@ func (h *KnowledgeHandler) DeleteSource(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "deleted"})
 }
 
-func (h *KnowledgeHandler) RebuildAll(w http.ResponseWriter, r *http.Request) {
+
+func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
 	sources, err := h.repo.ListSources(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("PANIC in RebuildAll: %v", r)
-			}
-		}()
-		for _, s := range sources {
-			if !s.Enabled || strings.TrimSpace(s.Content) == "" {
-				continue
-			}
-			n, err := h.rebuildChunks(s.ID, s.Content)
-			if err != nil {
-				log.Printf("rebuild %s failed: %v", s.Name, err)
-				continue
-			}
-			log.Printf("rebuild %s: %d chunks", s.Name, n)
+	var content string
+	for _, s := range sources {
+		if s.ID == id {
+			content = s.Content
+			break
 		}
-		log.Println("Rebuild all complete")
-	}()
+	}
 
-	writeJSON(w, http.StatusOK, models.APIResponse{
-		Message: fmt.Sprintf("rebuilding %d sources in background", len(sources)),
-	})
-}
-
-func (h *KnowledgeHandler) embedSource(sourceID, content string) {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("PANIC in embedSource %s: %v", sourceID, r)
-			}
-		}()
-		if _, err := h.rebuildChunks(sourceID, content); err != nil {
-			log.Printf("embed source %s failed: %v", sourceID, err)
-		}
-	}()
+	n, err := h.rebuildChunks(id, content)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{"chunks": n}})
 }
 
 func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) (int, error) {
