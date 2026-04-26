@@ -71,6 +71,13 @@ func New(pool *pgxpool.Pool, apiKey string) *chi.Mux {
 	analytics := handler.NewAnalyticsHandler(repository.NewAnalyticsRepo(pool))
 	r.Get("/api/v1/clips/{clipId}/analytics", analytics.ListByClip)
 
+	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))
+	r.Route("/api/v1/settings", func(r chi.Router) {
+		r.Get("/", settings.Get)
+		r.Put("/", settings.Update)
+		r.Post("/test-key", settings.TestKey)
+	})
+
 	return r
 }
 

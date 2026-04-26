@@ -5,6 +5,7 @@ import AgentsPage from './pages/Agents';
 import KnowledgePage from './pages/Knowledge';
 import SchedulesPage from './pages/Schedules';
 import AnalyticsPage from './pages/Analytics';
+import SettingsPage from './pages/Settings';
 
 const queryClient = new QueryClient();
 
@@ -21,6 +22,7 @@ export default function App() {
               { to: '/knowledge', label: 'Knowledge' },
               { to: '/schedules', label: 'Schedules' },
               { to: '/analytics', label: 'Analytics' },
+              { to: '/settings', label: 'Settings' },
             ].map(({ to, label }) => (
               <NavLink key={to} to={to} style={({ isActive }) => ({
                 display: 'block', padding: '10px 16px', borderRadius: 8,
@@ -36,6 +38,7 @@ export default function App() {
               <Route path="/knowledge" element={<KnowledgePage />} />
               <Route path="/schedules" element={<SchedulesPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>
         </div>
