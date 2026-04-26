@@ -5,11 +5,12 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jaochai/video-fb/internal/handler"
+	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func New(pool *pgxpool.Pool, apiKey string) *chi.Mux {
+func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -41,13 +42,15 @@ func New(pool *pgxpool.Pool, apiKey string) *chi.Mux {
 	})
 	r.Delete("/api/v1/scenes/{id}", scenes.Delete)
 
-	knowledge := handler.NewKnowledgeHandler(repository.NewKnowledgeRepo(pool))
+	knowledge := handler.NewKnowledgeHandler(repository.NewKnowledgeRepo(pool), ragEngine)
 	r.Route("/api/v1/knowledge/sources", func(r chi.Router) {
 		r.Get("/", knowledge.ListSources)
 		r.Post("/", knowledge.CreateSource)
+		r.Put("/{id}", knowledge.UpdateSource)
 		r.Patch("/{id}", knowledge.ToggleSource)
 		r.Delete("/{id}", knowledge.DeleteSource)
 	})
+	r.Post("/api/v1/knowledge/rebuild", knowledge.RebuildAll)
 
 	agents := handler.NewAgentsHandler(repository.NewAgentsRepo(pool))
 	r.Route("/api/v1/agents", func(r chi.Router) {

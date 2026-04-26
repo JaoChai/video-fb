@@ -62,13 +62,12 @@ type ClipAnalytics struct {
 }
 
 type KnowledgeSource struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	URL            string     `json:"url"`
-	SourceType     string     `json:"source_type"`
-	CrawlFrequency string    `json:"crawl_frequency"`
-	LastCrawledAt  *time.Time `json:"last_crawled_at"`
-	Enabled        bool       `json:"enabled"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Category   string `json:"category"`
+	Content    string `json:"content"`
+	Enabled    bool   `json:"enabled"`
+	ChunkCount int    `json:"chunk_count"`
 }
 
 type KnowledgeChunk struct {

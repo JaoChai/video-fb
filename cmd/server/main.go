@@ -101,7 +101,7 @@ func main() {
 	sched := scheduler.New(orch, pub, crawl)
 	sched.Start(ctx)
 
-	r := router.New(pool, cfg.APIKey)
+	r := router.New(pool, cfg.APIKey, ragEngine)
 	orchHandler := handler.NewOrchestratorHandler(orch)
 	router.SetOrchestrator(r, orchHandler)
 
