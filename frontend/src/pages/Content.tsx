@@ -10,6 +10,8 @@ interface Clip {
 const statusColor: Record<string, string> = {
   published: '#22c55e',
   ready: '#f59e0b',
+  producing: '#f5851f',
+  failed: '#ef4444',
   draft: '#555',
 };
 

@@ -30,7 +30,7 @@ type ProductionStatus struct {
 	Steps       []Step `json:"steps"`
 }
 
-var stepNames = []string{"question", "script", "image_prompts", "voice", "images", "assembly", "complete"}
+var stepNames = []string{"question", "script", "image_prompts", "voice", "images", "assembly", "upload", "complete"}
 
 type Tracker struct {
 	mu     sync.RWMutex

@@ -23,6 +23,7 @@ const STEP_LABELS: Record<string, string> = {
   voice: 'Voice Generation',
   images: 'Image Generation',
   assembly: 'Video Assembly',
+  upload: 'Upload Files',
   complete: 'Complete',
 };
 
