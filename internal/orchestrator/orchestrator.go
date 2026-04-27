@@ -55,7 +55,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.SystemPrompt)
+	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, qaCfg.SystemPrompt, qaCfg.Temperature)
 	if err != nil {
 		return fmt.Errorf("generate questions: %w", err)
 	}
@@ -95,7 +95,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.SystemPrompt)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, scriptCfg.SystemPrompt, scriptCfg.Temperature)
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("script: %w", err))
 	}
@@ -116,7 +116,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		})
 	}
 
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.SystemPrompt)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, imageCfg.SystemPrompt, imageCfg.Temperature)
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("image prompts: %w", err))
 	}

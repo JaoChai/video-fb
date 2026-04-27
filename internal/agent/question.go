@@ -10,13 +10,13 @@ import (
 )
 
 type QuestionAgent struct {
-	claude *ClaudeClient
-	rag    *rag.Engine
-	pool   *pgxpool.Pool
+	llm  *LLMClient
+	rag  *rag.Engine
+	pool *pgxpool.Pool
 }
 
-func NewQuestionAgent(claude *ClaudeClient, ragEngine *rag.Engine, pool *pgxpool.Pool) *QuestionAgent {
-	return &QuestionAgent{claude: claude, rag: ragEngine, pool: pool}
+func NewQuestionAgent(llm *LLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool) *QuestionAgent {
+	return &QuestionAgent{llm: llm, rag: ragEngine, pool: pool}
 }
 
 type GeneratedQuestion struct {
@@ -26,7 +26,7 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, systemPrompt string) ([]GeneratedQuestion, error) {
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model, systemPrompt string, temperature float64) ([]GeneratedQuestion, error) {
 	ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s problems common issues", category), 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -72,7 +72,7 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 ห้ามสร้างคำถามที่แนะนำการทำผิดนโยบาย Facebook`, count, category, ragContext.String(), previousList, category)
 
 	var questions []GeneratedQuestion
-	if err := a.claude.GenerateJSON(ctx, systemPrompt, userPrompt, 0.8, &questions); err != nil {
+	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &questions); err != nil {
 		return nil, fmt.Errorf("generate questions: %w", err)
 	}
 

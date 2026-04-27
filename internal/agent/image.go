@@ -8,11 +8,11 @@ import (
 )
 
 type ImageAgent struct {
-	claude *ClaudeClient
+	llm *LLMClient
 }
 
-func NewImageAgent(claude *ClaudeClient) *ImageAgent {
-	return &ImageAgent{claude: claude}
+func NewImageAgent(llm *LLMClient) *ImageAgent {
+	return &ImageAgent{llm: llm}
 }
 
 type SceneImagePrompts struct {
@@ -21,7 +21,7 @@ type SceneImagePrompts struct {
 	ImagePrompt916 string `json:"image_prompt_9_16"`
 }
 
-func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, systemPrompt string) ([]SceneImagePrompts, error) {
+func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, model, systemPrompt string, temperature float64) ([]SceneImagePrompts, error) {
 	themeDesc := fmt.Sprintf(
 		"Brand: primary=%s, secondary=%s, accent=%s, font=%s. Mascot: %s. Style: %s",
 		theme.PrimaryColor, theme.SecondaryColor, theme.AccentColor, theme.FontName,
@@ -48,7 +48,7 @@ Scenes:
 ทุก prompt ต้องมี: dark gradient background (%s to darker), accent color %s, brand text 'Ads Vance' bottom-right, modern flat design.`, themeDesc, questionerName, sceneDescs, theme.PrimaryColor, theme.AccentColor)
 
 	var prompts []SceneImagePrompts
-	if err := a.claude.GenerateJSON(ctx, systemPrompt, userPrompt, 0.7, &prompts); err != nil {
+	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &prompts); err != nil {
 		return nil, fmt.Errorf("generate image prompts: %w", err)
 	}
 	return prompts, nil

@@ -10,12 +10,12 @@ import (
 )
 
 type ScriptAgent struct {
-	claude *ClaudeClient
-	rag    *rag.Engine
+	llm *LLMClient
+	rag *rag.Engine
 }
 
-func NewScriptAgent(claude *ClaudeClient, ragEngine *rag.Engine) *ScriptAgent {
-	return &ScriptAgent{claude: claude, rag: ragEngine}
+func NewScriptAgent(llm *LLMClient, ragEngine *rag.Engine) *ScriptAgent {
+	return &ScriptAgent{llm: llm, rag: ragEngine}
 }
 
 type GeneratedScene struct {
@@ -35,7 +35,7 @@ type GeneratedScript struct {
 	YoutubeTags        []string         `json:"youtube_tags"`
 }
 
-func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category, systemPrompt string) (*GeneratedScript, error) {
+func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category, model, systemPrompt string, temperature float64) (*GeneratedScript, error) {
 	ragResults, err := a.rag.Search(ctx, question, 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -71,7 +71,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 CTA ให้แนะนำซื้อบัญชีสำรองจาก @adsvance`, question, questionerName, category, ragContext.String())
 
 	var script GeneratedScript
-	if err := a.claude.GenerateJSON(ctx, systemPrompt, userPrompt, 0.7, &script); err != nil {
+	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &script); err != nil {
 		return nil, fmt.Errorf("generate script: %w", err)
 	}
 	return &script, nil

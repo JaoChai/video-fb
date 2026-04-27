@@ -56,10 +56,10 @@ func main() {
 		return
 	}
 
-	claude := agent.NewClaudeClient(cfg.ClaudeAPIKey, "claude-sonnet-4-6-20250514")
-	questionAgent := agent.NewQuestionAgent(claude, ragEngine, pool)
-	scriptAgent := agent.NewScriptAgent(claude, ragEngine)
-	imageAgent := agent.NewImageAgent(claude)
+	llm := agent.NewLLMClient(pool)
+	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool)
+	scriptAgent := agent.NewScriptAgent(llm, ragEngine)
+	imageAgent := agent.NewImageAgent(llm)
 
 	kie := producer.NewKieClient(cfg.KieAPIKey)
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
