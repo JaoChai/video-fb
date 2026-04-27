@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 
@@ -35,13 +36,18 @@ function formatTime(seconds: number): string {
 }
 
 export default function ProductionProgress() {
+  const [dismissed, setDismissed] = useState(false);
   const { data: status } = useQuery({
     queryKey: ['production-status'],
     queryFn: () => apiFetch<ProductionStatus>('/api/v1/production/status'),
-    refetchInterval: (query) => query.state.data?.active ? 2000 : 10000,
+    refetchInterval: (query) => {
+      const active = query.state.data?.active;
+      if (active && dismissed) setDismissed(false);
+      return active ? 2000 : 10000;
+    },
   });
 
-  if (!status || (!status.active && (!status.steps || status.steps.length === 0))) {
+  if (dismissed || !status || (!status.active && (!status.steps || status.steps.length === 0))) {
     return null;
   }
 
@@ -72,6 +78,12 @@ export default function ProductionProgress() {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {!status.active && (
+            <button onClick={() => setDismissed(true)} style={{
+              background: 'none', border: '1px solid #333', borderRadius: 4,
+              color: '#555', fontSize: 11, padding: '2px 8px', cursor: 'pointer',
+            }}>Dismiss</button>
+          )}
           {status.total_clips > 0 && (
             <span style={{ fontSize: 11, color: '#888' }}>
               Clip {status.current_clip}/{status.total_clips}
