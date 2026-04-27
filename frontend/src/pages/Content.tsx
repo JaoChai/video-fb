@@ -1,18 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 import ProductionProgress from '../components/ProductionProgress';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
   category: string; status: string; created_at: string;
-}
-
-interface ProductionStatus {
-  active: boolean;
-  current_clip: number;
-  total_clips: number;
-  clip_title: string;
-  steps: Array<{ name: string; status: string; elapsed_seconds: number; error?: string }>;
 }
 
 const statusColor: Record<string, string> = {
@@ -24,56 +16,15 @@ const statusColor: Record<string, string> = {
 };
 
 export default function ContentPage() {
-  const qc = useQueryClient();
   const { data: clips, isLoading } = useQuery({ queryKey: ['clips'], queryFn: () => apiFetch<Clip[]>('/api/v1/clips') });
-  const { data: status } = useQuery({
-    queryKey: ['production-status'],
-    queryFn: () => apiFetch<ProductionStatus>('/api/v1/production/status'),
-    refetchInterval: (query) => query.state.data?.active ? 2000 : 10000,
-  });
-  const produce = useMutation({
-    mutationFn: () => apiFetch('/api/v1/orchestrator/produce?count=7', { method: 'POST' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['clips'] });
-      qc.invalidateQueries({ queryKey: ['production-status'] });
-    },
-  });
-  const stop = useMutation({
-    mutationFn: () => apiFetch('/api/v1/orchestrator/stop', { method: 'POST' }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['clips'] });
-      qc.invalidateQueries({ queryKey: ['production-status'] });
-    },
-  });
-
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600 }}>Content</h1>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <button onClick={() => produce.mutate()} disabled={produce.isPending || status?.active}
-            style={{
-              background: '#fff', color: '#000', border: 'none', padding: '8px 20px',
-              borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              opacity: (produce.isPending || status?.active) ? 0.5 : 1, transition: 'opacity 0.15s',
-            }}>
-            {produce.isPending ? 'Producing...' : 'Produce 7 Clips'}
-          </button>
-          {status?.active && (
-            <button onClick={() => stop.mutate()} disabled={stop.isPending}
-              style={{
-                background: '#ef4444', color: '#fff', border: 'none', padding: '8px 20px',
-                borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                opacity: stop.isPending ? 0.5 : 1, transition: 'opacity 0.15s',
-              }}>
-              {stop.isPending ? 'Stopping...' : 'Stop'}
-            </button>
-          )}
-        </div>
       </div>
       <ProductionProgress />
       {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : !clips?.length ? (
-        <p style={{ color: '#555' }}>No clips yet. Click "Produce 7 Clips" to start.</p>
+        <p style={{ color: '#555' }}>No clips yet. Scheduler will auto-produce at noon & midnight.</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
