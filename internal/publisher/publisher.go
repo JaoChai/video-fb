@@ -56,15 +56,34 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			continue
 		}
 
-		result, err := p.zernio.Post(ctx, PostRequest{
-			Content:    title + "\n\n" + desc,
+		// Post 16:9 (YouTube regular)
+		result169, err := p.zernio.Post(ctx, PostRequest{
+			Title:      title,
+			Content:    desc,
 			Platforms:  platforms,
-			MediaURLs:  []string{*video169},
-			PublishNow: true,
+			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
+			IsDraft:    true,
 		})
 		if err != nil {
-			log.Printf("Failed to publish clip %s: %v", clipID, err)
+			log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
 			continue
+		}
+		log.Printf("Posted 16:9 draft for clip %s → %s", clipID, result169.Post.ID)
+
+		// Post 9:16 (YouTube Shorts)
+		if video916 != nil && *video916 != "" {
+			result916, err := p.zernio.Post(ctx, PostRequest{
+				Title:      title + " #Shorts",
+				Content:    desc,
+				Platforms:  platforms,
+				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
+				IsDraft:    true,
+			})
+			if err != nil {
+				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
+			} else {
+				log.Printf("Posted 9:16 Shorts draft for clip %s → %s", clipID, result916.Post.ID)
+			}
 		}
 
 		status := "published"
@@ -72,22 +91,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		p.pool.Exec(ctx,
 			`UPDATE clip_metadata SET zernio_post_id = $2 WHERE clip_id = $1`,
-			clipID, result.ID)
+			clipID, result169.Post.ID)
 
-		if yt, ok := result.Platforms["youtube"]; ok {
-			p.pool.Exec(ctx, `UPDATE clip_metadata SET youtube_video_id = $2 WHERE clip_id = $1`, clipID, yt.PostID)
-		}
-		if tt, ok := result.Platforms["tiktok"]; ok {
-			p.pool.Exec(ctx, `UPDATE clip_metadata SET tiktok_post_id = $2 WHERE clip_id = $1`, clipID, tt.PostID)
-		}
-		if ig, ok := result.Platforms["instagram"]; ok {
-			p.pool.Exec(ctx, `UPDATE clip_metadata SET ig_post_id = $2 WHERE clip_id = $1`, clipID, ig.PostID)
-		}
-		if fb, ok := result.Platforms["facebook"]; ok {
-			p.pool.Exec(ctx, `UPDATE clip_metadata SET fb_post_id = $2 WHERE clip_id = $1`, clipID, fb.PostID)
-		}
-
-		log.Printf("Published clip %s via Zernio → %s", clipID, result.ID)
+		log.Printf("Published clip %s via Zernio", clipID)
 	}
 	return nil
 }

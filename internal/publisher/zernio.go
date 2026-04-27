@@ -29,20 +29,26 @@ type PlatformTarget struct {
 	AccountID string `json:"accountId"`
 }
 
+type MediaItem struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
 type PostRequest struct {
+	Title      string           `json:"title,omitempty"`
 	Content    string           `json:"content"`
 	Platforms  []PlatformTarget `json:"platforms"`
-	MediaURLs  []string         `json:"mediaUrls"`
+	MediaItems []MediaItem      `json:"mediaItems,omitempty"`
+	IsDraft    bool             `json:"isDraft,omitempty"`
 	PublishNow bool             `json:"publishNow,omitempty"`
 }
 
 type PostResponse struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	Platforms map[string]struct {
-		PostID string `json:"postId"`
-		URL    string `json:"url"`
-	} `json:"platforms"`
+	Post struct {
+		ID string `json:"_id"`
+	} `json:"post"`
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
 }
 
 type AnalyticsResponse struct {
