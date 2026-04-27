@@ -365,7 +365,10 @@ func (k *KieClient) UploadFile(ctx context.Context, localPath, uploadPath string
 		if !result.Success {
 			return fmt.Errorf("upload failed: %s (code: %d)", result.Msg, result.Code)
 		}
-		fileURL = result.Data.FileURL
+		fileURL = result.Data.DownloadURL
+		if fileURL == "" {
+			fileURL = result.Data.FileURL
+		}
 		return nil
 	})
 	return fileURL, err
