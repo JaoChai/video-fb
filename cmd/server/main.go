@@ -73,14 +73,14 @@ func main() {
 			voice = "Adam"
 		}
 	}
-	prod := producer.NewProducer(kie, ffmpeg, voice, "/tmp/adsvance-output")
+	tracker := progress.NewTracker()
+	prod := producer.NewProducer(kie, ffmpeg, voice, "/tmp/adsvance-output", tracker)
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
 	themesRepo := repository.NewThemesRepo(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
-	tracker := progress.NewTracker()
 
 	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
 		clipsRepo, scenesRepo, themesRepo, agentsRepo, tracker)

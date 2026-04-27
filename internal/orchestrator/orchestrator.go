@@ -60,9 +60,9 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	category := categories[weekNum%len(categories)]
 	log.Printf("Producing %d clips for category: %s", count, category)
 
-	o.tracker.StartProduction(count)
 	defer o.tracker.FinishProduction()
 
+	o.tracker.StartProduction(1)
 	o.tracker.StartClip(1, "Generating questions...")
 	o.tracker.StartStep("question")
 
@@ -85,8 +85,14 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, _ := o.agentsRepo.GetByName(ctx, "script")
-	imageCfg, _ := o.agentsRepo.GetByName(ctx, "image")
+	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	if err != nil {
+		return fmt.Errorf("get script agent config: %w", err)
+	}
+	imageCfg, err := o.agentsRepo.GetByName(ctx, "image")
+	if err != nil {
+		return fmt.Errorf("get image agent config: %w", err)
+	}
 
 	o.tracker.StartProduction(len(questions))
 	for i, q := range questions {
@@ -154,13 +160,10 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		fullVoice += s.VoiceText + " "
 	}
 
-	o.tracker.StartStep("voice")
 	result, err := o.producer.Produce(ctx, clip.ID, script.Scenes, imagePrompts, fullVoice)
 	if err != nil {
-		o.tracker.FailStep("voice", err)
 		return o.failClip(ctx, clip.ID, fmt.Errorf("produce: %w", err))
 	}
-	o.tracker.CompleteStep("voice")
 
 	readyStatus := "ready"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{

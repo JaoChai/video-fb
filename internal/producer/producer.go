@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/progress"
 )
 
 type Producer struct {
@@ -16,11 +17,12 @@ type Producer struct {
 	ffmpeg  *FFmpegAssembler
 	voice   string
 	workDir string
+	tracker *progress.Tracker
 }
 
-func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string) *Producer {
+func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{kie: kie, ffmpeg: ffmpeg, voice: voice, workDir: workDir}
+	return &Producer{kie: kie, ffmpeg: ffmpeg, voice: voice, workDir: workDir, tracker: tracker}
 }
 
 type ProduceResult struct {
@@ -33,12 +35,16 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	clipDir := filepath.Join(p.workDir, clipID)
 	os.MkdirAll(clipDir, 0755)
 
+	p.tracker.StartStep("voice")
 	log.Printf("Generating voice for %s", clipID)
 	voicePath := filepath.Join(clipDir, "voice.mp3")
 	if err := p.kie.GenerateVoice(ctx, voiceScript, p.voice, voicePath); err != nil {
+		p.tracker.FailStep("voice", err)
 		return nil, fmt.Errorf("generate voice: %w", err)
 	}
+	p.tracker.CompleteStep("voice")
 
+	p.tracker.StartStep("images")
 	var scenes169 []AssemblyScene
 	var scenes916 []AssemblyScene
 
@@ -64,6 +70,9 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		scenes916 = append(scenes916, AssemblyScene{ImagePath: img916, DurationSeconds: dur})
 	}
 
+	p.tracker.CompleteStep("images")
+
+	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
 	log.Printf("Assembling 16:9 video for %s", clipID)
 	if err := p.ffmpeg.Assemble(scenes169, voicePath, video169); err != nil {
@@ -85,6 +94,8 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 			thumbPath = scenes169[0].ImagePath
 		}
 	}
+
+	p.tracker.CompleteStep("assembly")
 
 	return &ProduceResult{
 		Video169Path:  video169,

@@ -43,11 +43,11 @@ export default function ProductionProgress() {
     return null;
   }
 
-  const completedSteps = status.steps?.filter(s => s.status === 'completed').length ?? 0;
-  const totalSteps = status.steps?.length ?? 7;
-  const progressPercent = Math.round((completedSteps / totalSteps) * 100);
-
-  const totalElapsed = status.steps?.reduce((sum, s) => sum + s.elapsed_seconds, 0) ?? 0;
+  const steps = status.steps ?? [];
+  const completedSteps = steps.filter(s => s.status === 'completed').length;
+  const progressPercent = Math.round((completedSteps / (steps.length || 1)) * 100);
+  const totalElapsed = steps.reduce((sum, s) => sum + s.elapsed_seconds, 0);
+  const failedStep = steps.find(s => s.status === 'failed');
 
   return (
     <div style={{
@@ -93,7 +93,7 @@ export default function ProductionProgress() {
       )}
 
       <div style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
-        {status.steps?.map((step) => (
+        {steps.map((step) => (
           <div key={step.name} style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '4px 0',
@@ -138,19 +138,19 @@ export default function ProductionProgress() {
       }}>
         <div style={{
           height: '100%', borderRadius: 2,
-          background: status.steps?.some(s => s.status === 'failed') ? '#ef4444' : '#f5851f',
+          background: failedStep ? '#ef4444' : '#f5851f',
           width: `${progressPercent}%`,
           transition: 'width 0.5s ease',
         }} />
       </div>
 
-      {status.steps?.find(s => s.status === 'failed')?.error && (
+      {failedStep?.error && (
         <div style={{
           marginTop: 10, padding: '8px 10px', borderRadius: 6,
           background: '#1a0000', border: '1px solid #331111',
           fontSize: 11, color: '#ef4444', lineHeight: 1.4,
         }}>
-          {status.steps.find(s => s.status === 'failed')!.error}
+          {failedStep.error}
         </div>
       )}
 
