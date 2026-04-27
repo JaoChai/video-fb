@@ -48,10 +48,11 @@ internal/
   publisher/                # Zernio publishing + analytics
   scheduler/                # Background jobs (daily publish, weekly produce/crawl/analytics)
 frontend/src/
-  App.tsx                   # Main layout with sidebar navigation
+  App.tsx                   # Main layout with sidebar navigation (QueryClient: staleTime 30s)
   pages/                    # Content, Schedules, Agents, Knowledge, Analytics, Settings
   api.ts                    # API client for backend endpoints
 migrations/                 # SQL migration files (001_initial_schema.sql)
+.github/workflows/          # GitHub Actions — auto-deploy to Railway on push to master
 ```
 
 ## API Endpoints
@@ -63,7 +64,8 @@ Base: `/api/v1/`
 - `clips/` — CRUD for video clips
 - `clips/{clipId}/scenes/` — Scenes per clip (GET, POST)
 - `scenes/{id}` — Delete scene (DELETE, standalone route)
-- `knowledge/sources/` — RAG knowledge sources (GET, POST, PUT, PATCH, DELETE)
+- `knowledge/sources/` — RAG knowledge sources (list summaries: GET, create: POST)
+- `knowledge/sources/{id}` — Single source with full content (GET), update (PUT), toggle (PATCH), delete (DELETE)
 - `knowledge/sources/{id}/embed` — Trigger embedding for source (POST)
 - `agents/` — Agent configurations (GET, PATCH)
 - `schedules/` — Scheduler settings (GET, PATCH)
@@ -78,14 +80,20 @@ Base: `/api/v1/`
 See `.env.example`. Required: `DATABASE_URL`, `API_KEY`, `CLAUDE_API_KEY`, `KIE_API_KEY`, `ZERNIO_API_KEY`.
 Optional with defaults: `PORT` (8080), `FFMPEG_PATH` (ffmpeg), `ELEVENLABS_VOICE` (Adam).
 
-Note: API keys for OpenRouter, Kie, ElevenLabs, and Zernio can also be managed at runtime via the Settings page (stored in database `settings` table). Env vars are used at startup; database settings override at runtime where applicable.
+Note: OpenRouter API key is managed ONLY via the Settings page (database `settings` table), not via env vars. Kie, ElevenLabs, and Zernio keys can also be managed at runtime via Settings; env vars are used at startup, database settings override at runtime where applicable.
 
 ## Pipeline Flow
 
 QuestionAgent → ScriptAgent → ImageAgent → Producer (Kie + FFmpeg) → Publisher (Zernio)
 
+## Deployment
+- **Auto-deploy:** Push to `master` → GitHub Actions runs `railway up` for both `adsvance-v2` and `adsvance-frontend`
+- **Manual deploy:** `railway up --service adsvance-v2` / `railway up --service adsvance-frontend`
+- **Region:** `asia-southeast1-eqsg3a` (Singapore)
+
 ## Gotchas
 - Server and CLI modes are mutually exclusive — flags like `-produce` exit after completion
 - Frontend has no lint script — only `tsc && vite build` for type checking
 - CORS allows all origins (`*`) without credentials — tighten `AllowedOrigins` for production
-- Scheduler runs in goroutines — no graceful shutdown signal handling
+- Scheduler supports context-based shutdown but main.go has no signal handling — goroutines run until process kill
+- Knowledge list endpoint returns summaries only (no content field) — use GET `/{id}` for full content
