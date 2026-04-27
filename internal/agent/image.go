@@ -23,9 +23,9 @@ type SceneImagePrompts struct {
 
 func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, model, systemPrompt string, temperature float64) ([]SceneImagePrompts, error) {
 	themeDesc := fmt.Sprintf(
-		"Brand: primary=%s, secondary=%s, accent=%s, font=%s. Mascot: %s. Style: %s",
+		"Brand: primary=%s, secondary=%s, accent=%s, font=%s. Style: %s",
 		theme.PrimaryColor, theme.SecondaryColor, theme.AccentColor, theme.FontName,
-		safeStr(theme.MascotDescription), safeStr(theme.ImageStyle))
+		safeStr(theme.ImageStyle))
 
 	var sceneDescs string
 	for _, s := range scenes {
@@ -45,7 +45,8 @@ Scenes:
 - "image_prompt_16_9": prompt ภาษาอังกฤษ สำหรับ 16:9 landscape. ใส่ Thai text content บนภาพ. ใช้สี brand. Scene type "question" ให้เป็น chat bubble style. Scene type "step" ให้เป็น infographic. Scene type "summary" ให้เป็น CTA card.
 - "image_prompt_9_16": prompt เหมือนกันแต่สำหรับ 9:16 vertical format.
 
-ทุก prompt ต้องมี: dark gradient background (%s to darker), accent color %s, brand text 'Ads Vance' bottom-right, modern flat design.`, themeDesc, questionerName, sceneDescs, theme.PrimaryColor, theme.AccentColor)
+DO NOT include any logo, mascot, brand name, or brand text in the image.
+ทุก prompt ต้องมี: dark gradient background (%s to darker), accent color %s, modern flat design.`, themeDesc, questionerName, sceneDescs, theme.PrimaryColor, theme.AccentColor)
 
 	var prompts []SceneImagePrompts
 	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &prompts); err != nil {
