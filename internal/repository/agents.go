@@ -58,3 +58,24 @@ func (r *AgentsRepo) Update(ctx context.Context, id string, prompt, model string
 	}
 	return nil
 }
+
+func (r *AgentsRepo) UpdatePromptByName(ctx context.Context, agentName, newPrompt string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE agent_configs SET system_prompt = $2 WHERE agent_name = $1`,
+		agentName, newPrompt)
+	if err != nil {
+		return fmt.Errorf("update prompt for agent %s: %w", agentName, err)
+	}
+	return nil
+}
+
+func (r *AgentsRepo) SavePromptHistory(ctx context.Context, agentName, oldPrompt, newPrompt, reason string) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO agent_prompt_history (agent_name, old_prompt, new_prompt, reason)
+		 VALUES ($1, $2, $3, $4)`,
+		agentName, oldPrompt, newPrompt, reason)
+	if err != nil {
+		return fmt.Errorf("save prompt history for %s: %w", agentName, err)
+	}
+	return nil
+}

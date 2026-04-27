@@ -46,3 +46,33 @@ func (r *SchedulesRepo) Update(ctx context.Context, id, cron, action string, ena
 	}
 	return nil
 }
+
+func (r *SchedulesRepo) UpdateLastRun(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE schedules SET last_run_at = NOW() WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("update last_run for schedule %s: %w", id, err)
+	}
+	return nil
+}
+
+func (r *SchedulesRepo) ListEnabled(ctx context.Context) ([]models.Schedule, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, name, cron_expression, action, enabled, last_run_at, next_run_at
+		 FROM schedules WHERE enabled = TRUE ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("query enabled schedules: %w", err)
+	}
+	defer rows.Close()
+
+	var schedules []models.Schedule
+	for rows.Next() {
+		var s models.Schedule
+		if err := rows.Scan(&s.ID, &s.Name, &s.CronExpression, &s.Action,
+			&s.Enabled, &s.LastRunAt, &s.NextRunAt); err != nil {
+			return nil, fmt.Errorf("scan schedule: %w", err)
+		}
+		schedules = append(schedules, s)
+	}
+	return schedules, nil
+}

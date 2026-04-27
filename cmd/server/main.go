@@ -5,8 +5,13 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/analyzer"
 	"github.com/jaochai/video-fb/internal/config"
 	"github.com/jaochai/video-fb/internal/crawler"
 	"github.com/jaochai/video-fb/internal/database"
@@ -109,16 +114,33 @@ func main() {
 		return
 	}
 
-	sched := scheduler.New(orch, pub, crawl)
-	sched.Start(ctx)
+	anlz := analyzer.New(pool, llm, agentsRepo)
+	schedRepo := repository.NewSchedulesRepo(pool)
+	sched := scheduler.New(pool, pub, anlz, schedRepo)
+	if err := sched.Start(ctx); err != nil {
+		log.Printf("Warning: scheduler start failed: %v", err)
+	}
 
 	r := router.New(pool, cfg.APIKey, ragEngine, tracker)
 	orchHandler := handler.NewOrchestratorHandler(orch)
 	router.SetOrchestrator(r, orchHandler)
 
 	addr := ":" + cfg.Port
+	srv := &http.Server{Addr: addr, Handler: r}
+
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("Shutting down...")
+		sched.Stop()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
 	log.Printf("Starting server on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
 }

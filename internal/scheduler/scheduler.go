@@ -2,65 +2,97 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/jaochai/video-fb/internal/crawler"
-	"github.com/jaochai/video-fb/internal/orchestrator"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/analyzer"
 	"github.com/jaochai/video-fb/internal/publisher"
+	"github.com/jaochai/video-fb/internal/repository"
+	"github.com/robfig/cron/v3"
 )
 
 type Scheduler struct {
-	orch      *orchestrator.Orchestrator
-	publisher *publisher.Publisher
-	crawler   *crawler.Crawler
+	cron          *cron.Cron
+	pool          *pgxpool.Pool
+	publisher     *publisher.Publisher
+	analyzer      *analyzer.Analyzer
+	schedulesRepo *repository.SchedulesRepo
 }
 
-func New(orch *orchestrator.Orchestrator, pub *publisher.Publisher, crawl *crawler.Crawler) *Scheduler {
-	return &Scheduler{orch: orch, publisher: pub, crawler: crawl}
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, schedRepo *repository.SchedulesRepo) *Scheduler {
+	loc, err := time.LoadLocation("Asia/Bangkok")
+	if err != nil {
+		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
+		return &Scheduler{
+			cron:          cron.New(),
+			pool:          pool,
+			publisher:     pub,
+			analyzer:      anlz,
+			schedulesRepo: schedRepo,
+		}
+	}
+	return &Scheduler{
+		cron:          cron.New(cron.WithLocation(loc)),
+		pool:          pool,
+		publisher:     pub,
+		analyzer:      anlz,
+		schedulesRepo: schedRepo,
+	}
 }
 
-func (s *Scheduler) Start(ctx context.Context) {
-	log.Println("Scheduler started")
+func (s *Scheduler) Start(ctx context.Context) error {
+	schedules, err := s.schedulesRepo.ListEnabled(ctx)
+	if err != nil {
+		return fmt.Errorf("load schedules: %w", err)
+	}
 
-	go s.runLoop(ctx, "daily-publish", 24*time.Hour, func(ctx context.Context) {
-		if err := s.publisher.PublishReady(ctx); err != nil {
-			log.Printf("Daily publish failed: %v", err)
+	for _, sched := range schedules {
+		schedule := sched
+		handler := s.handlerFor(schedule.Action)
+		if handler == nil {
+			log.Printf("Scheduler [%s]: unknown action %q, skipping", schedule.Name, schedule.Action)
+			continue
 		}
-	})
 
-	go s.runLoop(ctx, "weekly-produce", 7*24*time.Hour, func(ctx context.Context) {
-		if err := s.orch.ProduceWeekly(ctx, 7); err != nil {
-			log.Printf("Weekly production failed: %v", err)
+		_, err := s.cron.AddFunc(schedule.CronExpression, func() {
+			log.Printf("Scheduler [%s]: executing", schedule.Name)
+			if err := handler(ctx); err != nil {
+				log.Printf("Scheduler [%s]: failed: %v", schedule.Name, err)
+			} else {
+				log.Printf("Scheduler [%s]: completed", schedule.Name)
+			}
+			if err := s.schedulesRepo.UpdateLastRun(ctx, schedule.ID); err != nil {
+				log.Printf("Scheduler [%s]: failed to update last_run: %v", schedule.Name, err)
+			}
+		})
+		if err != nil {
+			log.Printf("Scheduler: invalid cron %q for %q: %v", schedule.CronExpression, schedule.Name, err)
+			continue
 		}
-	})
 
-	go s.runLoop(ctx, "weekly-crawl", 7*24*time.Hour, func(ctx context.Context) {
-		if err := s.crawler.CrawlAll(ctx); err != nil {
-			log.Printf("Weekly crawl failed: %v", err)
-		}
-	})
+		log.Printf("Scheduler [%s]: registered cron %q", schedule.Name, schedule.CronExpression)
+	}
 
-	go s.runLoop(ctx, "weekly-analytics", 7*24*time.Hour, func(ctx context.Context) {
-		if err := s.publisher.FetchAnalytics(ctx); err != nil {
-			log.Printf("Weekly analytics failed: %v", err)
-		}
-	})
+	s.cron.Start()
+	log.Printf("Scheduler started with %d jobs", len(s.cron.Entries()))
+	return nil
 }
 
-func (s *Scheduler) runLoop(ctx context.Context, name string, interval time.Duration, fn func(context.Context)) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+func (s *Scheduler) Stop() {
+	ctx := s.cron.Stop()
+	<-ctx.Done()
+	log.Println("Scheduler stopped")
+}
 
-	log.Printf("Scheduler [%s]: running every %v", name, interval)
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("Scheduler [%s]: stopped", name)
-			return
-		case <-ticker.C:
-			log.Printf("Scheduler [%s]: executing", name)
-			fn(ctx)
-		}
+func (s *Scheduler) handlerFor(action string) func(context.Context) error {
+	switch action {
+	case "publish_daily":
+		return s.publisher.PublishReady
+	case "analyze_and_improve":
+		return s.analyzer.AnalyzeAndImprove
+	default:
+		return nil
 	}
 }
