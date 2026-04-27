@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -119,20 +120,57 @@ func (c *LLMClient) GenerateJSON(ctx context.Context, model, systemPrompt, userP
 		return err
 	}
 
-	cleaned := text
-	if idx := bytes.IndexByte([]byte(cleaned), '['); idx > 0 {
-		cleaned = cleaned[idx:]
-	} else if idx := bytes.IndexByte([]byte(cleaned), '{'); idx > 0 {
-		cleaned = cleaned[idx:]
-	}
-	if last := bytes.LastIndexByte([]byte(cleaned), ']'); last >= 0 {
-		cleaned = cleaned[:last+1]
-	} else if last := bytes.LastIndexByte([]byte(cleaned), '}'); last >= 0 {
-		cleaned = cleaned[:last+1]
-	}
+	cleaned := extractJSON(text)
 
 	if err := json.Unmarshal([]byte(cleaned), target); err != nil {
-		return fmt.Errorf("parse JSON from LLM: %w\nraw: %s", err, text[:min(len(text), 200)])
+		return fmt.Errorf("parse JSON from LLM: %w\nraw: %s", err, text[:min(len(text), 300)])
 	}
 	return nil
+}
+
+func extractJSON(text string) string {
+	// Strip markdown code fences (```json ... ```)
+	if idx := strings.Index(text, "```json"); idx >= 0 {
+		text = text[idx+7:]
+		if end := strings.Index(text, "```"); end >= 0 {
+			return strings.TrimSpace(text[:end])
+		}
+	}
+	if idx := strings.Index(text, "```"); idx >= 0 {
+		inner := text[idx+3:]
+		if end := strings.Index(inner, "```"); end >= 0 {
+			candidate := strings.TrimSpace(inner[:end])
+			if len(candidate) > 0 && (candidate[0] == '{' || candidate[0] == '[') {
+				return candidate
+			}
+		}
+	}
+
+	// Find first [ or { and match to last ] or }
+	arrStart := strings.IndexByte(text, '[')
+	objStart := strings.IndexByte(text, '{')
+
+	start := -1
+	isArray := false
+	if arrStart >= 0 && (objStart < 0 || arrStart < objStart) {
+		start = arrStart
+		isArray = true
+	} else if objStart >= 0 {
+		start = objStart
+	}
+
+	if start < 0 {
+		return text
+	}
+
+	text = text[start:]
+	var closing byte = '}'
+	if isArray {
+		closing = ']'
+	}
+
+	if last := strings.LastIndexByte(text, closing); last >= 0 {
+		return text[:last+1]
+	}
+	return text
 }
