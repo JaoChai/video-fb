@@ -10,15 +10,17 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/progress"
+	"github.com/jaochai/video-fb/internal/publisher"
 )
 
 type OrchestratorHandler struct {
 	orch    *orchestrator.Orchestrator
 	tracker *progress.Tracker
+	pub     *publisher.Publisher
 }
 
-func NewOrchestratorHandler(orch *orchestrator.Orchestrator, tracker *progress.Tracker) *OrchestratorHandler {
-	return &OrchestratorHandler{orch: orch, tracker: tracker}
+func NewOrchestratorHandler(orch *orchestrator.Orchestrator, tracker *progress.Tracker, pub *publisher.Publisher) *OrchestratorHandler {
+	return &OrchestratorHandler{orch: orch, tracker: tracker, pub: pub}
 }
 
 func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Request) {
@@ -61,4 +63,13 @@ func (h *OrchestratorHandler) StopProduction(w http.ResponseWriter, r *http.Requ
 	h.tracker.Cancel()
 	h.tracker.AddErrorLog("Production stopped by user")
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "Production stop requested"})
+}
+
+func (h *OrchestratorHandler) TriggerPublish(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		if err := h.pub.PublishReady(context.Background()); err != nil {
+			log.Printf("Manual publish failed: %v", err)
+		}
+	}()
+	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Publishing ready clips"})
 }
