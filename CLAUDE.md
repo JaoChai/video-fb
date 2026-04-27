@@ -3,7 +3,7 @@
 Automated video content pipeline for Ads Vance — Go backend + React dashboard.
 
 ## Stack
-- **Backend:** Go 1.25, chi router, pgx/v5 (Neon PostgreSQL)
+- **Backend:** Go 1.25, chi router, pgx/v5 (Neon PostgreSQL), robfig/cron (scheduler)
 - **Frontend:** React 19, Vite 8, TanStack Query, React Router
 - **External:** Claude API (scripts), Kie AI (video + voice via ElevenLabs), OpenRouter (embeddings), Jina AI (web scraping), Zernio (publishing)
 
@@ -41,17 +41,18 @@ internal/
   handler/                  # HTTP handlers + API key middleware
   repository/               # DB queries (clips, scenes, themes, agents, etc.)
   agent/                    # Claude API agents (question, script, image)
+  analyzer/                 # Analytics-driven agent self-improvement (weekly)
   rag/                      # RAG engine for knowledge retrieval
   crawler/                  # Knowledge source crawler
   orchestrator/             # Pipeline: question → script → image → produce
   producer/                 # Video production (Kie AI + FFmpeg assembly)
   publisher/                # Zernio publishing + analytics
-  scheduler/                # Background jobs (daily publish, weekly produce/crawl/analytics)
+  scheduler/                # Cron-based scheduler (robfig/cron, reads config from DB, Asia/Bangkok timezone)
 frontend/src/
   App.tsx                   # Main layout with sidebar navigation (QueryClient: staleTime 30s)
   pages/                    # Content, Schedules, Agents, Knowledge, Analytics, Settings
   api.ts                    # API client for backend endpoints
-migrations/                 # SQL migration files (001_initial_schema.sql)
+migrations/                 # SQL migration files (001–006)
 .github/workflows/          # GitHub Actions — auto-deploy to Railway on push to master
 ```
 
@@ -85,6 +86,7 @@ Note: OpenRouter API key is managed ONLY via the Settings page (database `settin
 ## Pipeline Flow
 
 QuestionAgent → ScriptAgent → ImageAgent → Producer (Kie + FFmpeg) → Publisher (Zernio)
+Weekly: Analyzer fetches YouTube analytics → Claude API analyzes → auto-tunes agent prompts
 
 ## Deployment
 - **Auto-deploy:** Push to `master` → GitHub Actions runs `railway up` for both `adsvance-v2` and `adsvance-frontend`
@@ -95,5 +97,7 @@ QuestionAgent → ScriptAgent → ImageAgent → Producer (Kie + FFmpeg) → Pub
 - Server and CLI modes are mutually exclusive — flags like `-produce` exit after completion
 - Frontend has no lint script — only `tsc && vite build` for type checking
 - CORS allows all origins (`*`) without credentials — tighten `AllowedOrigins` for production
-- Scheduler supports context-based shutdown but main.go has no signal handling — goroutines run until process kill
+- Scheduler reads cron config from `schedules` table — changing cron/enabled via API requires server restart to take effect
+- ImageAgent must NOT generate logo/mascot/watermark — enforced in code + DB agent config
+- Analyzer requires at least 3 published clips with analytics before running — otherwise skips silently
 - Knowledge list endpoint returns summaries only (no content field) — use GET `/{id}` for full content
