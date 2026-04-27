@@ -62,7 +62,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
   - scene 2-4: type "step" — อธิบายขั้นตอนแก้ปัญหา
   - scene 5: type "summary" — สรุป + CTA ติดต่อทีมงาน @adsvance
 - แต่ละ scene มี: scene_number, scene_type, text_content (เท่ากับ voice_text), voice_text (ใช้ ... สำหรับจังหวะพัก), duration_seconds, text_overlays (array ว่าง [])
-- "total_duration_seconds": รวม 30-90 วินาที
+- "total_duration_seconds": รวม 30-55 วินาที (ห้ามเกิน 55 วินาที เพื่อให้เป็น YouTube Shorts ได้)
 - "youtube_title": ดึงดูด สั้น ลงท้ายด้วย {Ads Vance} ไม่เกิน 70 ตัวอักษร
 - "youtube_description": ต้องมีแค่ 2 บรรทัดนี้เท่านั้น ห้ามเพิ่มเนื้อหาอื่น:
   "ติดต่อทีมงาน line id : @adsvance\n\nเข้ากลุ่มเทเรแกรมเพื่อรับข่าวสาร : https://t.me/adsvancech"
