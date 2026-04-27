@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 
 interface Schedule {
@@ -22,9 +22,23 @@ const CRON_LABELS: Record<string, string> = {
 };
 
 export default function SchedulesPage() {
+  const qc = useQueryClient();
   const { data: schedules, isLoading } = useQuery({
     queryKey: ['schedules'],
     queryFn: () => apiFetch<Schedule[]>('/api/v1/schedules'),
+  });
+
+  const toggle = useMutation({
+    mutationFn: ({ id, schedule }: { id: string; schedule: Schedule }) =>
+      apiFetch(`/api/v1/schedules/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          cron_expression: schedule.cron_expression,
+          action: schedule.action,
+          enabled: !schedule.enabled,
+        }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
   });
 
   return (
@@ -64,18 +78,39 @@ export default function SchedulesPage() {
                   )}
                 </div>
               </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 500,
-                  padding: '3px 10px',
-                  borderRadius: 4,
-                  background: s.enabled ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-                  color: s.enabled ? '#22c55e' : '#ef4444',
-                }}
-              >
-                {s.enabled ? 'Active' : 'Paused'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 12, color: '#888', minWidth: 60 }}>
+                  {s.enabled ? 'Active' : 'Paused'}
+                </span>
+                <button
+                  onClick={() => toggle.mutate({ id: s.id, schedule: s })}
+                  disabled={toggle.isPending}
+                  style={{
+                    width: 44,
+                    height: 24,
+                    borderRadius: 12,
+                    border: 'none',
+                    cursor: toggle.isPending ? 'default' : 'pointer',
+                    background: s.enabled ? '#22c55e' : '#333',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    opacity: toggle.isPending ? 0.6 : 1,
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 3,
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.2s',
+                      left: s.enabled ? 23 : 3,
+                    }}
+                  />
+                </button>
+              </div>
             </div>
           ))}
         </div>
