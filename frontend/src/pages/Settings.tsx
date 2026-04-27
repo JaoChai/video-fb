@@ -234,8 +234,8 @@ export default function SettingsPage() {
           <div style={{ color: '#555', fontSize: 13 }}>Loading channels...</div>
         ) : zernioData?.accounts?.length ? (
           <div style={{ display: 'grid', gap: 10 }}>
-            {zernioData.accounts.map(account => {
-              const isSelected = saved?.zernio_youtube_account_id === account._id;
+            {zernioData.accounts.filter(a => a._id === saved?.zernio_youtube_account_id).map(account => {
+              const isSelected = true;
               const extra = account.metadata?.profileData?.extraData;
               return (
                 <div key={account._id} style={{
