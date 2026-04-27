@@ -80,6 +80,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Get("/", settings.Get)
 		r.Put("/", settings.Update)
 		r.Post("/test-key", settings.TestKey)
+		r.Get("/test-zernio", settings.TestZernio)
 	})
 
 	prod := handler.NewProductionHandler(tracker)

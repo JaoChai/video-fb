@@ -70,6 +70,33 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "settings updated"})
 }
 
+func (h *SettingsHandler) TestZernio(w http.ResponseWriter, r *http.Request) {
+	key, err := h.repo.Get(r.Context(), "zernio_api_key")
+	if err != nil || key == "" {
+		writeJSON(w, http.StatusOK, models.APIResponse{Error: "zernio_api_key not set"})
+		return
+	}
+
+	httpReq, err := http.NewRequestWithContext(r.Context(), "GET", "https://zernio.com/api/v1/accounts", nil)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: "failed to create request"})
+		return
+	}
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key))
+
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, models.APIResponse{Error: "failed to connect to Zernio"})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result any
+	json.Unmarshal(body, &result)
+	writeJSON(w, resp.StatusCode, models.APIResponse{Data: result})
+}
+
 func (h *SettingsHandler) TestKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Key string `json:"key"`
