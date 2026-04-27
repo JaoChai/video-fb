@@ -91,4 +91,5 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 
 func SetOrchestrator(r *chi.Mux, h *handler.OrchestratorHandler) {
 	r.Post("/api/v1/orchestrator/produce", h.TriggerWeekly)
+	r.Post("/api/v1/orchestrator/stop", h.StopProduction)
 }

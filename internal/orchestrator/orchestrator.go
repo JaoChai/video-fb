@@ -96,10 +96,17 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 	o.tracker.StartProduction(len(questions))
 	for i, q := range questions {
+		if ctx.Err() != nil {
+			log.Printf("Production cancelled, stopping at clip %d/%d", i+1, len(questions))
+			o.tracker.AddErrorLog(fmt.Sprintf("Stopped at clip %d/%d", i+1, len(questions)))
+			break
+		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
 		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg); err != nil {
-			log.Printf("Failed to produce clip: %v", err)
+			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
+			log.Print(errMsg)
+			o.tracker.AddErrorLog(errMsg)
 			continue
 		}
 		o.tracker.CompleteStep("complete")

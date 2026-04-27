@@ -1,6 +1,7 @@
 package progress
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -23,18 +24,20 @@ type Step struct {
 }
 
 type ProductionStatus struct {
-	Active      bool   `json:"active"`
-	CurrentClip int    `json:"current_clip"`
-	TotalClips  int    `json:"total_clips"`
-	ClipTitle   string `json:"clip_title"`
-	Steps       []Step `json:"steps"`
+	Active      bool     `json:"active"`
+	CurrentClip int      `json:"current_clip"`
+	TotalClips  int      `json:"total_clips"`
+	ClipTitle   string   `json:"clip_title"`
+	Steps       []Step   `json:"steps"`
+	ErrorLogs   []string `json:"error_logs,omitempty"`
 }
 
 var stepNames = []string{"question", "script", "image_prompts", "voice", "images", "assembly", "upload", "complete"}
 
 type Tracker struct {
-	mu     sync.RWMutex
-	status ProductionStatus
+	mu       sync.RWMutex
+	status   ProductionStatus
+	cancelFn context.CancelFunc
 }
 
 func NewTracker() *Tracker {
@@ -48,6 +51,22 @@ func (t *Tracker) StartProduction(totalClips int) {
 		Active:      true,
 		CurrentClip: 0,
 		TotalClips:  totalClips,
+		ErrorLogs:   nil,
+	}
+}
+
+func (t *Tracker) SetCancelFunc(cancel context.CancelFunc) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.cancelFn = cancel
+}
+
+func (t *Tracker) Cancel() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.cancelFn != nil {
+		t.cancelFn()
+		t.cancelFn = nil
 	}
 }
 
@@ -103,10 +122,19 @@ func (t *Tracker) FailStep(name string, err error) {
 	}
 }
 
+func (t *Tracker) AddErrorLog(msg string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.status.ErrorLogs) < 50 {
+		t.status.ErrorLogs = append(t.status.ErrorLogs, msg)
+	}
+}
+
 func (t *Tracker) FinishProduction() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.status.Active = false
+	t.cancelFn = nil
 }
 
 func (t *Tracker) GetStatus() ProductionStatus {
@@ -119,6 +147,10 @@ func (t *Tracker) GetStatus() ProductionStatus {
 		if cp.Steps[i].Status == StatusRunning && !t.status.Steps[i].startedAt.IsZero() {
 			cp.Steps[i].ElapsedSeconds = time.Since(t.status.Steps[i].startedAt).Seconds()
 		}
+	}
+	if len(t.status.ErrorLogs) > 0 {
+		cp.ErrorLogs = make([]string, len(t.status.ErrorLogs))
+		copy(cp.ErrorLogs, t.status.ErrorLogs)
 	}
 	return cp
 }

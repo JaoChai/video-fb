@@ -9,17 +9,24 @@ import (
 
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/orchestrator"
+	"github.com/jaochai/video-fb/internal/progress"
 )
 
 type OrchestratorHandler struct {
-	orch *orchestrator.Orchestrator
+	orch    *orchestrator.Orchestrator
+	tracker *progress.Tracker
 }
 
-func NewOrchestratorHandler(orch *orchestrator.Orchestrator) *OrchestratorHandler {
-	return &OrchestratorHandler{orch: orch}
+func NewOrchestratorHandler(orch *orchestrator.Orchestrator, tracker *progress.Tracker) *OrchestratorHandler {
+	return &OrchestratorHandler{orch: orch, tracker: tracker}
 }
 
 func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Request) {
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+
 	count := 7
 	if countStr := r.URL.Query().Get("count"); countStr != "" {
 		if n, err := strconv.Atoi(countStr); err == nil && n > 0 {
@@ -39,9 +46,19 @@ func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Reque
 	})
 
 	go func() {
-		ctx := context.Background()
+		ctx, cancel := context.WithCancel(context.Background())
+		h.tracker.SetCancelFunc(cancel)
+		defer cancel()
+
 		if err := h.orch.ProduceWeekly(ctx, count); err != nil {
 			log.Printf("Weekly production failed: %v", err)
+			h.tracker.AddErrorLog(err.Error())
 		}
 	}()
+}
+
+func (h *OrchestratorHandler) StopProduction(w http.ResponseWriter, r *http.Request) {
+	h.tracker.Cancel()
+	h.tracker.AddErrorLog("Production stopped by user")
+	writeJSON(w, http.StatusOK, models.APIResponse{Message: "Production stop requested"})
 }

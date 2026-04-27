@@ -14,6 +14,7 @@ interface ProductionStatus {
   total_clips: number;
   clip_title: string;
   steps: Step[];
+  error_logs?: string[];
 }
 
 const STEP_LABELS: Record<string, string> = {
@@ -152,6 +153,18 @@ export default function ProductionProgress() {
           fontSize: 11, color: '#ef4444', lineHeight: 1.4,
         }}>
           {failedStep.error}
+        </div>
+      )}
+
+      {status.error_logs && status.error_logs.length > 0 && (
+        <div style={{
+          marginTop: 10, padding: '8px 10px', borderRadius: 6,
+          background: '#1a0000', border: '1px solid #331111',
+          fontSize: 11, color: '#ef4444', lineHeight: 1.4,
+        }}>
+          {status.error_logs.map((log, idx) => (
+            <div key={idx}>{log}</div>
+          ))}
         </div>
       )}
 
