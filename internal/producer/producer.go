@@ -86,7 +86,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	log.Printf("Uploading files to Kie AI for %s", clipID)
 	uploadDir := "adsvance/" + clipID
 
-	var video169URL, video916URL, thumbnailURL string
+	var video169URL, video916URL, thumbnailURL, voiceURL string
 	g, gCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -113,6 +113,14 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		thumbnailURL = url
 		return nil
 	})
+	g.Go(func() error {
+		url, err := p.kie.UploadFile(gCtx, voicePath, uploadDir)
+		if err != nil {
+			return fmt.Errorf("upload voice: %w", err)
+		}
+		voiceURL = url
+		return nil
+	})
 
 	if err := g.Wait(); err != nil {
 		p.tracker.FailStep("upload", err)
@@ -120,8 +128,8 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 
 	p.tracker.CompleteStep("upload")
-	log.Printf("Files uploaded for %s — 16:9: %s, 9:16: %s, thumb: %s",
-		clipID, video169URL, video916URL, thumbnailURL)
+	log.Printf("Files uploaded for %s — 16:9: %s, 9:16: %s, thumb: %s, voice: %s",
+		clipID, video169URL, video916URL, thumbnailURL, voiceURL)
 
 	return &ProduceResult{
 		Video169URL:  video169URL,
