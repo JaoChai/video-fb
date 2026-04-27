@@ -58,8 +58,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		// Post 16:9 (YouTube regular)
 		result169, err := p.zernio.Post(ctx, PostRequest{
-			Title:      title,
-			Content:    desc,
+			Content:    title + "\n\n" + desc,
 			Platforms:  platforms,
 			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 			IsDraft:    true,
@@ -72,9 +71,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		// Post 9:16 (YouTube Shorts)
 		if video916 != nil && *video916 != "" {
+			shortsTitle := title
+			if len(shortsTitle) > 60 {
+				shortsTitle = shortsTitle[:60]
+			}
 			result916, err := p.zernio.Post(ctx, PostRequest{
-				Title:      title + " #Shorts",
-				Content:    desc,
+				Content:    shortsTitle + " #Shorts\n\n" + desc,
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				IsDraft:    true,
