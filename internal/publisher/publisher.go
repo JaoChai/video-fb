@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
@@ -34,6 +33,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	}
 	defer rows.Close()
 
+	var ytAccountID string
+	p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&ytAccountID)
+
 	for rows.Next() {
 		var clipID, title, desc string
 		var video169, video916, thumb *string
@@ -45,14 +47,20 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			continue
 		}
 
-		bkkMidnight := time.Now().Add(24 * time.Hour).Truncate(24 * time.Hour).Add(-7 * time.Hour)
-		scheduledFor := bkkMidnight.Format(time.RFC3339)
+		var platforms []PlatformTarget
+		if ytAccountID != "" {
+			platforms = append(platforms, PlatformTarget{Platform: "youtube", AccountID: ytAccountID})
+		}
+		if len(platforms) == 0 {
+			log.Printf("No Zernio accounts configured, skipping clip %s", clipID)
+			continue
+		}
 
 		result, err := p.zernio.Post(ctx, PostRequest{
-			Text:         title + "\n\n" + desc,
-			Platforms:    []string{"youtube", "tiktok", "instagram", "facebook"},
-			MediaURLs:    []string{*video169},
-			ScheduledFor: scheduledFor,
+			Content:    title + "\n\n" + desc,
+			Platforms:  platforms,
+			MediaURLs:  []string{*video169},
+			PublishNow: true,
 		})
 		if err != nil {
 			log.Printf("Failed to publish clip %s: %v", clipID, err)

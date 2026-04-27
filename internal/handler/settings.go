@@ -52,10 +52,11 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowed := map[string]bool{
-		"openrouter_api_key": true,
-		"kie_api_key":        true,
-		"elevenlabs_voice":   true,
-		"zernio_api_key":     true,
+		"openrouter_api_key":        true,
+		"kie_api_key":               true,
+		"elevenlabs_voice":          true,
+		"zernio_api_key":            true,
+		"zernio_youtube_account_id": true,
 	}
 
 	for k, v := range req {

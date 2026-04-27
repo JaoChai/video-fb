@@ -24,11 +24,16 @@ func NewZernioClient(apiKey string) *ZernioClient {
 	}
 }
 
+type PlatformTarget struct {
+	Platform  string `json:"platform"`
+	AccountID string `json:"accountId"`
+}
+
 type PostRequest struct {
-	Text         string   `json:"text"`
-	Platforms    []string `json:"platforms"`
-	MediaURLs    []string `json:"mediaUrls"`
-	ScheduledFor string   `json:"scheduledFor,omitempty"`
+	Content    string           `json:"content"`
+	Platforms  []PlatformTarget `json:"platforms"`
+	MediaURLs  []string         `json:"mediaUrls"`
+	PublishNow bool             `json:"publishNow,omitempty"`
 }
 
 type PostResponse struct {

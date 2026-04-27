@@ -2,6 +2,26 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 
+interface ZernioAccount {
+  _id: string;
+  platform: string;
+  displayName: string;
+  username: string;
+  profilePicture: string;
+  profileUrl: string;
+  followersCount: number;
+  isActive: boolean;
+  platformStatus: string;
+  metadata?: {
+    profileData?: {
+      extraData?: {
+        totalViews?: number;
+        videoCount?: number;
+      };
+    };
+  };
+}
+
 interface TestResult {
   data?: {
     label?: string;
@@ -45,6 +65,11 @@ export default function SettingsPage() {
   const qc = useQueryClient();
   const { data: saved } = useQuery({ queryKey: ['settings'], queryFn: () => apiFetch<Record<string, string>>('/api/v1/settings') });
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => apiFetch<Agent[]>('/api/v1/agents') });
+  const { data: zernioData, isLoading: zernioLoading } = useQuery({
+    queryKey: ['zernio-accounts'],
+    queryFn: () => apiFetch<{ accounts: ZernioAccount[]; hasAnalyticsAccess: boolean }>('/api/v1/settings/test-zernio'),
+    retry: false,
+  });
 
   const [form, setForm] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
@@ -194,6 +219,66 @@ export default function SettingsPage() {
           </button>
           {save.isSuccess && <span style={{ fontSize: 12, color: '#22c55e' }}>Saved</span>}
         </div>
+      </div>
+
+      {/* Zernio Connected Channels */}
+      <div style={{ marginTop: 48, maxWidth: 640 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connected Channels</h2>
+          <span style={{ fontSize: 11, color: '#555', background: '#1a1a1a', padding: '3px 10px', borderRadius: 4 }}>
+            via Zernio
+          </span>
+        </div>
+
+        {zernioLoading ? (
+          <div style={{ color: '#555', fontSize: 13 }}>Loading channels...</div>
+        ) : zernioData?.accounts?.length ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {zernioData.accounts.map(account => {
+              const isSelected = saved?.zernio_youtube_account_id === account._id;
+              const extra = account.metadata?.profileData?.extraData;
+              return (
+                <div key={account._id} style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  background: isSelected ? 'rgba(34,197,94,0.06)' : '#111',
+                  borderRadius: 8, padding: '14px 18px',
+                  border: isSelected ? '1px solid rgba(34,197,94,0.3)' : '1px solid #1a1a1a',
+                }}>
+                  <img src={account.profilePicture} alt="" style={{ width: 40, height: 40, borderRadius: '50%' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{account.displayName}</span>
+                      {isSelected && (
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+                      <span style={{ fontSize: 11, color: '#555' }}>@{account.username}</span>
+                      <span style={{ fontSize: 11, color: '#555', textTransform: 'capitalize' }}>{account.platform}</span>
+                      {account.followersCount > 0 && (
+                        <span style={{ fontSize: 11, color: '#555' }}>{account.followersCount.toLocaleString()} subs</span>
+                      )}
+                      {extra?.videoCount != null && (
+                        <span style={{ fontSize: 11, color: '#555' }}>{extra.videoCount} videos</span>
+                      )}
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 10, flexShrink: 0, padding: '3px 8px', borderRadius: 4,
+                    background: account.isActive ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+                    color: account.isActive ? '#22c55e' : '#ef4444',
+                  }}>
+                    {account.isActive ? 'Connected' : 'Disconnected'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ color: '#555', fontSize: 13 }}>No channels connected. Set Zernio API Key above and connect channels in Zernio dashboard.</div>
+        )}
       </div>
 
       {/* Agent Models Section */}
