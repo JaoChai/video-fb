@@ -47,7 +47,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 		ragContext.WriteString("\n---\n")
 	}
 
-	userPrompt := fmt.Sprintf(`สร้าง script วิดีโอ Q&A สำหรับคำถามนี้:
+	userPrompt := fmt.Sprintf(`สร้าง voice script สำหรับวิดีโอ Q&A (ภาพคำถามแสดงตลอดทั้งคลิป เสียงพากย์อธิบายคำตอบ)
 
 คำถาม: "%s"
 ถามโดย: %s
@@ -57,13 +57,13 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 %s
 
 ตอบเป็น JSON object มี:
-- "scenes": array ของ scene objects (5 scenes):
-  - scene 1: type "question" — แสดงคำถาม (8 วินาที)
-  - scene 2-4: type "step" — ขั้นตอนแก้ปัญหา (10-15 วินาทีต่อ scene)
-  - scene 5: type "summary" — สรุป + CTA ติดต่อทีมงาน @adsvance (8 วินาที)
-- แต่ละ scene มี: scene_number, scene_type, text_content, voice_text (ใช้ ... สำหรับพัก — สำหรับเน้น), duration_seconds, text_overlays (array ว่าง [])
+- "scenes": array ของ scene objects:
+  - scene 1: type "question" — เปิดด้วยคำถาม
+  - scene 2-4: type "step" — อธิบายขั้นตอนแก้ปัญหา
+  - scene 5: type "summary" — สรุป + CTA ติดต่อทีมงาน @adsvance
+- แต่ละ scene มี: scene_number, scene_type, text_content (เท่ากับ voice_text), voice_text (ใช้ ... สำหรับจังหวะพัก), duration_seconds, text_overlays (array ว่าง [])
 - "total_duration_seconds": รวม 30-90 วินาที
-- "youtube_title": ชื่อ YouTube ดึงดูด ลงท้ายด้วย {Ads Vance} ไม่เกิน 70 ตัวอักษร
+- "youtube_title": ดึงดูด สั้น ลงท้ายด้วย {Ads Vance} ไม่เกิน 70 ตัวอักษร
 - "youtube_description": ต้องมีแค่ 2 บรรทัดนี้เท่านั้น ห้ามเพิ่มเนื้อหาอื่น:
   "ติดต่อทีมงาน line id : @adsvance\n\nเข้ากลุ่มเทเรแกรมเพื่อรับข่าวสาร : https://t.me/adsvancech"
 - "youtube_tags": array tags ไทย+อังกฤษ
