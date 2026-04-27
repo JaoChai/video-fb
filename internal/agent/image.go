@@ -27,26 +27,33 @@ func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScen
 		theme.PrimaryColor, theme.SecondaryColor, theme.AccentColor, theme.FontName,
 		safeStr(theme.ImageStyle))
 
-	var sceneDescs string
+	var questionText string
 	for _, s := range scenes {
-		sceneDescs += fmt.Sprintf("Scene %d (%s): %s\n", s.SceneNumber, s.SceneType, s.TextContent)
+		if s.SceneType == "question" {
+			questionText = s.TextContent
+			break
+		}
+	}
+	if questionText == "" && len(scenes) > 0 {
+		questionText = scenes[0].TextContent
 	}
 
-	userPrompt := fmt.Sprintf(`สร้าง image prompts สำหรับวิดีโอ Facebook Ads Q&A
+	userPrompt := fmt.Sprintf(`สร้าง image prompt 1 ภาพ สำหรับวิดีโอ Facebook Ads Q&A
 
 Brand Theme: %s
 คนถาม: %s
+คำถาม: %s
 
-Scenes:
-%s
+สร้างภาพสไตล์ chat bubble / Facebook-like UI แสดงคำถามเด่นชัด พร้อม icon คำถาม
+ภาพนี้จะใช้เป็นพื้นหลังตลอดทั้งคลิปในขณะที่เสียงพากย์อธิบายคำตอบ
 
-ตอบเป็น JSON array ของ objects ที่มี:
-- "scene_number": int
-- "image_prompt_16_9": prompt ภาษาอังกฤษ สำหรับ 16:9 landscape. ใส่ Thai text content บนภาพ. ใช้สี brand. Scene type "question" ให้เป็น chat bubble style. Scene type "step" ให้เป็น infographic. Scene type "summary" ให้เป็น CTA card.
+ตอบเป็น JSON array ที่มี object เดียว:
+- "scene_number": 1
+- "image_prompt_16_9": prompt ภาษาอังกฤษ สำหรับ 16:9 landscape. ใส่ Thai text คำถามบนภาพ.
 - "image_prompt_9_16": prompt เหมือนกันแต่สำหรับ 9:16 vertical format.
 
 DO NOT include any logo, mascot, brand name, or brand text in the image.
-ทุก prompt ต้องมี: dark gradient background (%s to darker), accent color %s, modern flat design.`, themeDesc, questionerName, sceneDescs, theme.PrimaryColor, theme.AccentColor)
+ภาพต้องมี: dark gradient background (%s to darker), accent color %s, modern flat design, chat bubble with question text.`, themeDesc, questionerName, questionText, theme.PrimaryColor, theme.AccentColor)
 
 	var prompts []SceneImagePrompts
 	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &prompts); err != nil {

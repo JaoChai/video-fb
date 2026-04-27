@@ -63,3 +63,26 @@ func (f *FFmpegAssembler) Assemble(scenes []AssemblyScene, audioPath, outputPath
 	}
 	return nil
 }
+
+func (f *FFmpegAssembler) AssembleSingleImage(imagePath, audioPath, outputPath string) error {
+	dir := filepath.Dir(outputPath)
+	os.MkdirAll(dir, 0755)
+
+	args := []string{
+		"-loop", "1", "-i", imagePath,
+		"-i", audioPath,
+		"-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
+		"-c:v", "libx264", "-preset", "medium", "-crf", "23",
+		"-c:a", "aac", "-b:a", "128k",
+		"-pix_fmt", "yuv420p",
+		"-shortest",
+		"-y", outputPath,
+	}
+
+	cmd := exec.Command(f.ffmpegPath, args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg single image failed: %w", err)
+	}
+	return nil
+}

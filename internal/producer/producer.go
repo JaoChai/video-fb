@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/progress"
@@ -36,6 +35,11 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	clipDir := filepath.Join(p.workDir, clipID)
 	os.MkdirAll(clipDir, 0755)
 
+	if len(imagePrompts) == 0 {
+		return nil, fmt.Errorf("no image prompts provided")
+	}
+	prompt := imagePrompts[0]
+
 	p.tracker.StartStep("voice")
 	log.Printf("Generating voice for %s", clipID)
 	voicePath := filepath.Join(clipDir, "voice.mp3")
@@ -46,29 +50,18 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	p.tracker.CompleteStep("voice")
 
 	p.tracker.StartStep("images")
-	var scenes169 []AssemblyScene
-	var scenes916 []AssemblyScene
+	log.Printf("Generating question image for %s", clipID)
 
-	for i, prompt := range imagePrompts {
-		log.Printf("Generating images for scene %d of %s", prompt.SceneNumber, clipID)
+	img169 := filepath.Join(clipDir, "question-16x9.png")
+	if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
+		p.tracker.FailStep("images", err)
+		return nil, fmt.Errorf("generate 16:9 image: %w", err)
+	}
 
-		img169 := filepath.Join(clipDir, fmt.Sprintf("scene-%d-16x9.png", prompt.SceneNumber))
-		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
-			return nil, fmt.Errorf("generate 16:9 image scene %d: %w", prompt.SceneNumber, err)
-		}
-
-		img916 := filepath.Join(clipDir, fmt.Sprintf("scene-%d-9x16.png", prompt.SceneNumber))
-		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
-			return nil, fmt.Errorf("generate 9:16 image scene %d: %w", prompt.SceneNumber, err)
-		}
-
-		dur := 10.0
-		if i < len(scenes) {
-			dur = scenes[i].DurationSeconds
-		}
-
-		scenes169 = append(scenes169, AssemblyScene{ImagePath: img169, DurationSeconds: dur})
-		scenes916 = append(scenes916, AssemblyScene{ImagePath: img916, DurationSeconds: dur})
+	img916 := filepath.Join(clipDir, "question-9x16.png")
+	if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
+		p.tracker.FailStep("images", err)
+		return nil, fmt.Errorf("generate 9:16 image: %w", err)
 	}
 
 	p.tracker.CompleteStep("images")
@@ -76,26 +69,17 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
 	log.Printf("Assembling 16:9 video for %s", clipID)
-	if err := p.ffmpeg.Assemble(scenes169, voicePath, video169); err != nil {
+	if err := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err != nil {
 		return nil, fmt.Errorf("assemble 16:9: %w", err)
 	}
 
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 	log.Printf("Assembling 9:16 video for %s", clipID)
-	if err := p.ffmpeg.Assemble(scenes916, voicePath, video916); err != nil {
+	if err := p.ffmpeg.AssembleSingleImage(img916, voicePath, video916); err != nil {
 		return nil, fmt.Errorf("assemble 9:16: %w", err)
 	}
 
-	thumbPath := filepath.Join(clipDir, "thumbnail.png")
-	if len(imagePrompts) > 0 {
-		thumbPrompt := strings.Replace(imagePrompts[0].ImagePrompt169,
-			"chat bubble", "YouTube thumbnail, large bold text, eye-catching", 1)
-		if err := p.kie.GenerateImage(ctx, thumbPrompt, "16:9", thumbPath); err != nil {
-			log.Printf("Thumbnail generation failed: %v (using scene 1 image)", err)
-			thumbPath = scenes169[0].ImagePath
-		}
-	}
-
+	thumbPath := img169
 	p.tracker.CompleteStep("assembly")
 
 	p.tracker.StartStep("upload")
