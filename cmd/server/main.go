@@ -13,6 +13,7 @@ import (
 	"github.com/jaochai/video-fb/internal/handler"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
@@ -79,9 +80,10 @@ func main() {
 	themesRepo := repository.NewThemesRepo(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
+	tracker := progress.NewTracker()
 
 	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
-		clipsRepo, scenesRepo, themesRepo, agentsRepo)
+		clipsRepo, scenesRepo, themesRepo, agentsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
@@ -110,7 +112,7 @@ func main() {
 	sched := scheduler.New(orch, pub, crawl)
 	sched.Start(ctx)
 
-	r := router.New(pool, cfg.APIKey, ragEngine)
+	r := router.New(pool, cfg.APIKey, ragEngine, tracker)
 	orchHandler := handler.NewOrchestratorHandler(orch)
 	router.SetOrchestrator(r, orchHandler)
 

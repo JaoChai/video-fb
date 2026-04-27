@@ -10,6 +10,7 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
@@ -25,6 +26,7 @@ type Orchestrator struct {
 	scenesRepo    *repository.ScenesRepo
 	themesRepo    *repository.ThemesRepo
 	agentsRepo    *repository.AgentsRepo
+	tracker       *progress.Tracker
 }
 
 func New(
@@ -37,11 +39,12 @@ func New(
 	scenes *repository.ScenesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
+	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
 		pool: pool, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes,
-		themesRepo: themes, agentsRepo: agents,
+		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
 }
 
@@ -57,15 +60,24 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	category := categories[weekNum%len(categories)]
 	log.Printf("Producing %d clips for category: %s", count, category)
 
+	o.tracker.StartProduction(count)
+	defer o.tracker.FinishProduction()
+
+	o.tracker.StartClip(1, "Generating questions...")
+	o.tracker.StartStep("question")
+
 	qaCfg, err := o.agentsRepo.GetByName(ctx, "question")
 	if err != nil {
+		o.tracker.FailStep("question", err)
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
 	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, buildPrompt(qaCfg), qaCfg.Temperature)
 	if err != nil {
+		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)
 	}
+	o.tracker.CompleteStep("question")
 	log.Printf("Generated %d questions", len(questions))
 
 	theme, err := o.themesRepo.GetActive(ctx)
@@ -76,12 +88,15 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	scriptCfg, _ := o.agentsRepo.GetByName(ctx, "script")
 	imageCfg, _ := o.agentsRepo.GetByName(ctx, "image")
 
+	o.tracker.StartProduction(len(questions))
 	for i, q := range questions {
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
+		o.tracker.StartClip(i+1, q.Question)
 		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg); err != nil {
 			log.Printf("Failed to produce clip: %v", err)
 			continue
 		}
+		o.tracker.CompleteStep("complete")
 	}
 
 	log.Println("Weekly production complete")
@@ -102,10 +117,13 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
+	o.tracker.StartStep("script")
 	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, buildPrompt(scriptCfg), scriptCfg.Temperature)
 	if err != nil {
+		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clip.ID, fmt.Errorf("script: %w", err))
 	}
+	o.tracker.CompleteStep("script")
 
 	for _, scene := range script.Scenes {
 		overlays := scene.TextOverlays
@@ -123,20 +141,26 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		})
 	}
 
+	o.tracker.StartStep("image_prompts")
 	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature)
 	if err != nil {
+		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clip.ID, fmt.Errorf("image prompts: %w", err))
 	}
+	o.tracker.CompleteStep("image_prompts")
 
 	var fullVoice string
 	for _, s := range script.Scenes {
 		fullVoice += s.VoiceText + " "
 	}
 
+	o.tracker.StartStep("voice")
 	result, err := o.producer.Produce(ctx, clip.ID, script.Scenes, imagePrompts, fullVoice)
 	if err != nil {
+		o.tracker.FailStep("voice", err)
 		return o.failClip(ctx, clip.ID, fmt.Errorf("produce: %w", err))
 	}
+	o.tracker.CompleteStep("voice")
 
 	readyStatus := "ready"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{

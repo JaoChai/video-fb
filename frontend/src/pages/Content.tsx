@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
+import ProductionProgress from '../components/ProductionProgress';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
@@ -33,6 +34,7 @@ export default function ContentPage() {
           {produce.isPending ? 'Producing...' : 'Produce 7 Clips'}
         </button>
       </div>
+      <ProductionProgress />
       {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : !clips?.length ? (
         <p style={{ color: '#555' }}>No clips yet. Click "Produce 7 Clips" to start.</p>
       ) : (

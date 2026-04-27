@@ -5,12 +5,13 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jaochai/video-fb/internal/handler"
+	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
+func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -80,6 +81,9 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
 		r.Put("/", settings.Update)
 		r.Post("/test-key", settings.TestKey)
 	})
+
+	prod := handler.NewProductionHandler(tracker)
+	r.Get("/api/v1/production/status", prod.GetStatus)
 
 	return r
 }
