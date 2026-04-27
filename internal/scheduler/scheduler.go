@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/analyzer"
+	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/robfig/cron/v3"
@@ -18,10 +19,11 @@ type Scheduler struct {
 	pool          *pgxpool.Pool
 	publisher     *publisher.Publisher
 	analyzer      *analyzer.Analyzer
+	orchestrator  *orchestrator.Orchestrator
 	schedulesRepo *repository.SchedulesRepo
 }
 
-func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, schedRepo *repository.SchedulesRepo) *Scheduler {
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo) *Scheduler {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
 		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
@@ -30,6 +32,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 			pool:          pool,
 			publisher:     pub,
 			analyzer:      anlz,
+			orchestrator:  orch,
 			schedulesRepo: schedRepo,
 		}
 	}
@@ -38,6 +41,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 		pool:          pool,
 		publisher:     pub,
 		analyzer:      anlz,
+		orchestrator:  orch,
 		schedulesRepo: schedRepo,
 	}
 }
@@ -86,10 +90,24 @@ func (s *Scheduler) Stop() {
 	log.Println("Scheduler stopped")
 }
 
+func (s *Scheduler) produceAndPublish(ctx context.Context) error {
+	log.Println("Scheduler: producing 1 clip...")
+	if err := s.orchestrator.ProduceWeekly(ctx, 1); err != nil {
+		return fmt.Errorf("produce: %w", err)
+	}
+	log.Println("Scheduler: publishing latest ready clip...")
+	if err := s.publisher.PublishReady(ctx); err != nil {
+		return fmt.Errorf("publish: %w", err)
+	}
+	return nil
+}
+
 func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 	switch action {
 	case "publish_daily":
 		return s.publisher.PublishReady
+	case "produce_and_publish":
+		return s.produceAndPublish
 	case "analyze_and_improve":
 		return s.analyzer.AnalyzeAndImprove
 	default:

@@ -117,11 +117,13 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 }
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig) error {
+	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
 		Title:          q.Question,
 		Question:       q.Question,
 		QuestionerName: q.QuestionerName,
 		Category:       q.Category,
+		PublishDate:    &today,
 	})
 	if err != nil {
 		return fmt.Errorf("create clip: %w", err)

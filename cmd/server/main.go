@@ -116,7 +116,7 @@ func main() {
 
 	anlz := analyzer.New(pool, llm, agentsRepo)
 	schedRepo := repository.NewSchedulesRepo(pool)
-	sched := scheduler.New(pool, pub, anlz, schedRepo)
+	sched := scheduler.New(pool, pub, anlz, orch, schedRepo)
 	if err := sched.Start(ctx); err != nil {
 		log.Printf("Warning: scheduler start failed: %v", err)
 	}

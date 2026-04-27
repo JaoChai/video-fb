@@ -23,7 +23,7 @@ func NewPublisher(zernio *ZernioClient, pool *pgxpool.Pool, clips *repository.Cl
 
 func (p *Publisher) PublishReady(ctx context.Context) error {
 	rows, err := p.pool.Query(ctx,
-		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
+		`SELECT c.id, cm.youtube_title, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
 		 JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.status = 'ready' AND c.publish_date <= CURRENT_DATE
@@ -37,9 +37,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&ytAccountID)
 
 	for rows.Next() {
-		var clipID, title, desc string
+		var clipID, title string
 		var video169, video916, thumb *string
-		if err := rows.Scan(&clipID, &title, &desc, &video169, &video916, &thumb); err != nil {
+		if err := rows.Scan(&clipID, &title, &video169, &video916, &thumb); err != nil {
 			return fmt.Errorf("scan clip: %w", err)
 		}
 
@@ -58,16 +58,16 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		// Post 16:9 (YouTube regular)
 		result169, err := p.zernio.Post(ctx, PostRequest{
-			Content:    title + "\n\n" + desc,
+			Content:    title,
 			Platforms:  platforms,
 			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
-			IsDraft:    true,
+			Visibility: VisibilityPrivate,
 		})
 		if err != nil {
 			log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
 			continue
 		}
-		log.Printf("Posted 16:9 draft for clip %s → %s", clipID, result169.Post.ID)
+		log.Printf("Posted 16:9 private for clip %s → %s", clipID, result169.Post.ID)
 
 		// Post 9:16 (YouTube Shorts)
 		if video916 != nil && *video916 != "" {
@@ -76,15 +76,15 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				shortsTitle = shortsTitle[:60]
 			}
 			result916, err := p.zernio.Post(ctx, PostRequest{
-				Content:    shortsTitle + " #Shorts\n\n" + desc,
+				Content:    shortsTitle + " #Shorts",
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
-				IsDraft:    true,
+				Visibility: VisibilityPrivate,
 			})
 			if err != nil {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
 			} else {
-				log.Printf("Posted 9:16 Shorts draft for clip %s → %s", clipID, result916.Post.ID)
+				log.Printf("Posted 9:16 Shorts private for clip %s → %s", clipID, result916.Post.ID)
 			}
 		}
 

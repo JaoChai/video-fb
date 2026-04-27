@@ -12,6 +12,8 @@ import (
 
 const zernioAPI = "https://zernio.com/api/v1"
 
+const VisibilityPrivate = "private"
+
 type ZernioClient struct {
 	apiKey string
 	client *http.Client
@@ -41,6 +43,7 @@ type PostRequest struct {
 	MediaItems []MediaItem      `json:"mediaItems,omitempty"`
 	IsDraft    bool             `json:"isDraft,omitempty"`
 	PublishNow bool             `json:"publishNow,omitempty"`
+	Visibility string           `json:"visibility,omitempty"`
 }
 
 type PostResponse struct {

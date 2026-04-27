@@ -13,10 +13,13 @@ interface Schedule {
 
 const ACTION_LABELS: Record<string, string> = {
   publish_daily: 'Post คลิปขึ้น YouTube',
+  produce_and_publish: 'ผลิตคลิป + Post YouTube (Private)',
   analyze_and_improve: 'วิเคราะห์ + ปรับปรุง Agent',
 };
 
 const CRON_LABELS: Record<string, string> = {
+  '0 12 * * *': 'ทุกวัน เที่ยงวัน (12:00 น.)',
+  '0 0 * * *': 'ทุกวัน เที่ยงคืน (00:00 น.)',
   '30 23 * * *': 'ทุกวัน 23:30 น.',
   '0 3 * * 1': 'ทุกวันจันทร์ 03:00 น.',
 };
