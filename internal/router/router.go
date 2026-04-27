@@ -19,7 +19,6 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-		AllowCredentials: true,
 		MaxAge:           300,
 	}))
 	r.Use(handler.APIKeyAuth(apiKey))

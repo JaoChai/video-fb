@@ -79,13 +79,6 @@ type KnowledgeChunk struct {
 	CrawledAt time.Time       `json:"crawled_at"`
 }
 
-type TopicHistory struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Category  string    `json:"category"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type AgentConfig struct {
 	ID           string          `json:"id"`
 	AgentName    string          `json:"agent_name"`
