@@ -60,15 +60,15 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 - "scenes": array ของ scene objects (5 scenes):
   - scene 1: type "question" — แสดงคำถาม (8 วินาที)
   - scene 2-4: type "step" — ขั้นตอนแก้ปัญหา (10-15 วินาทีต่อ scene)
-  - scene 5: type "summary" — สรุป + CTA ติดต่อซื้อบัญชี @adsvance (8 วินาที)
+  - scene 5: type "summary" — สรุป + CTA ติดต่อทีมงาน @adsvance (8 วินาที)
 - แต่ละ scene มี: scene_number, scene_type, text_content, voice_text (ใช้ ... สำหรับพัก — สำหรับเน้น), duration_seconds, text_overlays (array ว่าง [])
 - "total_duration_seconds": รวม 30-90 วินาที
-- "youtube_title": ชื่อ YouTube ดึงดูด ลงท้ายด้วย {{Ads Vance}} ไม่เกิน 70 ตัวอักษร
-- "youtube_description": คำอธิบาย รวม "ติดต่อซื้อบัญชี line id : @adsvance\nเข้ากลุ่มเทเลแกรม: https://t.me/adsvancech"
+- "youtube_title": ชื่อ YouTube ดึงดูด ลงท้ายด้วย {Ads Vance} ไม่เกิน 70 ตัวอักษร
+- "youtube_description": ต้องมีแค่ 2 บรรทัดนี้เท่านั้น ห้ามเพิ่มเนื้อหาอื่น:
+  "ติดต่อทีมงาน line id : @adsvance\n\nเข้ากลุ่มเทเรแกรมเพื่อรับข่าวสาร : https://t.me/adsvancech"
 - "youtube_tags": array tags ไทย+อังกฤษ
 
-ห้ามแนะนำการทำผิดนโยบาย Facebook
-CTA ให้แนะนำซื้อบัญชีสำรองจาก @adsvance`, question, questionerName, category, ragContext.String())
+ห้ามแนะนำการทำผิดนโยบาย Facebook`, question, questionerName, category, ragContext.String())
 
 	var script GeneratedScript
 	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &script); err != nil {
