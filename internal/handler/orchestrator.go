@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -19,11 +20,17 @@ func NewOrchestratorHandler(orch *orchestrator.Orchestrator) *OrchestratorHandle
 }
 
 func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Request) {
-	countStr := r.URL.Query().Get("count")
 	count := 7
-	if countStr != "" {
+	if countStr := r.URL.Query().Get("count"); countStr != "" {
 		if n, err := strconv.Atoi(countStr); err == nil && n > 0 {
 			count = n
+		}
+	} else if r.Body != nil {
+		var body struct {
+			Count int `json:"count"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.Count > 0 {
+			count = body.Count
 		}
 	}
 

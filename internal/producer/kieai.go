@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -58,8 +59,10 @@ type kieTaskResponse struct {
 type kieStatusResponse struct {
 	Code int `json:"code"`
 	Data struct {
-		Status string         `json:"status"`
-		Output map[string]any `json:"output"`
+		State      string `json:"state"`
+		ResultJSON string `json:"resultJson"`
+		FailCode   string `json:"failCode"`
+		FailMsg    string `json:"failMsg"`
 	} `json:"data"`
 }
 
@@ -73,14 +76,14 @@ func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outp
 		return fmt.Errorf("create image task: %w", err)
 	}
 
-	result, err := k.pollTask(ctx, taskID, 120*time.Second)
+	result, err := k.pollTask(ctx, taskID, 180*time.Second)
 	if err != nil {
 		return fmt.Errorf("poll image task: %w", err)
 	}
 
-	imageURL, ok := result["image_url"].(string)
-	if !ok {
-		return fmt.Errorf("no image_url in result")
+	imageURL := extractFirstURL(result)
+	if imageURL == "" {
+		return fmt.Errorf("no image URL in result: %v", result)
 	}
 
 	return k.downloadFile(ctx, imageURL, outputPath)
@@ -96,14 +99,14 @@ func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath s
 		return fmt.Errorf("create voice task: %w", err)
 	}
 
-	result, err := k.pollTask(ctx, taskID, 120*time.Second)
+	result, err := k.pollTask(ctx, taskID, 300*time.Second)
 	if err != nil {
 		return fmt.Errorf("poll voice task: %w", err)
 	}
 
-	audioURL, ok := result["audio_url"].(string)
-	if !ok {
-		return fmt.Errorf("no audio_url in result")
+	audioURL := extractFirstURL(result)
+	if audioURL == "" {
+		return fmt.Errorf("no audio URL in result: %v", result)
 	}
 
 	return k.downloadFile(ctx, audioURL, outputPath)
@@ -134,9 +137,17 @@ func (k *KieClient) createTask(ctx context.Context, model string, input map[stri
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read createTask response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("createTask HTTP %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 200)]))
+	}
 	var result kieTaskResponse
-	json.Unmarshal(respBody, &result)
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("decode createTask response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
+	}
 	if result.Data.TaskID == "" {
 		return "", fmt.Errorf("no taskId returned (code: %d, body: %s)", result.Code, string(respBody[:min(len(respBody), 200)]))
 	}
@@ -151,29 +162,56 @@ func (k *KieClient) pollTask(ctx context.Context, taskID string, timeout time.Du
 	}
 
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequestWithContext(ctx, "GET",
-			fmt.Sprintf("%s/jobs/getTaskDetail?taskId=%s", kieAPI, taskID), nil)
+		req, err := http.NewRequestWithContext(ctx, "GET",
+			fmt.Sprintf("%s/jobs/recordInfo?taskId=%s", kieAPI, taskID), nil)
+		if err != nil {
+			return nil, fmt.Errorf("create poll request: %w", err)
+		}
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 
 		resp, err := k.client.Do(req)
 		if err != nil {
+			log.Printf("Poll task %s HTTP error: %v", taskID, err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
 
 		var result kieStatusResponse
-		json.NewDecoder(resp.Body).Decode(&result)
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			log.Printf("Poll task %s decode error: %v", taskID, err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
 		resp.Body.Close()
 
-		switch result.Data.Status {
-		case "completed", "success":
-			return result.Data.Output, nil
-		case "failed", "error":
-			return nil, fmt.Errorf("task failed: %v", result.Data.Output)
+		switch result.Data.State {
+		case "success":
+			var output map[string]any
+			if err := json.Unmarshal([]byte(result.Data.ResultJSON), &output); err != nil {
+				return nil, fmt.Errorf("parse resultJson: %w (raw: %s)", err, result.Data.ResultJSON[:min(len(result.Data.ResultJSON), 200)])
+			}
+			return output, nil
+		case "fail":
+			return nil, fmt.Errorf("task failed: %s — %s", result.Data.FailCode, result.Data.FailMsg)
 		}
 		time.Sleep(3 * time.Second)
 	}
 	return nil, fmt.Errorf("task %s timed out after %v", taskID, timeout)
+}
+
+func extractFirstURL(result map[string]any) string {
+	if urls, ok := result["resultUrls"].([]any); ok && len(urls) > 0 {
+		if u, ok := urls[0].(string); ok {
+			return u
+		}
+	}
+	for _, key := range []string{"audio_url", "image_url", "url"} {
+		if u, ok := result[key].(string); ok && u != "" {
+			return u
+		}
+	}
+	return ""
 }
 
 func (k *KieClient) downloadFile(ctx context.Context, url, outputPath string) error {
