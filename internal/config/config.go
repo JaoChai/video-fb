@@ -31,9 +31,6 @@ func Load() *Config {
 	}
 
 	voice := os.Getenv("ELEVENLABS_VOICE")
-	if voice == "" {
-		voice = "Adam"
-	}
 
 	return &Config{
 		DatabaseURL:     os.Getenv("DATABASE_URL"),

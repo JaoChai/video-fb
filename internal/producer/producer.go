@@ -13,16 +13,27 @@ import (
 )
 
 type Producer struct {
-	kie     *KieClient
-	ffmpeg  *FFmpegAssembler
-	voice   string
-	workDir string
-	tracker *progress.Tracker
+	kie          *KieClient
+	ffmpeg       *FFmpegAssembler
+	defaultVoice string
+	workDir      string
+	tracker      *progress.Tracker
 }
 
 func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{kie: kie, ffmpeg: ffmpeg, voice: voice, workDir: workDir, tracker: tracker}
+	return &Producer{kie: kie, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+}
+
+func (p *Producer) getVoice(ctx context.Context) string {
+	var dbVoice string
+	if err := p.kie.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
+		return dbVoice
+	}
+	if p.defaultVoice != "" {
+		return p.defaultVoice
+	}
+	return "Adam"
 }
 
 type ProduceResult struct {
@@ -41,9 +52,10 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	prompt := imagePrompts[0]
 
 	p.tracker.StartStep("voice")
-	log.Printf("Generating voice for %s", clipID)
+	voice := p.getVoice(ctx)
+	log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
 	voicePath := filepath.Join(clipDir, "voice.mp3")
-	if err := p.kie.GenerateVoice(ctx, voiceScript, p.voice, voicePath); err != nil {
+	if err := p.kie.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
 		p.tracker.FailStep("voice", err)
 		return nil, fmt.Errorf("generate voice: %w", err)
 	}
