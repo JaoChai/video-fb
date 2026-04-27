@@ -24,12 +24,22 @@ func NewKnowledgeHandler(repo *repository.KnowledgeRepo, engine *rag.Engine) *Kn
 }
 
 func (h *KnowledgeHandler) ListSources(w http.ResponseWriter, r *http.Request) {
-	sources, err := h.repo.ListSources(r.Context())
+	summaries, err := h.repo.ListSourceSummaries(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, models.APIResponse{Data: sources})
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: summaries})
+}
+
+func (h *KnowledgeHandler) GetSource(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	source, err := h.repo.GetSourceByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, models.APIResponse{Error: "source not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: source})
 }
 
 func (h *KnowledgeHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
@@ -97,21 +107,13 @@ func (h *KnowledgeHandler) DeleteSource(w http.ResponseWriter, r *http.Request) 
 func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	sources, err := h.repo.ListSources(r.Context())
+	source, err := h.repo.GetSourceByID(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		writeJSON(w, http.StatusNotFound, models.APIResponse{Error: "source not found"})
 		return
 	}
 
-	var content string
-	for _, s := range sources {
-		if s.ID == id {
-			content = s.Content
-			break
-		}
-	}
-
-	n, err := h.rebuildChunks(id, content)
+	n, err := h.rebuildChunks(id, source.Content)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return

@@ -2,13 +2,17 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 
-interface Source {
+interface SourceSummary {
   id: string;
   name: string;
   category: string;
-  content: string;
+  content_preview: string;
   enabled: boolean;
   chunk_count: number;
+}
+
+interface Source extends SourceSummary {
+  content: string;
 }
 
 const CATEGORIES = ['pain_points', 'terminology', 'audience', 'content_strategy', 'guidelines', 'general'];
@@ -39,7 +43,7 @@ export default function KnowledgePage() {
   const qc = useQueryClient();
   const { data: sources, isLoading } = useQuery({
     queryKey: ['knowledge'],
-    queryFn: () => apiFetch<Source[]>('/api/v1/knowledge/sources'),
+    queryFn: () => apiFetch<SourceSummary[]>('/api/v1/knowledge/sources'),
   });
 
   const [edits, setEdits] = useState<Record<string, Partial<Source>>>({});
@@ -48,13 +52,30 @@ export default function KnowledgePage() {
   const [showNew, setShowNew] = useState(false);
   const [newDoc, setNewDoc] = useState({ name: '', category: 'general', content: '' });
 
+  const [fullSources, setFullSources] = useState<Record<string, Source>>({});
+
+  const loadFullSource = async (id: string) => {
+    if (fullSources[id]) return;
+    try {
+      const source = await apiFetch<Source>(`/api/v1/knowledge/sources/${id}`);
+      setFullSources(prev => ({ ...prev, [id]: source }));
+      setEdits(prev => ({ ...prev, [id]: { name: source.name, category: source.category, content: source.content } }));
+    } catch (e) {
+      console.error('Failed to load source', e);
+    }
+  };
+
   useEffect(() => {
     if (sources) {
-      const initial: Record<string, Partial<Source>> = {};
-      sources.forEach(s => {
-        initial[s.id] = { name: s.name, category: s.category, content: s.content };
+      setEdits(prev => {
+        const next = { ...prev };
+        sources.forEach(s => {
+          if (!next[s.id]) {
+            next[s.id] = { name: s.name, category: s.category };
+          }
+        });
+        return next;
       });
-      setEdits(initial);
     }
   }, [sources]);
 
@@ -127,7 +148,11 @@ export default function KnowledgePage() {
   };
 
   const toggleExpand = (id: string) => {
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+    const willExpand = !expanded[id];
+    setExpanded(prev => ({ ...prev, [id]: willExpand }));
+    if (willExpand) {
+      loadFullSource(id);
+    }
   };
 
   const grouped = sources?.reduce((acc, s) => {
@@ -135,7 +160,7 @@ export default function KnowledgePage() {
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(s);
     return acc;
-  }, {} as Record<string, Source[]>);
+  }, {} as Record<string, SourceSummary[]>);
 
   return (
     <div>
@@ -275,7 +300,7 @@ export default function KnowledgePage() {
                           padding: '0 18px 12px', fontSize: 12, color: '#555',
                           overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
                         }}>
-                          {source.content.slice(0, 120)}...
+                          {source.content_preview}...
                         </div>
                       )}
 
@@ -300,14 +325,18 @@ export default function KnowledgePage() {
                               ))}
                             </select>
                           </div>
-                          <textarea
-                            rows={12}
-                            value={e.content ?? source.content}
-                            onChange={ev => handleEdit(source.id, 'content', ev.target.value)}
-                            style={textareaStyle}
-                            onFocus={ev => (ev.target.style.borderColor = '#444')}
-                            onBlur={ev => (ev.target.style.borderColor = '#222')}
-                          />
+                          {fullSources[source.id] ? (
+                            <textarea
+                              rows={12}
+                              value={e.content ?? fullSources[source.id].content}
+                              onChange={ev => handleEdit(source.id, 'content', ev.target.value)}
+                              style={textareaStyle}
+                              onFocus={ev => (ev.target.style.borderColor = '#444')}
+                              onBlur={ev => (ev.target.style.borderColor = '#222')}
+                            />
+                          ) : (
+                            <p style={{ color: '#555', fontSize: 13, padding: '10px 0' }}>Loading content...</p>
+                          )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <button onClick={() => handleSave(source.id)}
                               disabled={updateSource.isPending || !isDirty}

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -25,14 +27,14 @@ func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	ctx := r.Context()
-	go func() {
-		if err := h.orch.ProduceWeekly(ctx, count); err != nil {
-			writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
-		}
-	}()
-
 	writeJSON(w, http.StatusAccepted, models.APIResponse{
 		Message: "Weekly production started in background",
 	})
+
+	go func() {
+		ctx := context.Background()
+		if err := h.orch.ProduceWeekly(ctx, count); err != nil {
+			log.Printf("Weekly production failed: %v", err)
+		}
+	}()
 }

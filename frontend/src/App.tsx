@@ -7,7 +7,14 @@ import SchedulesPage from './pages/Schedules';
 import AnalyticsPage from './pages/Analytics';
 import SettingsPage from './pages/Settings';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const NAV = [
   { to: '/', label: 'Content' },

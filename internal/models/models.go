@@ -70,6 +70,15 @@ type KnowledgeSource struct {
 	ChunkCount int    `json:"chunk_count"`
 }
 
+type KnowledgeSourceSummary struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Category       string `json:"category"`
+	ContentPreview string `json:"content_preview"`
+	Enabled        bool   `json:"enabled"`
+	ChunkCount     int    `json:"chunk_count"`
+}
+
 type KnowledgeChunk struct {
 	ID        string          `json:"id"`
 	SourceID  string          `json:"source_id"`

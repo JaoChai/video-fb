@@ -45,6 +45,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine) *chi.Mux {
 	r.Route("/api/v1/knowledge/sources", func(r chi.Router) {
 		r.Get("/", knowledge.ListSources)
 		r.Post("/", knowledge.CreateSource)
+		r.Get("/{id}", knowledge.GetSource)
 		r.Put("/{id}", knowledge.UpdateSource)
 		r.Patch("/{id}", knowledge.ToggleSource)
 		r.Delete("/{id}", knowledge.DeleteSource)

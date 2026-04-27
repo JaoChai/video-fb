@@ -16,25 +16,42 @@ func NewKnowledgeRepo(pool *pgxpool.Pool) *KnowledgeRepo {
 	return &KnowledgeRepo{pool: pool}
 }
 
-func (r *KnowledgeRepo) ListSources(ctx context.Context) ([]models.KnowledgeSource, error) {
+func (r *KnowledgeRepo) ListSourceSummaries(ctx context.Context) ([]models.KnowledgeSourceSummary, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT ks.id, ks.name, ks.category, ks.content, ks.enabled,
-		        COALESCE((SELECT COUNT(*) FROM knowledge_chunks kc WHERE kc.source_id = ks.id), 0) AS chunk_count
-		 FROM knowledge_sources ks ORDER BY ks.category, ks.name`)
+		`SELECT ks.id, ks.name, ks.category, LEFT(ks.content, 150), ks.enabled,
+		        COALESCE(COUNT(kc.id), 0) AS chunk_count
+		 FROM knowledge_sources ks
+		 LEFT JOIN knowledge_chunks kc ON kc.source_id = ks.id
+		 GROUP BY ks.id
+		 ORDER BY ks.category, ks.name`)
 	if err != nil {
-		return nil, fmt.Errorf("query sources: %w", err)
+		return nil, fmt.Errorf("query source summaries: %w", err)
 	}
 	defer rows.Close()
 
-	var sources []models.KnowledgeSource
+	var summaries []models.KnowledgeSourceSummary
 	for rows.Next() {
-		var s models.KnowledgeSource
-		if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.Content, &s.Enabled, &s.ChunkCount); err != nil {
-			return nil, fmt.Errorf("scan source: %w", err)
+		var s models.KnowledgeSourceSummary
+		if err := rows.Scan(&s.ID, &s.Name, &s.Category, &s.ContentPreview, &s.Enabled, &s.ChunkCount); err != nil {
+			return nil, fmt.Errorf("scan source summary: %w", err)
 		}
-		sources = append(sources, s)
+		summaries = append(summaries, s)
 	}
-	return sources, nil
+	return summaries, nil
+}
+
+func (r *KnowledgeRepo) GetSourceByID(ctx context.Context, id string) (*models.KnowledgeSource, error) {
+	var s models.KnowledgeSource
+	err := r.pool.QueryRow(ctx,
+		`SELECT ks.id, ks.name, ks.category, ks.content, ks.enabled,
+		        COALESCE((SELECT COUNT(*) FROM knowledge_chunks kc WHERE kc.source_id = ks.id), 0)
+		 FROM knowledge_sources ks
+		 WHERE ks.id = $1`, id,
+	).Scan(&s.ID, &s.Name, &s.Category, &s.Content, &s.Enabled, &s.ChunkCount)
+	if err != nil {
+		return nil, fmt.Errorf("get source %s: %w", id, err)
+	}
+	return &s, nil
 }
 
 func (r *KnowledgeRepo) CreateSource(ctx context.Context, name, category, content string) (*models.KnowledgeSource, error) {
