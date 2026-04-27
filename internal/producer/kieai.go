@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,14 +18,16 @@ import (
 const kieAPI = "https://api.kie.ai/api/v1"
 
 type KieClient struct {
-	pool   *pgxpool.Pool
-	client *http.Client
+	pool         *pgxpool.Pool
+	client       *http.Client
+	uploadClient *http.Client
 }
 
 func NewKieClient(pool *pgxpool.Pool) *KieClient {
 	return &KieClient{
-		pool:   pool,
-		client: &http.Client{Timeout: 30 * time.Second},
+		pool:         pool,
+		client:       &http.Client{Timeout: 30 * time.Second},
+		uploadClient: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
@@ -196,4 +199,107 @@ func (k *KieClient) downloadFile(ctx context.Context, url, outputPath string) er
 
 	_, err = io.Copy(f, resp.Body)
 	return err
+}
+
+const kieFileUploadAPI = "https://kieai.redpandaai.co/api"
+
+type kieUploadResponse struct {
+	Success bool `json:"success"`
+	Code    int  `json:"code"`
+	Data    struct {
+		FileID      string `json:"fileId"`
+		FileName    string `json:"fileName"`
+		FileURL     string `json:"fileUrl"`
+		DownloadURL string `json:"downloadUrl"`
+	} `json:"data"`
+	Msg string `json:"msg"`
+}
+
+func (k *KieClient) UploadFile(ctx context.Context, localPath, uploadPath string) (string, error) {
+	apiKey, err := k.getAPIKey(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	f, err := os.Open(localPath)
+	if err != nil {
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", filepath.Base(localPath))
+	if err != nil {
+		return "", fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		return "", fmt.Errorf("copy file data: %w", err)
+	}
+
+	if uploadPath != "" {
+		writer.WriteField("uploadPath", uploadPath)
+	}
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", kieFileUploadAPI+"/file-stream-upload", &body)
+	if err != nil {
+		return "", fmt.Errorf("create upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := k.uploadClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("upload file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var result kieUploadResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parse upload response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
+	}
+	if !result.Success {
+		return "", fmt.Errorf("upload failed: %s (code: %d)", result.Msg, result.Code)
+	}
+	return result.Data.FileURL, nil
+}
+
+type kieDownloadURLResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data string `json:"data"`
+}
+
+func (k *KieClient) GetDownloadURL(ctx context.Context, fileURL string) (string, error) {
+	apiKey, err := k.getAPIKey(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	reqBody, _ := json.Marshal(map[string]string{"url": fileURL})
+	req, err := http.NewRequestWithContext(ctx, "POST", kieAPI+"/common/download-url", bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := k.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("get download url: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var result kieDownloadURLResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parse download url response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
+	}
+	if result.Code != 200 {
+		return "", fmt.Errorf("download url failed: %s (code: %d)", result.Msg, result.Code)
+	}
+	return result.Data, nil
 }

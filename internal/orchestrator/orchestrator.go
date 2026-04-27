@@ -168,9 +168,9 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	readyStatus := "ready"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{
 		Status:       &readyStatus,
-		Video169URL:  &result.Video169Path,
-		Video916URL:  &result.Video916Path,
-		ThumbnailURL: &result.ThumbnailPath,
+		Video169URL:  &result.Video169URL,
+		Video916URL:  &result.Video916URL,
+		ThumbnailURL: &result.ThumbnailURL,
 		AnswerScript: &fullVoice,
 		VoiceScript:  &fullVoice,
 	})

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/progress"
+	"golang.org/x/sync/errgroup"
 )
 
 type Producer struct {
@@ -26,9 +27,9 @@ func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string,
 }
 
 type ProduceResult struct {
-	Video169Path  string
-	Video916Path  string
-	ThumbnailPath string
+	Video169URL  string
+	Video916URL  string
+	ThumbnailURL string
 }
 
 func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.GeneratedScene, imagePrompts []agent.SceneImagePrompts, voiceScript string) (*ProduceResult, error) {
@@ -97,9 +98,50 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 
 	p.tracker.CompleteStep("assembly")
 
+	p.tracker.StartStep("upload")
+	log.Printf("Uploading files to Kie AI for %s", clipID)
+	uploadDir := "adsvance/" + clipID
+
+	var video169URL, video916URL, thumbnailURL string
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		url, err := p.kie.UploadFile(gCtx, video169, uploadDir)
+		if err != nil {
+			return fmt.Errorf("upload 16:9 video: %w", err)
+		}
+		video169URL = url
+		return nil
+	})
+	g.Go(func() error {
+		url, err := p.kie.UploadFile(gCtx, video916, uploadDir)
+		if err != nil {
+			return fmt.Errorf("upload 9:16 video: %w", err)
+		}
+		video916URL = url
+		return nil
+	})
+	g.Go(func() error {
+		url, err := p.kie.UploadFile(gCtx, thumbPath, uploadDir)
+		if err != nil {
+			return fmt.Errorf("upload thumbnail: %w", err)
+		}
+		thumbnailURL = url
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		p.tracker.FailStep("upload", err)
+		return nil, err
+	}
+
+	p.tracker.CompleteStep("upload")
+	log.Printf("Files uploaded for %s — 16:9: %s, 9:16: %s, thumb: %s",
+		clipID, video169URL, video916URL, thumbnailURL)
+
 	return &ProduceResult{
-		Video169Path:  video169,
-		Video916Path:  video916,
-		ThumbnailPath: thumbPath,
+		Video169URL:  video169URL,
+		Video916URL:  video916URL,
+		ThumbnailURL: thumbnailURL,
 	}, nil
 }
