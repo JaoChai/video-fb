@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,49 +68,53 @@ type kieStatusResponse struct {
 }
 
 func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outputPath string) error {
-	taskID, err := k.createTask(ctx, "gpt-image-2-text-to-image", map[string]any{
-		"prompt":       prompt,
-		"aspect_ratio": aspectRatio,
-		"resolution":   "2K",
+	return k.retryableGenerate(ctx, "generate-image", func() error {
+		taskID, err := k.createTask(ctx, "gpt-image-2-text-to-image", map[string]any{
+			"prompt":       prompt,
+			"aspect_ratio": aspectRatio,
+			"resolution":   "2K",
+		})
+		if err != nil {
+			return fmt.Errorf("create image task: %w", err)
+		}
+
+		result, err := k.pollTask(ctx, taskID, 180*time.Second)
+		if err != nil {
+			return fmt.Errorf("poll image task: %w", err)
+		}
+
+		imageURL := extractFirstURL(result)
+		if imageURL == "" {
+			return fmt.Errorf("no image URL in result: %v", result)
+		}
+
+		return k.downloadFile(ctx, imageURL, outputPath)
 	})
-	if err != nil {
-		return fmt.Errorf("create image task: %w", err)
-	}
-
-	result, err := k.pollTask(ctx, taskID, 180*time.Second)
-	if err != nil {
-		return fmt.Errorf("poll image task: %w", err)
-	}
-
-	imageURL := extractFirstURL(result)
-	if imageURL == "" {
-		return fmt.Errorf("no image URL in result: %v", result)
-	}
-
-	return k.downloadFile(ctx, imageURL, outputPath)
 }
 
 func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
-	taskID, err := k.createTask(ctx, "elevenlabs/text-to-dialogue-v3", map[string]any{
-		"dialogue":      []map[string]string{{"text": text, "voice": voice}},
-		"language_code": "th",
-		"stability":     0.5,
+	return k.retryableGenerate(ctx, "generate-voice", func() error {
+		taskID, err := k.createTask(ctx, "elevenlabs/text-to-dialogue-v3", map[string]any{
+			"dialogue":      []map[string]string{{"text": text, "voice": voice}},
+			"language_code": "th",
+			"stability":     0.5,
+		})
+		if err != nil {
+			return fmt.Errorf("create voice task: %w", err)
+		}
+
+		result, err := k.pollTask(ctx, taskID, 300*time.Second)
+		if err != nil {
+			return fmt.Errorf("poll voice task: %w", err)
+		}
+
+		audioURL := extractFirstURL(result)
+		if audioURL == "" {
+			return fmt.Errorf("no audio URL in result: %v", result)
+		}
+
+		return k.downloadFile(ctx, audioURL, outputPath)
 	})
-	if err != nil {
-		return fmt.Errorf("create voice task: %w", err)
-	}
-
-	result, err := k.pollTask(ctx, taskID, 300*time.Second)
-	if err != nil {
-		return fmt.Errorf("poll voice task: %w", err)
-	}
-
-	audioURL := extractFirstURL(result)
-	if audioURL == "" {
-		return fmt.Errorf("no audio URL in result: %v", result)
-	}
-
-	return k.downloadFile(ctx, audioURL, outputPath)
 }
 
 func (k *KieClient) createTask(ctx context.Context, model string, input map[string]any) (string, error) {
@@ -214,6 +219,59 @@ func extractFirstURL(result map[string]any) string {
 	return ""
 }
 
+var retryablePatterns = []string{
+	"500", "internal error",
+	"429", "rate limit",
+	"timeout", "timed out",
+	"connection refused", "connection reset",
+	"eof", "broken pipe",
+}
+
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(s, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+const maxRetries = 3
+
+func (k *KieClient) retryableGenerate(ctx context.Context, operation string, generate func() error) error {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt*attempt) * 10 * time.Second
+			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, maxRetries, backoff, lastErr)
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("%s cancelled during retry: %w", operation, ctx.Err())
+			case <-timer.C:
+			}
+		}
+
+		lastErr = generate()
+		if lastErr == nil {
+			if attempt > 0 {
+				log.Printf("[retry] %s succeeded on attempt %d", operation, attempt)
+			}
+			return nil
+		}
+
+		if !isRetryable(lastErr) {
+			return lastErr
+		}
+	}
+	return fmt.Errorf("%s failed after %d retries: %w", operation, maxRetries, lastErr)
+}
+
 func (k *KieClient) downloadFile(ctx context.Context, url, outputPath string) error {
 	dir := filepath.Dir(outputPath)
 	os.MkdirAll(dir, 0755)
@@ -259,50 +317,58 @@ func (k *KieClient) UploadFile(ctx context.Context, localPath, uploadPath string
 		return "", err
 	}
 
-	f, err := os.Open(localPath)
+	fileData, err := os.ReadFile(localPath)
 	if err != nil {
-		return "", fmt.Errorf("open file: %w", err)
+		return "", fmt.Errorf("read file: %w", err)
 	}
-	defer f.Close()
+	fileName := filepath.Base(localPath)
 
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
+	var fileURL string
+	err = k.retryableGenerate(ctx, "upload-file", func() error {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
 
-	part, err := writer.CreateFormFile("file", filepath.Base(localPath))
-	if err != nil {
-		return "", fmt.Errorf("create form file: %w", err)
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return "", fmt.Errorf("copy file data: %w", err)
-	}
+		part, err := writer.CreateFormFile("file", fileName)
+		if err != nil {
+			return fmt.Errorf("create form file: %w", err)
+		}
+		if _, err := io.Copy(part, bytes.NewReader(fileData)); err != nil {
+			return fmt.Errorf("copy file data: %w", err)
+		}
 
-	if uploadPath != "" {
-		writer.WriteField("uploadPath", uploadPath)
-	}
-	writer.Close()
+		if uploadPath != "" {
+			writer.WriteField("uploadPath", uploadPath)
+		}
+		writer.Close()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", kieFileUploadAPI+"/file-stream-upload", &body)
-	if err != nil {
-		return "", fmt.Errorf("create upload request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+		req, err := http.NewRequestWithContext(ctx, "POST", kieFileUploadAPI+"/file-stream-upload", &body)
+		if err != nil {
+			return fmt.Errorf("create upload request: %w", err)
+		}
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := k.uploadClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("upload file: %w", err)
-	}
-	defer resp.Body.Close()
+		resp, err := k.uploadClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("upload file: %w", err)
+		}
+		defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	var result kieUploadResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("parse upload response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
-	}
-	if !result.Success {
-		return "", fmt.Errorf("upload failed: %s (code: %d)", result.Msg, result.Code)
-	}
-	return result.Data.FileURL, nil
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read upload response: %w", err)
+		}
+		var result kieUploadResponse
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return fmt.Errorf("parse upload response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
+		}
+		if !result.Success {
+			return fmt.Errorf("upload failed: %s (code: %d)", result.Msg, result.Code)
+		}
+		fileURL = result.Data.FileURL
+		return nil
+	})
+	return fileURL, err
 }
 
 type kieDownloadURLResponse struct {
