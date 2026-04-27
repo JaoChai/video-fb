@@ -87,7 +87,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 	log.Printf("Assembling 9:16 video for %s", clipID)
-	if err := p.ffmpeg.AssembleSingleImage(img916, voicePath, video916); err != nil {
+	if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
 		return nil, fmt.Errorf("assemble 9:16: %w", err)
 	}
 

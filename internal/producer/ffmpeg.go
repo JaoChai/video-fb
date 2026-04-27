@@ -65,13 +65,23 @@ func (f *FFmpegAssembler) Assemble(scenes []AssemblyScene, audioPath, outputPath
 }
 
 func (f *FFmpegAssembler) AssembleSingleImage(imagePath, audioPath, outputPath string) error {
+	return f.assembleSingleWithScale(imagePath, audioPath, outputPath, 1920, 1080)
+}
+
+func (f *FFmpegAssembler) AssembleSingleImageVertical(imagePath, audioPath, outputPath string) error {
+	return f.assembleSingleWithScale(imagePath, audioPath, outputPath, 1080, 1920)
+}
+
+func (f *FFmpegAssembler) assembleSingleWithScale(imagePath, audioPath, outputPath string, width, height int) error {
 	dir := filepath.Dir(outputPath)
 	os.MkdirAll(dir, 0755)
+
+	vf := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,setsar=1", width, height, width, height)
 
 	args := []string{
 		"-loop", "1", "-i", imagePath,
 		"-i", audioPath,
-		"-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
+		"-vf", vf,
 		"-c:v", "libx264", "-preset", "medium", "-crf", "23",
 		"-c:a", "aac", "-b:a", "128k",
 		"-pix_fmt", "yuv420p",
@@ -82,7 +92,7 @@ func (f *FFmpegAssembler) AssembleSingleImage(imagePath, audioPath, outputPath s
 	cmd := exec.Command(f.ffmpegPath, args...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg single image failed: %w", err)
+		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
 	return nil
 }
