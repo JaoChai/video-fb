@@ -61,9 +61,18 @@ func main() {
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine)
 	imageAgent := agent.NewImageAgent(llm)
 
-	kie := producer.NewKieClient(cfg.KieAPIKey)
+	kie := producer.NewKieClient(pool)
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
-	prod := producer.NewProducer(kie, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output")
+	voice := cfg.ElevenLabsVoice
+	if voice == "" {
+		var dbVoice string
+		if err := pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
+			voice = dbVoice
+		} else {
+			voice = "Adam"
+		}
+	}
+	prod := producer.NewProducer(kie, ffmpeg, voice, "/tmp/adsvance-output")
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)

@@ -10,20 +10,34 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const kieAPI = "https://api.kie.ai/api/v1"
 
 type KieClient struct {
-	apiKey string
+	pool   *pgxpool.Pool
 	client *http.Client
 }
 
-func NewKieClient(apiKey string) *KieClient {
+func NewKieClient(pool *pgxpool.Pool) *KieClient {
 	return &KieClient{
-		apiKey: apiKey,
+		pool:   pool,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+func (k *KieClient) getAPIKey(ctx context.Context) (string, error) {
+	var key string
+	err := k.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'kie_api_key'`).Scan(&key)
+	if err != nil {
+		return "", fmt.Errorf("get kie_api_key from settings: %w", err)
+	}
+	if key == "" {
+		return "", fmt.Errorf("kie_api_key is empty — set it in Settings page")
+	}
+	return key, nil
 }
 
 type kieTaskRequest struct {
@@ -93,6 +107,11 @@ func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath s
 }
 
 func (k *KieClient) createTask(ctx context.Context, model string, input map[string]any) (string, error) {
+	apiKey, err := k.getAPIKey(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	reqBody := kieTaskRequest{Model: model, Input: input}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -104,7 +123,7 @@ func (k *KieClient) createTask(ctx context.Context, model string, input map[stri
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+k.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := k.client.Do(req)
 	if err != nil {
@@ -112,20 +131,26 @@ func (k *KieClient) createTask(ctx context.Context, model string, input map[stri
 	}
 	defer resp.Body.Close()
 
+	respBody, _ := io.ReadAll(resp.Body)
 	var result kieTaskResponse
-	json.NewDecoder(resp.Body).Decode(&result)
+	json.Unmarshal(respBody, &result)
 	if result.Data.TaskID == "" {
-		return "", fmt.Errorf("no taskId returned")
+		return "", fmt.Errorf("no taskId returned (code: %d, body: %s)", result.Code, string(respBody[:min(len(respBody), 200)]))
 	}
 	return result.Data.TaskID, nil
 }
 
 func (k *KieClient) pollTask(ctx context.Context, taskID string, timeout time.Duration) (map[string]any, error) {
 	deadline := time.Now().Add(timeout)
+	apiKey, err := k.getAPIKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequestWithContext(ctx, "GET",
 			fmt.Sprintf("%s/jobs/getTaskDetail?taskId=%s", kieAPI, taskID), nil)
-		req.Header.Set("Authorization", "Bearer "+k.apiKey)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 
 		resp, err := k.client.Do(req)
 		if err != nil {
