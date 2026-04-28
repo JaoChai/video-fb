@@ -57,6 +57,16 @@ func (r *ScenesRepo) Create(ctx context.Context, req models.CreateSceneRequest) 
 	return &s, nil
 }
 
+func (r *ScenesRepo) UpdateImagePrompt(ctx context.Context, clipID string, sceneNumber int, imagePrompt string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE scenes SET image_prompt = $3 WHERE clip_id = $1 AND scene_number = $2`,
+		clipID, sceneNumber, imagePrompt)
+	if err != nil {
+		return fmt.Errorf("update image_prompt for clip %s scene %d: %w", clipID, sceneNumber, err)
+	}
+	return nil
+}
+
 func (r *ScenesRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM scenes WHERE id = $1`, id)
 	if err != nil {
