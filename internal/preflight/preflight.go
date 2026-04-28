@@ -14,7 +14,7 @@ type CheckResult struct {
 	Errors []string
 }
 
-var requiredKeys = []string{"elevenlabs_voice", "kie_api_key", "zernio_api_key"}
+var requiredKeys = []string{"elevenlabs_voice", "kie_api_key", "zernio_api_key", "openrouter_api_key"}
 
 func Run(ctx context.Context, pool *pgxpool.Pool) CheckResult {
 	settings := make(map[string]string)
@@ -40,6 +40,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool) CheckResult {
 	}
 	if settings["zernio_api_key"] == "" {
 		errors = append(errors, "Zernio API key not set — configure in Settings page")
+	}
+	if settings["openrouter_api_key"] == "" {
+		errors = append(errors, "OpenRouter API key not set — configure in Settings page")
 	}
 
 	return CheckResult{OK: len(errors) == 0, Errors: errors}

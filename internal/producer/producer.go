@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/progress"
 	"golang.org/x/sync/errgroup"
 )
 
 var ValidVoices = map[string]bool{
+	"alloy": true, "echo": true, "fable": true, "onyx": true, "nova": true, "shimmer": true,
 	"rachel": true, "aria": true, "roger": true, "sarah": true, "laura": true,
 	"charlie": true, "george": true, "callum": true, "river": true, "liam": true,
 	"charlotte": true, "alice": true, "matilda": true, "will": true, "jessica": true,
@@ -22,21 +24,23 @@ var ValidVoices = map[string]bool{
 }
 
 type Producer struct {
+	pool         *pgxpool.Pool
 	kie          *KieClient
+	openRouter   *OpenRouterClient
 	ffmpeg       *FFmpegAssembler
 	defaultVoice string
 	workDir      string
 	tracker      *progress.Tracker
 }
 
-func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
+func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{kie: kie, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
 func (p *Producer) getVoice(ctx context.Context) string {
 	var dbVoice string
-	if err := p.kie.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
+	if err := p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
 		if ValidVoices[strings.ToLower(dbVoice)] {
 			return dbVoice
 		}
@@ -45,7 +49,7 @@ func (p *Producer) getVoice(ctx context.Context) string {
 	if p.defaultVoice != "" && ValidVoices[strings.ToLower(p.defaultVoice)] {
 		return p.defaultVoice
 	}
-	return "Daniel"
+	return "alloy"
 }
 
 type ProduceResult struct {
@@ -68,7 +72,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	if !fileExists(voicePath) {
 		voice := p.getVoice(ctx)
 		log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
-		if err := p.kie.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
+		if err := p.openRouter.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
 			p.tracker.FailStep("voice", err)
 			return nil, fmt.Errorf("generate voice: %w", err)
 		}
@@ -87,7 +91,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		os.Remove(filepath.Join(clipDir, "video-9x16.mp4"))
 	}
 	if !fileExists(img169) {
-		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
+		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 16:9 image: %w", err)
 		}
@@ -96,7 +100,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 
 	if !fileExists(img916) {
-		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
+		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 9:16 image: %w", err)
 		}

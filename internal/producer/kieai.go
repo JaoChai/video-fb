@@ -68,7 +68,7 @@ type kieStatusResponse struct {
 }
 
 func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outputPath string) error {
-	return k.retryableGenerate(ctx, "generate-image", func() error {
+	return retryableCall(ctx, "generate-image", func() error {
 		taskID, err := k.createTask(ctx, "gpt-image-2-text-to-image", map[string]any{
 			"prompt":       prompt,
 			"aspect_ratio": aspectRatio,
@@ -93,7 +93,7 @@ func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outp
 }
 
 func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
-	return k.retryableGenerate(ctx, "generate-voice", func() error {
+	return retryableCall(ctx, "generate-voice", func() error {
 		taskID, err := k.createTask(ctx, "elevenlabs/text-to-dialogue-v3", map[string]any{
 			"dialogue":      []map[string]string{{"text": text, "voice": voice}},
 			"language_code": "th",
@@ -242,7 +242,7 @@ func isRetryable(err error) bool {
 
 const maxRetries = 5
 
-func (k *KieClient) retryableGenerate(ctx context.Context, operation string, generate func() error) error {
+func retryableCall(ctx context.Context, operation string, fn func() error) error {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
@@ -257,7 +257,7 @@ func (k *KieClient) retryableGenerate(ctx context.Context, operation string, gen
 			}
 		}
 
-		lastErr = generate()
+		lastErr = fn()
 		if lastErr == nil {
 			if attempt > 0 {
 				log.Printf("[retry] %s succeeded on attempt %d", operation, attempt)
@@ -324,7 +324,7 @@ func (k *KieClient) UploadFile(ctx context.Context, localPath, uploadPath string
 	fileName := filepath.Base(localPath)
 
 	var fileURL string
-	err = k.retryableGenerate(ctx, "upload-file", func() error {
+	err = retryableCall(ctx, "upload-file", func() error {
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 

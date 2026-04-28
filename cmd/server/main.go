@@ -70,17 +70,9 @@ func main() {
 
 	kie := producer.NewKieClient(pool)
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
-	voice := cfg.ElevenLabsVoice
-	if voice == "" {
-		var dbVoice string
-		if err := pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
-			voice = dbVoice
-		} else {
-			voice = "Adam"
-		}
-	}
 	tracker := progress.NewTracker()
-	prod := producer.NewProducer(kie, ffmpeg, voice, "/tmp/adsvance-output", tracker)
+	orClient := producer.NewOpenRouterClient(pool)
+	prod := producer.NewProducer(pool, kie, orClient, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
