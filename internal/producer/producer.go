@@ -63,44 +63,67 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	prompt := imagePrompts[0]
 
-	p.tracker.StartStep("voice")
-	voice := p.getVoice(ctx)
-	log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
 	voicePath := filepath.Join(clipDir, "voice.mp3")
-	if err := p.kie.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
-		p.tracker.FailStep("voice", err)
-		return nil, fmt.Errorf("generate voice: %w", err)
+	p.tracker.StartStep("voice")
+	if !fileExists(voicePath) {
+		voice := p.getVoice(ctx)
+		log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
+		if err := p.kie.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
+			p.tracker.FailStep("voice", err)
+			return nil, fmt.Errorf("generate voice: %w", err)
+		}
+	} else {
+		log.Printf("Skipping voice for %s (file exists)", clipID)
 	}
 	p.tracker.CompleteStep("voice")
 
 	p.tracker.StartStep("images")
-	log.Printf("Generating question image for %s", clipID)
-
 	img169 := filepath.Join(clipDir, "question-16x9.png")
-	if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
-		p.tracker.FailStep("images", err)
-		return nil, fmt.Errorf("generate 16:9 image: %w", err)
-	}
-
 	img916 := filepath.Join(clipDir, "question-9x16.png")
-	if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
-		p.tracker.FailStep("images", err)
-		return nil, fmt.Errorf("generate 9:16 image: %w", err)
+	if !fileExists(img169) || !fileExists(img916) {
+		os.Remove(img169)
+		os.Remove(img916)
+		os.Remove(filepath.Join(clipDir, "video-16x9.mp4"))
+		os.Remove(filepath.Join(clipDir, "video-9x16.mp4"))
+	}
+	if !fileExists(img169) {
+		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
+			p.tracker.FailStep("images", err)
+			return nil, fmt.Errorf("generate 16:9 image: %w", err)
+		}
+	} else {
+		log.Printf("Skipping 16:9 image for %s (file exists)", clipID)
 	}
 
+	if !fileExists(img916) {
+		if err := p.kie.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
+			p.tracker.FailStep("images", err)
+			return nil, fmt.Errorf("generate 9:16 image: %w", err)
+		}
+	} else {
+		log.Printf("Skipping 9:16 image for %s (file exists)", clipID)
+	}
 	p.tracker.CompleteStep("images")
 
 	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
-	log.Printf("Assembling 16:9 video for %s", clipID)
-	if err := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err != nil {
-		return nil, fmt.Errorf("assemble 16:9: %w", err)
+	if !fileExists(video169) {
+		log.Printf("Assembling 16:9 video for %s", clipID)
+		if err := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err != nil {
+			return nil, fmt.Errorf("assemble 16:9: %w", err)
+		}
+	} else {
+		log.Printf("Skipping 16:9 assembly for %s (file exists)", clipID)
 	}
 
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
-	log.Printf("Assembling 9:16 video for %s", clipID)
-	if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
-		return nil, fmt.Errorf("assemble 9:16: %w", err)
+	if !fileExists(video916) {
+		log.Printf("Assembling 9:16 video for %s", clipID)
+		if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
+			return nil, fmt.Errorf("assemble 9:16: %w", err)
+		}
+	} else {
+		log.Printf("Skipping 9:16 assembly for %s (file exists)", clipID)
 	}
 
 	thumbPath := img169
@@ -166,4 +189,12 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		Video916URL:  video916URL,
 		ThumbnailURL: thumbnailURL,
 	}, nil
+}
+
+func fileExists(path string) bool {
+	stat, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return stat.Size() > 0
 }
