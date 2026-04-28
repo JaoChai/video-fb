@@ -240,13 +240,13 @@ func isRetryable(err error) bool {
 	return false
 }
 
-const maxRetries = 3
+const maxRetries = 5
 
 func (k *KieClient) retryableGenerate(ctx context.Context, operation string, generate func() error) error {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := time.Duration(attempt*attempt) * 10 * time.Second
+			backoff := time.Duration(attempt) * 30 * time.Second
 			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, maxRetries, backoff, lastErr)
 			timer := time.NewTimer(backoff)
 			select {
