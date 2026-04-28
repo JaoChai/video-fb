@@ -19,6 +19,21 @@ func NewSettingsHandler(repo *repository.SettingsRepo) *SettingsHandler {
 	return &SettingsHandler{repo: repo}
 }
 
+var validVoices = [...]string{
+	"Rachel", "Aria", "Roger", "Sarah", "Laura", "Charlie", "George",
+	"Callum", "River", "Liam", "Charlotte", "Alice", "Matilda", "Will",
+	"Jessica", "Eric", "Chris", "Brian", "Daniel", "Lily", "Bill", "Adam",
+}
+
+func isValidVoice(name string) bool {
+	for _, v := range validVoices {
+		if strings.EqualFold(v, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func maskKey(key string) string {
 	if len(key) <= 8 {
 		return strings.Repeat("*", len(key))
@@ -62,6 +77,12 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	for k, v := range req {
 		if !allowed[k] {
 			continue
+		}
+		if k == "elevenlabs_voice" && v != "" && !isValidVoice(v) {
+			writeJSON(w, http.StatusBadRequest, models.APIResponse{
+				Error: fmt.Sprintf("Invalid voice: %s. Supported: %s", v, strings.Join(validVoices[:], ", ")),
+			})
+			return
 		}
 		if err := h.repo.Set(r.Context(), k, v); err != nil {
 			writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
