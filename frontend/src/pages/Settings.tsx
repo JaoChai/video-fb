@@ -42,10 +42,12 @@ interface Agent {
   skills: string;
 }
 
+const TTS_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+
 const FIELDS = [
   { key: 'openrouter_api_key', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', secret: true, testable: true },
-  { key: 'kie_api_key', label: 'Kie AI API Key', placeholder: 'kie-...', secret: true, testable: false },
-  { key: 'elevenlabs_voice', label: 'ElevenLabs Voice', placeholder: 'Adam', secret: false, testable: false },
+  { key: 'kie_api_key', label: 'Kie AI API Key (Upload)', placeholder: 'kie-...', secret: true, testable: false },
+  { key: 'elevenlabs_voice', label: 'TTS Voice (Gemini)', placeholder: 'alloy', secret: false, testable: false, dropdown: TTS_VOICES },
   { key: 'zernio_api_key', label: 'Zernio API Key', placeholder: 'zrn-...', secret: true, testable: false },
 ];
 
@@ -157,19 +159,31 @@ export default function SettingsPage() {
 
       {/* API Keys & General */}
       <div style={{ display: 'grid', gap: 16, maxWidth: 640 }}>
-        {FIELDS.map(({ key, label, placeholder, secret, testable }) => (
+        {FIELDS.map(({ key, label, placeholder, secret, testable, dropdown }) => (
           <div key={key}>
             <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type={secret && !showKeys[key] ? 'password' : 'text'}
-                value={form[key] ?? ''}
-                placeholder={placeholder}
-                onChange={e => handleChange(key, e.target.value)}
-                style={inputStyle}
-                onFocus={e => (e.target.style.borderColor = '#444')}
-                onBlur={e => (e.target.style.borderColor = '#222')}
-              />
+              {dropdown ? (
+                <select
+                  value={form[key] ?? ''}
+                  onChange={e => handleChange(key, e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                >
+                  {dropdown.map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={secret && !showKeys[key] ? 'password' : 'text'}
+                  value={form[key] ?? ''}
+                  placeholder={placeholder}
+                  onChange={e => handleChange(key, e.target.value)}
+                  style={inputStyle}
+                  onFocus={e => (e.target.style.borderColor = '#444')}
+                  onBlur={e => (e.target.style.borderColor = '#222')}
+                />
+              )}
               {secret && (
                 <button onClick={() => setShowKeys(prev => ({ ...prev, [key]: !prev[key] }))} style={smallBtnStyle}>
                   {showKeys[key] ? 'Hide' : 'Show'}
