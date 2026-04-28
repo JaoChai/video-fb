@@ -1,7 +1,6 @@
 package producer
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -19,6 +18,7 @@ import (
 )
 
 const openRouterAPI = "https://openrouter.ai/api/v1/chat/completions"
+const openRouterTTSAPI = "https://openrouter.ai/api/v1/audio/speech"
 
 type OpenRouterClient struct {
 	pool   *pgxpool.Pool
@@ -156,12 +156,16 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 		return err
 	}
 
-	reqBody := orRequest{
-		Model:      "google/gemini-3.1-flash-tts-preview",
-		Messages:   []orMessage{{Role: "user", Content: text}},
-		Modalities: []string{"audio"},
-		Audio:      &orAudio{Voice: mapVoice(voice), Format: "mp3"},
-		Stream:     true,
+	reqBody := struct {
+		Model          string `json:"model"`
+		Input          string `json:"input"`
+		Voice          string `json:"voice"`
+		ResponseFormat string `json:"response_format"`
+	}{
+		Model:          "google/gemini-3.1-flash-tts-preview",
+		Input:          text,
+		Voice:          mapVoice(voice),
+		ResponseFormat: "mp3",
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -169,7 +173,7 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 		return fmt.Errorf("marshal TTS: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", openRouterAPI, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", openRouterTTSAPI, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create TTS request: %w", err)
 	}
@@ -187,7 +191,23 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 		return fmt.Errorf("TTS %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
 	}
 
-	return parseSSEAudio(resp.Body, outputPath)
+	audioBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read TTS audio: %w", err)
+	}
+	if len(audioBytes) == 0 {
+		return fmt.Errorf("no audio data received from TTS")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	if err := os.WriteFile(outputPath, audioBytes, 0644); err != nil {
+		return fmt.Errorf("write audio: %w", err)
+	}
+
+	log.Printf("Saved TTS audio (%d bytes) to %s", len(audioBytes), outputPath)
+	return nil
 }
 
 func saveBase64Image(dataURL, outputPath string) error {
@@ -212,64 +232,6 @@ func saveBase64Image(dataURL, outputPath string) error {
 	return nil
 }
 
-func parseSSEAudio(reader io.Reader, outputPath string) error {
-	var audioChunks []string
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := line[6:]
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Audio struct {
-						Data string `json:"data"`
-					} `json:"audio"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Audio.Data != "" {
-			audioChunks = append(audioChunks, chunk.Choices[0].Delta.Audio.Data)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read SSE stream: %w", err)
-	}
-	if len(audioChunks) == 0 {
-		return fmt.Errorf("no audio data received from TTS")
-	}
-
-	for i, chunk := range audioChunks {
-		audioChunks[i] = strings.TrimRight(chunk, "=")
-	}
-	fullBase64 := strings.Join(audioChunks, "")
-	audioBytes, err := base64.RawStdEncoding.DecodeString(fullBase64)
-	if err != nil {
-		return fmt.Errorf("decode TTS audio: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return fmt.Errorf("create output directory: %w", err)
-	}
-	if err := os.WriteFile(outputPath, audioBytes, 0644); err != nil {
-		return fmt.Errorf("write audio: %w", err)
-	}
-
-	log.Printf("Saved TTS audio (%d bytes) to %s", len(audioBytes), outputPath)
-	return nil
-}
 
 func mapVoice(voice string) string {
 	if ValidVoices[strings.ToLower(voice)] {
