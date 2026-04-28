@@ -80,6 +80,11 @@ func (h *OrchestratorHandler) TriggerPublish(w http.ResponseWriter, r *http.Requ
 func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request) {
 	const maxRetries = 2
 
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+
 	failed, err := h.clipsRepo.ListFailed(r.Context(), maxRetries)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: fmt.Sprintf("list failed: %v", err)})
@@ -95,13 +100,27 @@ func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request
 	})
 
 	go func() {
-		for _, clip := range failed {
+		ctx, cancel := context.WithCancel(context.Background())
+		h.tracker.SetCancelFunc(cancel)
+		defer cancel()
+
+		h.tracker.StartProduction(len(failed))
+		defer h.tracker.FinishProduction()
+
+		for i, clip := range failed {
+			if ctx.Err() != nil {
+				h.tracker.AddErrorLog(fmt.Sprintf("Retry stopped at clip %d/%d", i+1, len(failed)))
+				break
+			}
 			c := clip
+			h.tracker.StartClip(i+1, c.Title)
 			log.Printf("Manual retry: clip %s (%s)", c.ID, c.Title)
-			if err := h.orch.RetryClip(context.Background(), &c); err != nil {
+			if err := h.orch.RetryClip(ctx, &c); err != nil {
 				log.Printf("Manual retry failed for %s: %v", c.ID, err)
+				h.tracker.AddErrorLog(fmt.Sprintf("Retry %s failed: %v", c.ID, err))
 			} else {
 				log.Printf("Manual retry succeeded for %s", c.ID)
+				h.tracker.CompleteStep("complete")
 			}
 		}
 	}()
