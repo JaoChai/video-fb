@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const zernioAPI = "https://zernio.com/api/v1"
@@ -15,15 +18,27 @@ const zernioAPI = "https://zernio.com/api/v1"
 const VisibilityPrivate = "private"
 
 type ZernioClient struct {
-	apiKey string
-	client *http.Client
+	fallbackKey string
+	pool        *pgxpool.Pool
+	client      *http.Client
 }
 
-func NewZernioClient(apiKey string) *ZernioClient {
+func NewZernioClient(fallbackKey string, pool *pgxpool.Pool) *ZernioClient {
 	return &ZernioClient{
-		apiKey: apiKey,
-		client: &http.Client{Timeout: 60 * time.Second},
+		fallbackKey: fallbackKey,
+		pool:        pool,
+		client:      &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+func (z *ZernioClient) getAPIKey(ctx context.Context) string {
+	if z.pool != nil {
+		var dbKey string
+		if err := z.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_api_key'`).Scan(&dbKey); err == nil && dbKey != "" {
+			return dbKey
+		}
+	}
+	return z.fallbackKey
 }
 
 type PlatformTarget struct {
@@ -73,8 +88,14 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
+	apiKey := z.getAPIKey(ctx)
+	if apiKey == "" {
+		return nil, fmt.Errorf("zernio API key not configured")
+	}
+	log.Printf("[zernio] posting to %d platform(s), media: %d items", len(req.Platforms), len(req.MediaItems))
+
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+z.apiKey)
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := z.client.Do(httpReq)
 	if err != nil {
@@ -110,7 +131,7 @@ func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+z.apiKey)
+	req.Header.Set("Authorization", "Bearer "+z.getAPIKey(ctx))
 
 	resp, err := z.client.Do(req)
 	if err != nil {

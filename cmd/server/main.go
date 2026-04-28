@@ -83,7 +83,7 @@ func main() {
 	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
 		clipsRepo, scenesRepo, themesRepo, agentsRepo, tracker)
 
-	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey)
+	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
 
 	if *produceFlag > 0 {
