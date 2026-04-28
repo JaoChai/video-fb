@@ -122,7 +122,7 @@ func main() {
 	}
 
 	r := router.New(pool, cfg.APIKey, ragEngine, tracker)
-	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
+	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub, clipsRepo)
 	router.SetOrchestrator(r, orchHandler)
 
 	addr := ":" + cfg.Port

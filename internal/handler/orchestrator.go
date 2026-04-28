@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -11,16 +12,18 @@ import (
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/publisher"
+	"github.com/jaochai/video-fb/internal/repository"
 )
 
 type OrchestratorHandler struct {
-	orch    *orchestrator.Orchestrator
-	tracker *progress.Tracker
-	pub     *publisher.Publisher
+	orch      *orchestrator.Orchestrator
+	tracker   *progress.Tracker
+	pub       *publisher.Publisher
+	clipsRepo *repository.ClipsRepo
 }
 
-func NewOrchestratorHandler(orch *orchestrator.Orchestrator, tracker *progress.Tracker, pub *publisher.Publisher) *OrchestratorHandler {
-	return &OrchestratorHandler{orch: orch, tracker: tracker, pub: pub}
+func NewOrchestratorHandler(orch *orchestrator.Orchestrator, tracker *progress.Tracker, pub *publisher.Publisher, clipsRepo *repository.ClipsRepo) *OrchestratorHandler {
+	return &OrchestratorHandler{orch: orch, tracker: tracker, pub: pub, clipsRepo: clipsRepo}
 }
 
 func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Request) {
@@ -72,4 +75,34 @@ func (h *OrchestratorHandler) TriggerPublish(w http.ResponseWriter, r *http.Requ
 		}
 	}()
 	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Publishing ready clips"})
+}
+
+func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request) {
+	const maxRetries = 2
+
+	failed, err := h.clipsRepo.ListFailed(r.Context(), maxRetries)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: fmt.Sprintf("list failed: %v", err)})
+		return
+	}
+	if len(failed) == 0 {
+		writeJSON(w, http.StatusOK, models.APIResponse{Message: "No failed clips to retry"})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, models.APIResponse{
+		Message: fmt.Sprintf("Retrying %d failed clip(s) in background", len(failed)),
+	})
+
+	go func() {
+		for _, clip := range failed {
+			c := clip
+			log.Printf("Manual retry: clip %s (%s)", c.ID, c.Title)
+			if err := h.orch.RetryClip(context.Background(), &c); err != nil {
+				log.Printf("Manual retry failed for %s: %v", c.ID, err)
+			} else {
+				log.Printf("Manual retry succeeded for %s", c.ID)
+			}
+		}
+	}()
 }
