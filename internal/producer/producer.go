@@ -67,7 +67,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	prompt := imagePrompts[0]
 
-	voicePath := filepath.Join(clipDir, "voice.mp3")
+	voicePath := filepath.Join(clipDir, "voice.wav")
 	p.tracker.StartStep("voice")
 	if !fileExists(voicePath) {
 		voice := p.getVoice(ctx)

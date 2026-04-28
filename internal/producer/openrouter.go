@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -165,7 +166,7 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 		Model:          "google/gemini-3.1-flash-tts-preview",
 		Input:          text,
 		Voice:          mapVoice(voice),
-		ResponseFormat: "mp3",
+		ResponseFormat: "pcm",
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -191,22 +192,24 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 		return fmt.Errorf("TTS %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
 	}
 
-	audioBytes, err := io.ReadAll(resp.Body)
+	pcmData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read TTS audio: %w", err)
 	}
-	if len(audioBytes) == 0 {
+	if len(pcmData) == 0 {
 		return fmt.Errorf("no audio data received from TTS")
 	}
+
+	wavData := wrapPCMAsWAV(pcmData, 24000, 1, 16)
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	if err := os.WriteFile(outputPath, audioBytes, 0644); err != nil {
+	if err := os.WriteFile(outputPath, wavData, 0644); err != nil {
 		return fmt.Errorf("write audio: %w", err)
 	}
 
-	log.Printf("Saved TTS audio (%d bytes) to %s", len(audioBytes), outputPath)
+	log.Printf("Saved TTS audio (%d bytes PCM → %d bytes WAV) to %s", len(pcmData), len(wavData), outputPath)
 	return nil
 }
 
@@ -232,6 +235,30 @@ func saveBase64Image(dataURL, outputPath string) error {
 	return nil
 }
 
+
+func wrapPCMAsWAV(pcmData []byte, sampleRate, numChannels, bitsPerSample int) []byte {
+	dataSize := len(pcmData)
+	byteRate := sampleRate * numChannels * bitsPerSample / 8
+	blockAlign := numChannels * bitsPerSample / 8
+
+	buf := make([]byte, 44+dataSize)
+	copy(buf[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(buf[4:8], uint32(36+dataSize))
+	copy(buf[8:12], "WAVE")
+	copy(buf[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(buf[16:20], 16)
+	binary.LittleEndian.PutUint16(buf[20:22], 1)
+	binary.LittleEndian.PutUint16(buf[22:24], uint16(numChannels))
+	binary.LittleEndian.PutUint32(buf[24:28], uint32(sampleRate))
+	binary.LittleEndian.PutUint32(buf[28:32], uint32(byteRate))
+	binary.LittleEndian.PutUint16(buf[32:34], uint16(blockAlign))
+	binary.LittleEndian.PutUint16(buf[34:36], uint16(bitsPerSample))
+	copy(buf[36:40], "data")
+	binary.LittleEndian.PutUint32(buf[40:44], uint32(dataSize))
+	copy(buf[44:], pcmData)
+
+	return buf
+}
 
 func mapVoice(voice string) string {
 	if ValidVoices[strings.ToLower(voice)] {
