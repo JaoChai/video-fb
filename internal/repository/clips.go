@@ -18,7 +18,7 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
-	publish_date::text, created_at, updated_at`
+	publish_date::text, created_at, updated_at, fail_reason, retry_count`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -27,6 +27,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.AnswerScript, &c.VoiceScript, &c.Category, &c.Status,
 		&c.Video169URL, &c.Video916URL, &c.ThumbnailURL,
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
+		&c.FailReason, &c.RetryCount,
 	)
 	return c, err
 }
@@ -105,4 +106,57 @@ func (r *ClipsRepo) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("delete clip %s: %w", id, err)
 	}
 	return nil
+}
+
+func (r *ClipsRepo) ListFailed(ctx context.Context, maxRetries int) ([]models.Clip, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+clipColumns+` FROM clips
+		 WHERE status = 'failed' AND retry_count < $1
+		 ORDER BY created_at ASC LIMIT 5`, maxRetries)
+	if err != nil {
+		return nil, fmt.Errorf("query failed clips: %w", err)
+	}
+	defer rows.Close()
+
+	var clips []models.Clip
+	for rows.Next() {
+		c, err := scanClip(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan failed clip: %w", err)
+		}
+		clips = append(clips, c)
+	}
+	return clips, nil
+}
+
+func (r *ClipsRepo) IncrementRetry(ctx context.Context, id, reason string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET retry_count = retry_count + 1, fail_reason = $2, updated_at = NOW()
+		 WHERE id = $1`, id, reason)
+	if err != nil {
+		return fmt.Errorf("increment retry for clip %s: %w", id, err)
+	}
+	return nil
+}
+
+func (r *ClipsRepo) DeleteOldFailed(ctx context.Context, maxRetries int) (int, error) {
+	result, err := r.pool.Exec(ctx,
+		`DELETE FROM clips WHERE status = 'failed' AND retry_count >= $1
+		 AND updated_at < NOW() - INTERVAL '24 hours'`, maxRetries)
+	if err != nil {
+		return 0, fmt.Errorf("delete old failed clips: %w", err)
+	}
+	return int(result.RowsAffected()), nil
+}
+
+func (r *ClipsRepo) CountConsecutiveFailed(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM (
+			SELECT status FROM clips ORDER BY created_at DESC LIMIT 5
+		) recent WHERE status = 'failed'`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count consecutive failed: %w", err)
+	}
+	return count, nil
 }

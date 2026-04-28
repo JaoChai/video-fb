@@ -9,9 +9,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/analyzer"
 	"github.com/jaochai/video-fb/internal/orchestrator"
+	"github.com/jaochai/video-fb/internal/preflight"
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/robfig/cron/v3"
+)
+
+const (
+	maxClipRetries      = 2
+	circuitBreakerLimit = 3
 )
 
 type Scheduler struct {
@@ -21,9 +27,10 @@ type Scheduler struct {
 	analyzer      *analyzer.Analyzer
 	orchestrator  *orchestrator.Orchestrator
 	schedulesRepo *repository.SchedulesRepo
+	clipsRepo     *repository.ClipsRepo
 }
 
-func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo) *Scheduler {
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo) *Scheduler {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
 		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
@@ -34,6 +41,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 			analyzer:      anlz,
 			orchestrator:  orch,
 			schedulesRepo: schedRepo,
+			clipsRepo:     clipsRepo,
 		}
 	}
 	return &Scheduler{
@@ -43,6 +51,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 		analyzer:      anlz,
 		orchestrator:  orch,
 		schedulesRepo: schedRepo,
+		clipsRepo:     clipsRepo,
 	}
 }
 
@@ -91,14 +100,52 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) produceAndPublish(ctx context.Context) error {
-	log.Println("Scheduler: producing 1 clip...")
+	check := preflight.Run(ctx, s.pool)
+	if !check.OK {
+		for _, e := range check.Errors {
+			log.Printf("Scheduler PRE-FLIGHT FAIL: %s", e)
+		}
+		return fmt.Errorf("pre-flight failed: %v", check.Errors)
+	}
+
+	failCount, err := s.clipsRepo.CountConsecutiveFailed(ctx)
+	if err != nil {
+		log.Printf("Scheduler: circuit breaker check error: %v", err)
+	} else if failCount >= circuitBreakerLimit {
+		log.Printf("Scheduler CIRCUIT BREAKER: %d of last 5 clips failed, skipping production", failCount)
+		return fmt.Errorf("circuit breaker open: %d consecutive failures", failCount)
+	}
+
+	failed, err := s.clipsRepo.ListFailed(ctx, maxClipRetries)
+	if err != nil {
+		log.Printf("Scheduler: list failed clips error: %v", err)
+	}
+	for _, clip := range failed {
+		log.Printf("Scheduler: retrying failed clip %s (attempt %d)", clip.ID, clip.RetryCount+1)
+		if err := s.orchestrator.RetryClip(ctx, &clip); err != nil {
+			log.Printf("Scheduler: retry clip %s failed again: %v", clip.ID, err)
+		} else {
+			log.Printf("Scheduler: retry clip %s succeeded!", clip.ID)
+		}
+	}
+
+	log.Println("Scheduler: producing 1 new clip...")
 	if err := s.orchestrator.ProduceWeekly(ctx, 1); err != nil {
 		return fmt.Errorf("produce: %w", err)
 	}
-	log.Println("Scheduler: publishing latest ready clip...")
+
+	log.Println("Scheduler: publishing ready clips...")
 	if err := s.publisher.PublishReady(ctx); err != nil {
 		return fmt.Errorf("publish: %w", err)
 	}
+
+	deleted, err := s.clipsRepo.DeleteOldFailed(ctx, maxClipRetries)
+	if err != nil {
+		log.Printf("Scheduler: cleanup error: %v", err)
+	} else if deleted > 0 {
+		log.Printf("Scheduler: cleaned up %d unrecoverable clips", deleted)
+	}
+
 	return nil
 }
 

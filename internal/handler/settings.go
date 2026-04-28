@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/models"
+	"github.com/jaochai/video-fb/internal/producer"
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
@@ -17,21 +18,6 @@ type SettingsHandler struct {
 
 func NewSettingsHandler(repo *repository.SettingsRepo) *SettingsHandler {
 	return &SettingsHandler{repo: repo}
-}
-
-var validVoices = [...]string{
-	"Rachel", "Aria", "Roger", "Sarah", "Laura", "Charlie", "George",
-	"Callum", "River", "Liam", "Charlotte", "Alice", "Matilda", "Will",
-	"Jessica", "Eric", "Chris", "Brian", "Daniel", "Lily", "Bill", "Adam",
-}
-
-func isValidVoice(name string) bool {
-	for _, v := range validVoices {
-		if strings.EqualFold(v, name) {
-			return true
-		}
-	}
-	return false
 }
 
 func maskKey(key string) string {
@@ -78,9 +64,9 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		if !allowed[k] {
 			continue
 		}
-		if k == "elevenlabs_voice" && v != "" && !isValidVoice(v) {
+		if k == "elevenlabs_voice" && v != "" && !producer.ValidVoices[strings.ToLower(v)] {
 			writeJSON(w, http.StatusBadRequest, models.APIResponse{
-				Error: fmt.Sprintf("Invalid voice: %s. Supported: %s", v, strings.Join(validVoices[:], ", ")),
+				Error: fmt.Sprintf("Invalid voice: %s", v),
 			})
 			return
 		}

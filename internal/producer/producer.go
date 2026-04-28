@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var validVoices = map[string]bool{
+var ValidVoices = map[string]bool{
 	"rachel": true, "aria": true, "roger": true, "sarah": true, "laura": true,
 	"charlie": true, "george": true, "callum": true, "river": true, "liam": true,
 	"charlotte": true, "alice": true, "matilda": true, "will": true, "jessica": true,
@@ -37,12 +37,12 @@ func NewProducer(kie *KieClient, ffmpeg *FFmpegAssembler, voice, workDir string,
 func (p *Producer) getVoice(ctx context.Context) string {
 	var dbVoice string
 	if err := p.kie.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
-		if validVoices[strings.ToLower(dbVoice)] {
+		if ValidVoices[strings.ToLower(dbVoice)] {
 			return dbVoice
 		}
 		log.Printf("WARNING: invalid voice '%s' in DB, falling back to default", dbVoice)
 	}
-	if p.defaultVoice != "" && validVoices[strings.ToLower(p.defaultVoice)] {
+	if p.defaultVoice != "" && ValidVoices[strings.ToLower(p.defaultVoice)] {
 		return p.defaultVoice
 	}
 	return "Daniel"

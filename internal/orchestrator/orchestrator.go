@@ -132,11 +132,15 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
+	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg)
+}
+
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig) error {
 	o.tracker.StartStep("script")
 	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, buildPrompt(scriptCfg), scriptCfg.Temperature)
 	if err != nil {
 		o.tracker.FailStep("script", err)
-		return o.failClip(ctx, clip.ID, fmt.Errorf("script: %w", err))
+		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
 	}
 	o.tracker.CompleteStep("script")
 
@@ -146,7 +150,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 			overlays = []byte("[]")
 		}
 		o.scenesRepo.Create(ctx, models.CreateSceneRequest{
-			ClipID:          clip.ID,
+			ClipID:          clipID,
 			SceneNumber:     scene.SceneNumber,
 			SceneType:       scene.SceneType,
 			TextContent:     scene.TextContent,
@@ -160,7 +164,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
-		return o.failClip(ctx, clip.ID, fmt.Errorf("image prompts: %w", err))
+		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
 	}
 	o.tracker.CompleteStep("image_prompts")
 
@@ -169,13 +173,13 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		fullVoice += s.VoiceText + " "
 	}
 
-	result, err := o.producer.Produce(ctx, clip.ID, script.Scenes, imagePrompts, fullVoice)
+	result, err := o.producer.Produce(ctx, clipID, script.Scenes, imagePrompts, fullVoice)
 	if err != nil {
-		return o.failClip(ctx, clip.ID, fmt.Errorf("produce: %w", err))
+		return o.failClip(ctx, clipID, fmt.Errorf("produce: %w", err))
 	}
 
 	readyStatus := "ready"
-	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
 		Status:       &readyStatus,
 		Video169URL:  &result.Video169URL,
 		Video916URL:  &result.Video916URL,
@@ -188,14 +192,47 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
 		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (clip_id) DO UPDATE SET youtube_title=$2, youtube_description=$3, youtube_tags=$4`,
-		clip.ID, script.YoutubeTitle, script.YoutubeDescription, script.YoutubeTags)
+		clipID, script.YoutubeTitle, script.YoutubeDescription, script.YoutubeTags)
 
-	log.Printf("Clip ready: %s — %s", clip.ID, q.Question)
+	log.Printf("Clip ready: %s — %s", clipID, q.Question)
 	return nil
+}
+
+func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
+	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
+
+	status := "producing"
+	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
+
+	theme, err := o.themesRepo.GetActive(ctx)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
+	}
+
+	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
+	}
+	imageCfg, err := o.agentsRepo.GetByName(ctx, "image")
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
+	}
+
+	q := agent.GeneratedQuestion{
+		Question:       clip.Question,
+		QuestionerName: clip.QuestionerName,
+		Category:       clip.Category,
+	}
+
+	o.pool.Exec(ctx, `DELETE FROM scenes WHERE clip_id = $1`, clip.ID)
+	o.pool.Exec(ctx, `DELETE FROM clip_metadata WHERE clip_id = $1`, clip.ID)
+
+	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
 	status := "failed"
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &status})
+	o.clipsRepo.IncrementRetry(ctx, clipID, err.Error())
 	return err
 }

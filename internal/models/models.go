@@ -20,6 +20,8 @@ type Clip struct {
 	PublishDate    *string   `json:"publish_date"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	FailReason     *string   `json:"fail_reason,omitempty"`
+	RetryCount     int       `json:"retry_count"`
 }
 
 type Scene struct {
