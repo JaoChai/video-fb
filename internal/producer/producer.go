@@ -15,12 +15,12 @@ import (
 )
 
 var ValidVoices = map[string]bool{
-	"alloy": true, "echo": true, "fable": true, "onyx": true, "nova": true, "shimmer": true,
-	"rachel": true, "aria": true, "roger": true, "sarah": true, "laura": true,
-	"charlie": true, "george": true, "callum": true, "river": true, "liam": true,
-	"charlotte": true, "alice": true, "matilda": true, "will": true, "jessica": true,
-	"eric": true, "chris": true, "brian": true, "daniel": true, "lily": true,
-	"bill": true, "adam": true,
+	"zephyr": true, "puck": true, "charon": true, "kore": true, "fenrir": true,
+	"leda": true, "orus": true, "aoede": true, "callirrhoe": true, "autonoe": true,
+	"enceladus": true, "iapetus": true, "umbriel": true, "algieba": true, "despina": true,
+	"erinome": true, "algenib": true, "rasalgethi": true, "laomedeia": true, "achernar": true,
+	"alnilam": true, "schedar": true, "gacrux": true, "pulcherrima": true, "achird": true,
+	"zubenelgenubi": true, "vindemiatrix": true, "sadachbia": true, "sadaltager": true, "sulafat": true,
 }
 
 type Producer struct {
@@ -49,7 +49,7 @@ func (p *Producer) getVoice(ctx context.Context) string {
 	if p.defaultVoice != "" && ValidVoices[strings.ToLower(p.defaultVoice)] {
 		return p.defaultVoice
 	}
-	return "alloy"
+	return "Achird"
 }
 
 type ProduceResult struct {

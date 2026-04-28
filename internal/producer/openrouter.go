@@ -272,12 +272,8 @@ func parseSSEAudio(reader io.Reader, outputPath string) error {
 }
 
 func mapVoice(voice string) string {
-	mapping := map[string]string{
-		"adam": "onyx", "daniel": "echo", "rachel": "nova",
-		"sarah": "shimmer", "charlie": "fable", "laura": "alloy",
-	}
-	if v, ok := mapping[strings.ToLower(voice)]; ok {
-		return v
+	if ValidVoices[strings.ToLower(voice)] {
+		return voice
 	}
 	return "alloy"
 }

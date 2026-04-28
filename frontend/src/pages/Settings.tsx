@@ -42,7 +42,12 @@ interface Agent {
   skills: string;
 }
 
-const TTS_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const TTS_VOICES = [
+  'Achird', 'Charon', 'Sadaltager', 'Sulafat', 'Rasalgethi',
+  'Puck', 'Iapetus', 'Schedar', 'Gacrux', 'Algieba',
+  'Zephyr', 'Kore', 'Fenrir', 'Leda', 'Orus', 'Aoede',
+  'Achernar', 'Alnilam', 'Despina', 'Erinome',
+];
 
 const FIELDS = [
   { key: 'openrouter_api_key', label: 'OpenRouter API Key', placeholder: 'sk-or-v1-...', secret: true, testable: true },
