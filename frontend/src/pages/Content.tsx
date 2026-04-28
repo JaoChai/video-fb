@@ -21,6 +21,7 @@ export default function ContentPage() {
   const queryClient = useQueryClient();
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   // ProductionProgress already polls production-status with its own interval.
   // Reading from the same query key shares cached data via TanStack Query.
@@ -38,6 +39,7 @@ export default function ContentPage() {
   });
 
   const failedCount = clips?.filter(c => c.status === 'failed' && c.retry_count < 2).length ?? 0;
+  const readyCount = clips?.filter(c => c.status === 'ready').length ?? 0;
 
   async function handleRetryAll(): Promise<void> {
     setRetrying(true);
@@ -48,6 +50,18 @@ export default function ContentPage() {
       console.error('Retry failed:', e);
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handlePublish(): Promise<void> {
+    setPublishing(true);
+    try {
+      await apiFetch('/api/v1/orchestrator/publish', { method: 'POST' });
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+    } catch (e) {
+      console.error('Publish failed:', e);
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -134,6 +148,20 @@ export default function ContentPage() {
               }}
             >
               {producing ? 'Producing...' : 'Produce 1 Clip'}
+            </button>
+          )}
+          {readyCount > 0 && !isProducing && (
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              style={{
+                padding: '8px 16px', fontSize: 13, fontWeight: 500,
+                background: publishing ? '#333' : '#22c55e', color: '#fff',
+                border: 'none', borderRadius: 6, cursor: publishing ? 'not-allowed' : 'pointer',
+                opacity: publishing ? 0.6 : 1, transition: 'all 0.15s',
+              }}
+            >
+              {publishing ? 'Publishing...' : `Publish (${readyCount})`}
             </button>
           )}
           {failedCount > 0 && !isProducing && (
