@@ -44,10 +44,11 @@ func main() {
 	defer pool.Close()
 	log.Println("Connected to database")
 
+	if err := database.RunMigrations(ctx, pool, "migrations"); err != nil {
+		log.Printf("Auto-migration warning: %v", err)
+	}
+
 	if *migrateFlag {
-		if err := database.RunMigrations(ctx, pool, "migrations"); err != nil {
-			log.Fatalf("Migrations failed: %v", err)
-		}
 		log.Println("Migrations complete")
 		return
 	}
