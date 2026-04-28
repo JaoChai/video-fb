@@ -87,9 +87,19 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("zernio %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+	}
+
 	var result PostResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	if result.Error != "" {
+		return nil, fmt.Errorf("zernio error: %s", result.Error)
+	}
+	if result.Post.ID == "" {
+		return nil, fmt.Errorf("zernio returned empty post ID (response: %s)", string(respBody[:min(len(respBody), 300)]))
 	}
 	return &result, nil
 }
