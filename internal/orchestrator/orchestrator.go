@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,31 @@ import (
 	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/repository"
 )
+
+var (
+	urlRegex    = regexp.MustCompile(`(?i)https?://\S+|t\.me/\S+|line\.me/\S+`)
+	atHandleRgx = regexp.MustCompile(`@[A-Za-z][A-Za-z0-9_.\-]*`)
+)
+
+// sanitizeVoiceText strips URLs and @handles from voice script before TTS.
+// Gemini TTS chokes on URLs and brand handles, often truncating audio mid-sentence.
+// Brand mentions are normalized to a Thai phonetic spelling so the model says it correctly.
+func sanitizeVoiceText(s string) string {
+	replacer := strings.NewReplacer(
+		"@adsvance", "แอดส์แวนซ์",
+		"@AdsVance", "แอดส์แวนซ์",
+		"@Adsvance", "แอดส์แวนซ์",
+		"AdsVance", "แอดส์แวนซ์",
+		"Adsvance", "แอดส์แวนซ์",
+		"adsvance", "แอดส์แวนซ์",
+		"Ads Vance", "แอดส์แวนซ์",
+	)
+	s = replacer.Replace(s)
+	s = urlRegex.ReplaceAllString(s, "")
+	s = atHandleRgx.ReplaceAllString(s, "")
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
 
 var categories = []string{"account", "payment", "campaign", "pixel"}
 
@@ -175,6 +201,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	for _, s := range script.Scenes {
 		fullVoice += s.VoiceText + " "
 	}
+	fullVoice = sanitizeVoiceText(fullVoice)
 
 	o.pool.Exec(ctx,
 		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
@@ -319,7 +346,7 @@ func buildVoiceScript(scenes []models.Scene) string {
 		b.WriteString(s.VoiceText)
 		b.WriteString(" ")
 	}
-	return b.String()
+	return sanitizeVoiceText(b.String())
 }
 
 func parseImagePrompts(scenes []models.Scene) ([]agent.SceneImagePrompts, error) {

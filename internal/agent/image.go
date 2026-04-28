@@ -28,13 +28,7 @@ func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScen
 		safeStr(theme.ImageStyle))
 
 	var questionText string
-	for _, s := range scenes {
-		if s.SceneType == "question" {
-			questionText = s.TextContent
-			break
-		}
-	}
-	if questionText == "" && len(scenes) > 0 {
+	if len(scenes) > 0 {
 		questionText = scenes[0].TextContent
 	}
 
