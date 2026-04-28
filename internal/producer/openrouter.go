@@ -159,7 +159,7 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 	reqBody := orRequest{
 		Model:      "google/gemini-3.1-flash-tts-preview",
 		Messages:   []orMessage{{Role: "user", Content: text}},
-		Modalities: []string{"text", "audio"},
+		Modalities: []string{"audio"},
 		Audio:      &orAudio{Voice: mapVoice(voice), Format: "mp3"},
 		Stream:     true,
 	}
