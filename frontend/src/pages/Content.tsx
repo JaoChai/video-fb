@@ -22,6 +22,7 @@ export default function ContentPage() {
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // ProductionProgress already polls production-status with its own interval.
   // Reading from the same query key shares cached data via TanStack Query.
@@ -65,6 +66,21 @@ export default function ContentPage() {
     }
   }
 
+  async function handleDelete(clip: Clip): Promise<void> {
+    const ok = window.confirm(`ลบคลิปนี้?\n\n"${clip.title}"`);
+    if (!ok) return;
+    setDeletingId(clip.id);
+    try {
+      await apiFetch(`/api/v1/clips/${clip.id}`, { method: 'DELETE' });
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+    } catch (e) {
+      console.error('Delete failed:', e);
+      window.alert(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function handleProduce(): Promise<void> {
     setProducing(true);
     try {
@@ -92,8 +108,8 @@ export default function ContentPage() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #1a1a1a' }}>
-            {['Title', 'Category', 'Status', 'Created'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, fontWeight: 500, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+            {['Title', 'Category', 'Status', 'Created', ''].map((h, i) => (
+              <th key={h || `col-${i}`} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, fontWeight: 500, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -124,6 +140,24 @@ export default function ContentPage() {
                 </span>
               </td>
               <td style={{ padding: '12px', fontSize: 12, color: '#555' }}>{new Date(clip.created_at).toLocaleDateString('th-TH')}</td>
+              <td style={{ padding: '12px', textAlign: 'right' }}>
+                <button
+                  onClick={() => handleDelete(clip)}
+                  disabled={deletingId === clip.id}
+                  title="Delete clip"
+                  style={{
+                    padding: '4px 10px', fontSize: 12, fontWeight: 500,
+                    background: 'transparent', color: deletingId === clip.id ? '#555' : '#ef4444',
+                    border: '1px solid #1f1f1f', borderRadius: 4,
+                    cursor: deletingId === clip.id ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={e => { if (deletingId !== clip.id) { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#ef4444'; } }}
+                  onMouseLeave={e => { if (deletingId !== clip.id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#1f1f1f'; } }}
+                >
+                  {deletingId === clip.id ? 'Deleting…' : 'Delete'}
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
