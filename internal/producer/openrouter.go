@@ -264,5 +264,5 @@ func mapVoice(voice string) string {
 	if ValidVoices[strings.ToLower(voice)] {
 		return voice
 	}
-	return "alloy"
+	return "Kore"
 }
