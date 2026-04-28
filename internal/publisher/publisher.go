@@ -62,6 +62,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			Platforms:  platforms,
 			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 			Visibility: VisibilityPrivate,
+			PublishNow: true,
 		})
 		if err != nil {
 			log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
@@ -80,6 +81,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				Visibility: VisibilityPrivate,
+				PublishNow: true,
 			})
 			if err != nil {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
