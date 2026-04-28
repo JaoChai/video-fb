@@ -20,6 +20,7 @@ const statusColor: Record<string, string> = {
 export default function ContentPage() {
   const queryClient = useQueryClient();
   const [retrying, setRetrying] = useState(false);
+  const [producing, setProducing] = useState(false);
 
   // ProductionProgress already polls production-status with its own interval.
   // Reading from the same query key shares cached data via TanStack Query.
@@ -47,6 +48,22 @@ export default function ContentPage() {
       console.error('Retry failed:', e);
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handleProduce(): Promise<void> {
+    setProducing(true);
+    try {
+      await apiFetch('/api/v1/orchestrator/produce', {
+        method: 'POST',
+        body: JSON.stringify({ count: 1 }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['production-status'] });
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+    } catch (e) {
+      console.error('Manual produce failed:', e);
+    } finally {
+      setProducing(false);
     }
   }
 
@@ -104,20 +121,36 @@ export default function ContentPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 600 }}>Content</h1>
-        {failedCount > 0 && !isProducing && (
-          <button
-            onClick={handleRetryAll}
-            disabled={retrying}
-            style={{
-              padding: '8px 16px', fontSize: 13, fontWeight: 500,
-              background: retrying ? '#333' : '#ef4444', color: '#fff',
-              border: 'none', borderRadius: 6, cursor: retrying ? 'not-allowed' : 'pointer',
-              opacity: retrying ? 0.6 : 1, transition: 'all 0.15s',
-            }}
-          >
-            {retrying ? 'Retrying...' : `Retry Failed (${failedCount})`}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!isProducing && (
+            <button
+              onClick={handleProduce}
+              disabled={producing}
+              style={{
+                padding: '8px 16px', fontSize: 13, fontWeight: 500,
+                background: producing ? '#333' : '#f5851f', color: '#fff',
+                border: 'none', borderRadius: 6, cursor: producing ? 'not-allowed' : 'pointer',
+                opacity: producing ? 0.6 : 1, transition: 'all 0.15s',
+              }}
+            >
+              {producing ? 'Producing...' : 'Produce 1 Clip'}
+            </button>
+          )}
+          {failedCount > 0 && !isProducing && (
+            <button
+              onClick={handleRetryAll}
+              disabled={retrying}
+              style={{
+                padding: '8px 16px', fontSize: 13, fontWeight: 500,
+                background: retrying ? '#333' : '#ef4444', color: '#fff',
+                border: 'none', borderRadius: 6, cursor: retrying ? 'not-allowed' : 'pointer',
+                opacity: retrying ? 0.6 : 1, transition: 'all 0.15s',
+              }}
+            >
+              {retrying ? 'Retrying...' : `Retry Failed (${failedCount})`}
+            </button>
+          )}
+        </div>
       </div>
       <ProductionProgress />
       {renderClipList()}
