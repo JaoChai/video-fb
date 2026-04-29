@@ -106,7 +106,10 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("generate questions: %w", err)
 	}
 	o.tracker.CompleteStep("question")
-	log.Printf("Generated %d questions", len(questions))
+	if len(questions) > count {
+		questions = questions[:count]
+	}
+	log.Printf("Generated %d questions (requested %d)", len(questions), count)
 
 	theme, err := o.themesRepo.GetActive(ctx)
 	if err != nil {
