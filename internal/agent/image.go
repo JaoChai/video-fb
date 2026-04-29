@@ -7,6 +7,14 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 )
 
+type ImageTemplateData struct {
+	ThemeDescription string
+	QuestionerName   string
+	QuestionText     string
+	PrimaryColor     string
+	AccentColor      string
+}
+
 type ImageAgent struct {
 	llm *LLMClient
 }
@@ -21,7 +29,7 @@ type SceneImagePrompts struct {
 	ImagePrompt916 string `json:"image_prompt_9_16"`
 }
 
-func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, model, systemPrompt string, temperature float64) ([]SceneImagePrompts, error) {
+func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, model, systemPrompt string, temperature float64, promptTemplate string) ([]SceneImagePrompts, error) {
 	themeDesc := fmt.Sprintf(
 		"Brand: primary=%s, secondary=%s, accent=%s, font=%s. Style: %s",
 		theme.PrimaryColor, theme.SecondaryColor, theme.AccentColor, theme.FontName,
@@ -32,22 +40,16 @@ func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScen
 		questionText = scenes[0].TextContent
 	}
 
-	userPrompt := fmt.Sprintf(`สร้าง image prompt 1 ภาพ สำหรับวิดีโอ Facebook Ads Q&A
-
-Brand Theme: %s
-คนถาม: %s
-คำถาม: %s
-
-สร้างภาพสไตล์ chat bubble / Facebook-like UI แสดงคำถามเด่นชัด พร้อม icon คำถาม
-ภาพนี้จะใช้เป็นพื้นหลังตลอดทั้งคลิปในขณะที่เสียงพากย์อธิบายคำตอบ
-
-ตอบเป็น JSON array ที่มี object เดียว:
-- "scene_number": 1
-- "image_prompt_16_9": prompt ภาษาอังกฤษ สำหรับ 16:9 landscape. ใส่ Thai text คำถามบนภาพ.
-- "image_prompt_9_16": prompt เหมือนกันแต่สำหรับ 9:16 vertical format.
-
-DO NOT include any logo, mascot, brand name, or brand text in the image.
-ภาพต้องมี: dark gradient background (%s to darker), accent color %s, modern flat design, chat bubble with question text.`, themeDesc, questionerName, questionText, theme.PrimaryColor, theme.AccentColor)
+	userPrompt, err := renderTemplate(promptTemplate, ImageTemplateData{
+		ThemeDescription: themeDesc,
+		QuestionerName:   questionerName,
+		QuestionText:     questionText,
+		PrimaryColor:     theme.PrimaryColor,
+		AccentColor:      theme.AccentColor,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("render image template: %w", err)
+	}
 
 	var prompts []SceneImagePrompts
 	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &prompts); err != nil {

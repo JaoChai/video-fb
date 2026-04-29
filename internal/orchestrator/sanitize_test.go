@@ -45,9 +45,19 @@ func TestSanitizeVoiceText(t *testing.T) {
 		},
 	}
 
+	aliases := map[string]string{
+		"@adsvance": "แอดส์แวนซ์",
+		"@AdsVance": "แอดส์แวนซ์",
+		"@Adsvance": "แอดส์แวนซ์",
+		"AdsVance":  "แอดส์แวนซ์",
+		"Adsvance":  "แอดส์แวนซ์",
+		"adsvance":  "แอดส์แวนซ์",
+		"Ads Vance": "แอดส์แวนซ์",
+	}
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := sanitizeVoiceText(tc.in)
+			got := sanitizeVoiceText(tc.in, aliases)
 			if got != tc.want {
 				t.Errorf("sanitizeVoiceText(%q)\n  got:  %q\n  want: %q", tc.in, got, tc.want)
 			}

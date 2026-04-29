@@ -4,12 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/repository"
 )
+
+func isContactInfo(title string) bool {
+	lower := strings.ToLower(title)
+	return strings.Contains(lower, "line id") ||
+		strings.Contains(lower, "@adsvance") ||
+		strings.Contains(lower, "ติดต่อทีมงาน") ||
+		strings.Contains(lower, "t.me/") ||
+		strings.Contains(lower, "https://")
+}
 
 type Publisher struct {
 	zernio    *ZernioClient
@@ -47,6 +57,14 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		if video169 == nil {
 			continue
+		}
+
+		if isContactInfo(title) {
+			var clipTitle string
+			if err := p.pool.QueryRow(ctx, `SELECT title FROM clips WHERE id = $1`, clipID).Scan(&clipTitle); err == nil && clipTitle != "" {
+				log.Printf("Title validation: '%s' looks like contact info, using clip question instead", title)
+				title = clipTitle
+			}
 		}
 
 		desc := ""
