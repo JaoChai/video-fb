@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
@@ -23,7 +24,7 @@ func NewPublisher(zernio *ZernioClient, pool *pgxpool.Pool, clips *repository.Cl
 
 func (p *Publisher) PublishReady(ctx context.Context) error {
 	rows, err := p.pool.Query(ctx,
-		`SELECT c.id, cm.youtube_title, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
+		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
 		 JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.status = 'ready' AND c.publish_date <= CURRENT_DATE
@@ -38,13 +39,19 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 	for rows.Next() {
 		var clipID, title string
+		var description *string
 		var video169, video916, thumb *string
-		if err := rows.Scan(&clipID, &title, &video169, &video916, &thumb); err != nil {
+		if err := rows.Scan(&clipID, &title, &description, &video169, &video916, &thumb); err != nil {
 			return fmt.Errorf("scan clip: %w", err)
 		}
 
 		if video169 == nil {
 			continue
+		}
+
+		desc := ""
+		if description != nil {
+			desc = *description
 		}
 
 		var platforms []PlatformTarget
@@ -58,7 +65,8 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		// Post 16:9 (YouTube regular)
 		result169, err := p.zernio.Post(ctx, PostRequest{
-			Content:    title,
+			Title:      title,
+			Content:    desc,
 			Platforms:  platforms,
 			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 			Visibility: VisibilityPrivate,
@@ -73,11 +81,15 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		// Post 9:16 (YouTube Shorts)
 		if video916 != nil && *video916 != "" {
 			shortsTitle := title
-			if len(shortsTitle) > 60 {
-				shortsTitle = shortsTitle[:60]
+			if utf8.RuneCountInString(shortsTitle) > 60 {
+				runes := []rune(shortsTitle)
+				shortsTitle = string(runes[:60])
 			}
+			shortsTitle += " #Shorts"
+
 			result916, err := p.zernio.Post(ctx, PostRequest{
-				Content:    shortsTitle + " #Shorts",
+				Title:      shortsTitle,
+				Content:    desc,
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				Visibility: VisibilityPrivate,

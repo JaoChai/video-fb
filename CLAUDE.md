@@ -5,7 +5,7 @@ Automated video content pipeline for Ads Vance — Go backend + React dashboard.
 ## Stack
 - **Backend:** Go 1.25, chi router, pgx/v5 (Neon PostgreSQL), robfig/cron (scheduler)
 - **Frontend:** React 19, Vite 8, TanStack Query, React Router
-- **External:** Claude API (scripts), Kie AI (video + voice via ElevenLabs), OpenRouter (embeddings), Jina AI (web scraping), Zernio (publishing)
+- **External:** OpenRouter (all LLM tasks — scripts, questions, images, analytics), Kie AI (video generation), OpenRouter TTS / Gemini TTS (voice), Jina AI (web scraping), Zernio (publishing)
 
 ## Commands
 
@@ -40,19 +40,19 @@ internal/
   router/                   # chi routes — all under /api/v1/*
   handler/                  # HTTP handlers + API key middleware
   repository/               # DB queries (clips, scenes, themes, agents, etc.)
-  agent/                    # Claude API agents (question, script, image)
+  agent/                    # LLM agents via OpenRouter (question, script, image)
   analyzer/                 # Analytics-driven agent self-improvement (weekly)
   rag/                      # RAG engine for knowledge retrieval
   crawler/                  # Knowledge source crawler
   orchestrator/             # Pipeline: question → script → image → produce
-  producer/                 # Video production (Kie AI + FFmpeg assembly)
+  producer/                 # Video production (Kie AI + OpenRouter TTS + FFmpeg assembly)
   publisher/                # Zernio publishing + analytics
   scheduler/                # Cron-based scheduler (robfig/cron, reads config from DB, Asia/Bangkok timezone)
 frontend/src/
   App.tsx                   # Main layout with sidebar navigation (QueryClient: staleTime 30s)
   pages/                    # Content, Schedules, Agents, Knowledge, Analytics, Settings
   api.ts                    # API client for backend endpoints
-migrations/                 # SQL migration files (001–006)
+migrations/                 # SQL migration files (001–009)
 .github/workflows/          # GitHub Actions — auto-deploy to Railway on push to master
 ```
 
@@ -78,15 +78,16 @@ Base: `/api/v1/`
 
 ## Environment Variables
 
-See `.env.example`. Required: `DATABASE_URL`, `API_KEY`, `CLAUDE_API_KEY`, `KIE_API_KEY`, `ZERNIO_API_KEY`.
-Optional with defaults: `PORT` (8080), `FFMPEG_PATH` (ffmpeg), `ELEVENLABS_VOICE` (Adam).
+See `.env.example`. Required: `DATABASE_URL`, `API_KEY`.
+Legacy env vars (loaded but unused in code): `CLAUDE_API_KEY`, `KIE_API_KEY`, `ZERNIO_API_KEY`.
+Optional with defaults: `PORT` (8080), `FFMPEG_PATH` (ffmpeg), `ELEVENLABS_VOICE` (legacy, voice now configured via Settings page).
 
-Note: OpenRouter API key is managed ONLY via the Settings page (database `settings` table), not via env vars. Kie, ElevenLabs, and Zernio keys can also be managed at runtime via Settings; env vars are used at startup, database settings override at runtime where applicable.
+Note: OpenRouter API key is managed ONLY via the Settings page (database `settings` table), not via env vars. All LLM calls (agents + analytics) use OpenRouter. Kie and Zernio keys are also managed via Settings at runtime.
 
 ## Pipeline Flow
 
 QuestionAgent → ScriptAgent → ImageAgent → Producer (Kie + FFmpeg) → Publisher (Zernio)
-Weekly: Analyzer fetches YouTube analytics → Claude API analyzes → auto-tunes agent prompts
+Weekly: Analyzer fetches YouTube analytics → OpenRouter LLM analyzes → auto-tunes agent prompts
 
 ## Deployment
 - **Auto-deploy:** Push to `master` → GitHub Actions runs `railway up` for both `adsvance-v2` and `adsvance-frontend`
