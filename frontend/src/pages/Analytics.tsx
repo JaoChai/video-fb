@@ -3,7 +3,9 @@ import { useMemo, useState } from 'react';
 import { apiFetch } from '../api';
 import { PageHeader } from '../components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp } from 'lucide-react';
+import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3 } from 'lucide-react';
+import { EmptyState } from '../components/empty-state';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface Clip { id: string; title: string; status: string; category: string; }
 interface ClipAnalytics {
@@ -80,13 +82,20 @@ export default function AnalyticsPage() {
 
       <h2 className="text-sm font-semibold mb-4">Published Clips</h2>
       {isLoading ? (
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="grid grid-cols-4 gap-3 mb-10">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="rounded-xl border p-5 space-y-2">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-8 w-12" />
+            </div>
+          ))}
+        </div>
       ) : published.length === 0 ? (
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm text-muted-foreground">No published clips yet.</p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={BarChart3}
+          title="No analytics data"
+          description="Publish clips to YouTube first, then analytics data will appear here."
+        />
       ) : (
         <div className="grid gap-2 mb-8">
           {published.map(clip => (
@@ -110,7 +119,21 @@ export default function AnalyticsPage() {
         <div>
           <h2 className="text-sm font-semibold mb-4">Platform Analytics</h2>
           {analyticsLoading ? (
-            <p className="text-muted-foreground">Loading analytics...</p>
+            <div className="grid grid-cols-2 gap-4">
+              {[1, 2].map(i => (
+                <div key={i} className="rounded-xl border p-5 space-y-3">
+                  <Skeleton className="h-5 w-24" />
+                  <div className="grid grid-cols-2 gap-3">
+                    {[1, 2, 3, 4].map(j => (
+                      <div key={j} className="space-y-1">
+                        <Skeleton className="h-3 w-12" />
+                        <Skeleton className="h-6 w-16" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : !analytics || analytics.length === 0 ? (
             <Card>
               <CardContent className="p-6">

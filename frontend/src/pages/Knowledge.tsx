@@ -7,8 +7,10 @@ import { Card, CardHeader, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
-import { ChevronDown, Plus, RefreshCw } from 'lucide-react';
+import { ChevronDown, Plus, RefreshCw, BookOpen } from 'lucide-react';
 import { useToast } from '../components/ui/toaster';
+import { EmptyState } from '../components/empty-state';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface SourceSummary {
   id: string;
@@ -235,7 +237,31 @@ export default function KnowledgePage() {
       )}
 
       {isLoading ? (
-        <p className="text-muted-foreground">Loading...</p>
+        <div className="space-y-6">
+          {[1, 2].map(g => (
+            <div key={g}>
+              <Skeleton className="h-3 w-32 mb-3" />
+              <div className="grid gap-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="rounded-xl border p-4 space-y-2">
+                    <div className="flex justify-between">
+                      <Skeleton className="h-5 w-48" />
+                      <Skeleton className="h-4 w-16 rounded-full" />
+                    </div>
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !sources?.length ? (
+        <EmptyState
+          icon={BookOpen}
+          title="No documents yet"
+          description="Add knowledge documents to help agents generate more accurate content."
+          action={{ label: '+ Add Document', onClick: () => setShowNew(true) }}
+        />
       ) : (
         <div className="grid gap-6">
           {grouped && Object.entries(grouped).map(([cat, items]) => (

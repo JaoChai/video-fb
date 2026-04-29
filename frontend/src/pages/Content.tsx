@@ -8,8 +8,10 @@ import { Button } from '../components/ui/button';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
-import { Plus, RotateCcw, Send, Trash2, Loader2 } from 'lucide-react';
+import { Plus, RotateCcw, Send, Trash2, Loader2, Film } from 'lucide-react';
 import { useToast } from '../components/ui/toaster';
+import { EmptyState } from '../components/empty-state';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
@@ -152,11 +154,23 @@ export default function ContentPage() {
       <ProductionProgress />
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-4 py-4">
+              <Skeleton className="h-5 flex-1" />
+              <Skeleton className="h-5 w-24" />
+              <Skeleton className="h-6 w-20 rounded-full" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+          ))}
+        </div>
       ) : !clips?.length ? (
-        <p className="text-sm text-muted-foreground">
-          No clips yet. Scheduler will auto-produce at noon &amp; midnight.
-        </p>
+        <EmptyState
+          icon={Film}
+          title="No clips yet"
+          description="Scheduler will auto-produce clips at noon & midnight, or you can manually produce one now."
+          action={{ label: '+ Produce 1 Clip', onClick: handleProduce }}
+        />
       ) : (
         <Table>
           <TableHeader>
