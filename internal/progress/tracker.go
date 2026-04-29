@@ -134,6 +134,7 @@ func (t *Tracker) FinishProduction() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.status.Active = false
+	t.status.Steps = nil
 	t.cancelFn = nil
 }
 
