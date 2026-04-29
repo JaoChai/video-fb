@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
+import { useToast } from '../components/ui/toaster';
 
 interface Agent {
   id: string;
@@ -33,6 +34,7 @@ function getTemplateVars(agentName: string): string[] {
 
 export default function AgentsPage() {
   const qc = useQueryClient();
+  const { success, error: showError } = useToast();
   const { data: agents, isLoading } = useQuery({
     queryKey: ['agents'],
     queryFn: () => apiFetch<Agent[]>('/api/v1/agents'),
@@ -74,10 +76,12 @@ export default function AgentsPage() {
         }),
       });
     },
-    onSuccess: (_data, { id }) => {
+    onSuccess: (_data, { id, agent }) => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       setDirty((prev) => ({ ...prev, [id]: false }));
+      success(`บันทึก ${agent.agent_name} แล้ว`);
     },
+    onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
   });
 
   const handleEdit = (id: string, field: keyof Agent, value: string | number | boolean) => {

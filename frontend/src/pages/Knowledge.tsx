@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { ChevronDown, Plus, RefreshCw } from 'lucide-react';
+import { useToast } from '../components/ui/toaster';
 
 interface SourceSummary {
   id: string;
@@ -35,6 +36,7 @@ const categoryLabels: Record<string, string> = {
 
 export default function KnowledgePage() {
   const qc = useQueryClient();
+  const { success, error: showError } = useToast();
   const { data: sources, isLoading } = useQuery({
     queryKey: ['knowledge'],
     queryFn: () => apiFetch<SourceSummary[]>('/api/v1/knowledge/sources'),
@@ -82,7 +84,9 @@ export default function KnowledgePage() {
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ['knowledge'] });
       setDirty(prev => ({ ...prev, [id]: false }));
+      success('บันทึกเอกสารแล้ว');
     },
+    onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
   });
 
   const createSource = useMutation({
@@ -95,19 +99,29 @@ export default function KnowledgePage() {
       qc.invalidateQueries({ queryKey: ['knowledge'] });
       setNewDoc({ name: '', category: 'general', content: '' });
       setShowNew(false);
+      success('สร้างเอกสารแล้ว — กำลัง embed');
     },
+    onError: (e) => showError(`สร้างเอกสารล้มเหลว: ${(e as Error).message}`),
   });
 
   const embedSource = useMutation({
     mutationFn: (id: string) =>
       apiFetch<{ chunks: number }>(`/api/v1/knowledge/sources/${id}/embed`, { method: 'POST' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
+      success('Embed สำเร็จ');
+    },
+    onError: (e) => showError(`Embed ล้มเหลว: ${(e as Error).message}`),
   });
 
   const deleteSource = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/knowledge/sources/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['knowledge'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
+      success('ลบเอกสารแล้ว');
+    },
+    onError: (e) => showError(`ลบล้มเหลว: ${(e as Error).message}`),
   });
 
   const [rebuildingAll, setRebuildingAll] = useState(false);
@@ -128,6 +142,7 @@ export default function KnowledgePage() {
     setRebuildingAll(false);
     setRebuildProgress('');
     qc.invalidateQueries({ queryKey: ['knowledge'] });
+    success('Rebuild embeddings สำเร็จทั้งหมด');
   };
 
   const handleEdit = (id: string, field: keyof Source, value: string) => {

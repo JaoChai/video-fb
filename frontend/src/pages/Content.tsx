@@ -9,6 +9,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
 import { Plus, RotateCcw, Send, Trash2, Loader2 } from 'lucide-react';
+import { useToast } from '../components/ui/toaster';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
@@ -18,6 +19,7 @@ interface Clip {
 
 export default function ContentPage() {
   const queryClient = useQueryClient();
+  const { success, error: showError } = useToast();
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -44,8 +46,9 @@ export default function ContentPage() {
     try {
       await apiFetch('/api/v1/orchestrator/retry', { method: 'POST' });
       queryClient.invalidateQueries({ queryKey: ['production-status'] });
+      success('เริ่ม retry คลิปที่ล้มเหลวแล้ว');
     } catch (e) {
-      console.error('Retry failed:', e);
+      showError(`Retry ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setRetrying(false);
     }
@@ -56,8 +59,9 @@ export default function ContentPage() {
     try {
       await apiFetch('/api/v1/orchestrator/publish', { method: 'POST' });
       queryClient.invalidateQueries({ queryKey: ['clips'] });
+      success('เริ่ม publish คลิปแล้ว');
     } catch (e) {
-      console.error('Publish failed:', e);
+      showError(`Publish ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setPublishing(false);
     }
@@ -70,9 +74,9 @@ export default function ContentPage() {
     try {
       await apiFetch(`/api/v1/clips/${clip.id}`, { method: 'DELETE' });
       queryClient.invalidateQueries({ queryKey: ['clips'] });
+      success('ลบคลิปแล้ว');
     } catch (e) {
-      console.error('Delete failed:', e);
-      window.alert(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`);
+      showError(`ลบไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setDeletingId(null);
     }
@@ -87,8 +91,9 @@ export default function ContentPage() {
       });
       queryClient.invalidateQueries({ queryKey: ['production-status'] });
       queryClient.invalidateQueries({ queryKey: ['clips'] });
+      success('เริ่มผลิตคลิปแล้ว');
     } catch (e) {
-      console.error('Manual produce failed:', e);
+      showError(`ผลิตคลิปล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setProducing(false);
     }

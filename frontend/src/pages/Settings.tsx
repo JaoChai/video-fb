@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
+import { useToast } from '../components/ui/toaster';
 
 interface ZernioAccount {
   _id: string;
@@ -71,6 +72,7 @@ export default function SettingsPage() {
     retry: false,
   });
 
+  const { success, error: showError } = useToast();
   const [form, setForm] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -93,7 +95,8 @@ export default function SettingsPage() {
   const save = useMutation({
     mutationFn: (data: Record<string, string>) =>
       apiFetch('/api/v1/settings', { method: 'PUT', body: JSON.stringify(data) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setDirty({}); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['settings'] }); setDirty({}); success('บันทึกการตั้งค่าแล้ว'); },
+    onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
   });
 
   const saveAgentModel = useMutation({
@@ -111,7 +114,9 @@ export default function SettingsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       setAgentModelDirty({});
+      success('บันทึก model แล้ว');
     },
+    onError: (e) => showError(`บันทึก model ล้มเหลว: ${(e as Error).message}`),
   });
 
   const testKey = useMutation({

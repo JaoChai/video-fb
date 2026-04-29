@@ -4,6 +4,7 @@ import { PageHeader } from '../components/page-header';
 import { Card, CardHeader, CardDescription } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
 import { Badge } from '../components/ui/badge';
+import { useToast } from '../components/ui/toaster';
 
 interface Schedule {
   id: string;
@@ -30,6 +31,7 @@ const CRON_LABELS: Record<string, string> = {
 
 export default function SchedulesPage() {
   const qc = useQueryClient();
+  const { success, error: showError } = useToast();
   const { data: schedules, isLoading } = useQuery({
     queryKey: ['schedules'],
     queryFn: () => apiFetch<Schedule[]>('/api/v1/schedules'),
@@ -45,7 +47,11 @@ export default function SchedulesPage() {
           enabled: !schedule.enabled,
         }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['schedules'] }),
+    onSuccess: (_d, { schedule }) => {
+      qc.invalidateQueries({ queryKey: ['schedules'] });
+      success(`${schedule.name} ${schedule.enabled ? 'ปิด' : 'เปิด'}แล้ว`);
+    },
+    onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
   });
 
   return (
