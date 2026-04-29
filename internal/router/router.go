@@ -53,9 +53,12 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Post("/{id}/embed", knowledge.EmbedSource)
 	})
 
-	agents := handler.NewAgentsHandler(repository.NewAgentsRepo(pool))
+	agentsRepo := repository.NewAgentsRepo(pool)
+	agents := handler.NewAgentsHandler(agentsRepo)
+	promptHistory := handler.NewPromptHistoryHandler(agentsRepo)
 	r.Route("/api/v1/agents", func(r chi.Router) {
 		r.Get("/", agents.List)
+		r.Get("/prompt-history", promptHistory.List)
 		r.Patch("/{id}", agents.Update)
 	})
 

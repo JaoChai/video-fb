@@ -3,10 +3,20 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 )
+
+type PromptHistoryEntry struct {
+	ID        string    `json:"id"`
+	AgentName string    `json:"agent_name"`
+	OldPrompt string    `json:"old_prompt"`
+	NewPrompt string    `json:"new_prompt"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 type AgentsRepo struct {
 	pool *pgxpool.Pool
@@ -88,4 +98,26 @@ func (r *AgentsRepo) SavePromptHistory(ctx context.Context, agentName, oldPrompt
 		return fmt.Errorf("save prompt history for %s: %w", agentName, err)
 	}
 	return nil
+}
+
+func (r *AgentsRepo) ListPromptHistory(ctx context.Context, limit int) ([]PromptHistoryEntry, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, agent_name, old_prompt, new_prompt, reason, created_at
+		 FROM agent_prompt_history
+		 ORDER BY created_at DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query prompt history: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []PromptHistoryEntry
+	for rows.Next() {
+		var e PromptHistoryEntry
+		if err := rows.Scan(&e.ID, &e.AgentName, &e.OldPrompt, &e.NewPrompt, &e.Reason, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan prompt history: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
 }
