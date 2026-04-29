@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  History,
   Settings,
   Moon,
   Sun,
@@ -22,6 +23,7 @@ export const PIPELINE_NAV = [
 export const CONFIG_NAV = [
   { to: "/knowledge", label: "Knowledge", icon: BookOpen },
   { to: "/agents", label: "Agents", icon: Bot },
+  { to: "/prompt-history", label: "Prompt History", icon: History },
   { to: "/settings", label: "Settings", icon: Settings },
 ]
 

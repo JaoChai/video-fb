@@ -10,6 +10,7 @@ import KnowledgePage from "./pages/Knowledge"
 import SchedulesPage from "./pages/Schedules"
 import AnalyticsPage from "./pages/Analytics"
 import SettingsPage from "./pages/Settings"
+import PromptHistoryPage from "./pages/PromptHistory"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,6 +38,7 @@ export default function App() {
                     <Route path="/analytics" element={<AnalyticsPage />} />
                     <Route path="/knowledge" element={<KnowledgePage />} />
                     <Route path="/agents" element={<AgentsPage />} />
+                    <Route path="/prompt-history" element={<PromptHistoryPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                   </Routes>
                 </ErrorBoundary>
