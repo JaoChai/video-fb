@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgxvec "github.com/pgvector/pgvector-go/pgx"
 )
 
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
@@ -16,8 +17,10 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 
 	config.MaxConns = 10
 	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, "SET timezone = 'Asia/Bangkok'")
-		return err
+		if _, err := conn.Exec(ctx, "SET timezone = 'Asia/Bangkok'"); err != nil {
+			return err
+		}
+		return pgxvec.RegisterTypes(ctx, conn)
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)

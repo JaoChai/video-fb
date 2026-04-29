@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/analyzer"
 	"github.com/jaochai/video-fb/internal/config"
@@ -29,6 +32,7 @@ import (
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations")
 	crawlFlag := flag.Bool("crawl", false, "Run knowledge crawler")
+	embedFlag := flag.Bool("embed", false, "Rebuild embeddings for all knowledge sources")
 	produceFlag := flag.Int("produce", 0, "Produce N clips")
 	publishFlag := flag.Bool("publish", false, "Publish ready clips")
 	analyticsFlag := flag.Bool("analytics", false, "Fetch analytics for published clips")
@@ -59,6 +63,13 @@ func main() {
 	if *crawlFlag {
 		if err := crawl.CrawlAll(ctx); err != nil {
 			log.Fatalf("Crawl failed: %v", err)
+		}
+		return
+	}
+
+	if *embedFlag {
+		if err := rebuildAllEmbeddings(ctx, pool, ragEngine); err != nil {
+			log.Fatalf("Embed failed: %v", err)
 		}
 		return
 	}
@@ -136,4 +147,48 @@ func main() {
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+func rebuildAllEmbeddings(ctx context.Context, pool *pgxpool.Pool, engine *rag.Engine) error {
+	rows, err := pool.Query(ctx, `SELECT id, name, content FROM knowledge_sources WHERE enabled = true ORDER BY name`)
+	if err != nil {
+		return fmt.Errorf("query sources: %w", err)
+	}
+	defer rows.Close()
+
+	type source struct{ ID, Name, Content string }
+	var sources []source
+	for rows.Next() {
+		var s source
+		rows.Scan(&s.ID, &s.Name, &s.Content)
+		sources = append(sources, s)
+	}
+
+	log.Printf("Embedding %d knowledge sources...", len(sources))
+	for i, s := range sources {
+		log.Printf("[%d/%d] %s (%d chars)", i+1, len(sources), s.Name, len(s.Content))
+
+		pool.Exec(ctx, `DELETE FROM knowledge_chunks WHERE source_id = $1`, s.ID)
+
+		chunks := rag.ChunkText(s.Content, 200, 30)
+		stored := 0
+		for _, chunk := range chunks {
+			if len(strings.Fields(chunk)) < 10 {
+				continue
+			}
+			embedding, err := engine.GenerateEmbedding(ctx, chunk)
+			if err != nil {
+				log.Printf("  ERROR embedding chunk: %v", err)
+				continue
+			}
+			if err := engine.StoreChunk(ctx, s.ID, chunk, "", embedding); err != nil {
+				log.Printf("  ERROR storing chunk: %v", err)
+				continue
+			}
+			stored++
+		}
+		log.Printf("  → %d chunks stored", stored)
+	}
+	log.Println("All embeddings complete")
+	return nil
 }

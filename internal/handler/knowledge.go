@@ -113,8 +113,10 @@ func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Starting embed for source %s (%d chars)", id, len(source.Content))
+	content := source.Content
 	go func() {
-		n, err := h.rebuildChunks(id, source.Content)
+		n, err := h.rebuildChunks(id, content)
 		if err != nil {
 			log.Printf("Embed source %s failed: %v", id, err)
 		} else {
