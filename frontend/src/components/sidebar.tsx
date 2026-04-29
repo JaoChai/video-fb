@@ -1,7 +1,9 @@
+import { useState, useEffect } from "react"
 import { NavLink } from "react-router-dom"
 import { cn } from "../lib/utils"
-import { Play, Bot, BookOpen, Clock, BarChart3, Settings } from "lucide-react"
+import { Play, Bot, BookOpen, Clock, BarChart3, Settings, Moon, Sun } from "lucide-react"
 import { Separator } from "./ui/separator"
+import { Button } from "./ui/button"
 
 const NAV = [
   { to: "/", label: "Content", icon: Play },
@@ -13,6 +15,22 @@ const NAV = [
 ]
 
 export function Sidebar() {
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    localStorage.setItem('theme', isDark ? 'dark' : 'light')
+  }, [isDark])
+
   return (
     <aside className="flex h-screen w-[240px] flex-col border-r bg-background sticky top-0">
       <div className="px-6 py-5">
@@ -38,8 +56,17 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-      <div className="px-6 py-4 border-t">
-        <p className="text-xs text-muted-foreground">v2.0 — Automated Pipeline</p>
+      <div className="px-3 py-4 border-t space-y-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-3 text-muted-foreground"
+          onClick={() => setIsDark(!isDark)}
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {isDark ? "Light Mode" : "Dark Mode"}
+        </Button>
+        <p className="text-xs text-muted-foreground px-3">v2.0 — Automated Pipeline</p>
       </div>
     </aside>
   )
