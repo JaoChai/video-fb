@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 
+	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
@@ -18,12 +18,11 @@ func NewPromptHistoryHandler(repo *repository.AgentsRepo) *PromptHistoryHandler 
 func (h *PromptHistoryHandler) List(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.repo.ListPromptHistory(r.Context(), 50)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}
 	if entries == nil {
 		entries = []repository.PromptHistoryEntry{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"data": entries})
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: entries})
 }

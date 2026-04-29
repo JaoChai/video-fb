@@ -75,12 +75,14 @@ export function Sidebar() {
   )
 }
 
-function NavSection({
+export function NavSection({
   label,
   items,
+  onItemClick,
 }: {
   label: string
   items: { to: string; label: string; icon: React.ComponentType<{ className?: string }> }[]
+  onItemClick?: () => void
 }) {
   return (
     <div>
@@ -93,6 +95,7 @@ function NavSection({
             key={to}
             to={to}
             end={to === "/"}
+            onClick={onItemClick}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
