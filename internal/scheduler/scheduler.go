@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/analyzer"
+	"github.com/jaochai/video-fb/internal/crawler"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/preflight"
 	"github.com/jaochai/video-fb/internal/publisher"
@@ -26,11 +27,12 @@ type Scheduler struct {
 	publisher     *publisher.Publisher
 	analyzer      *analyzer.Analyzer
 	orchestrator  *orchestrator.Orchestrator
+	crawler       *crawler.Crawler
 	schedulesRepo *repository.SchedulesRepo
 	clipsRepo     *repository.ClipsRepo
 }
 
-func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo) *Scheduler {
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, crawl *crawler.Crawler, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo) *Scheduler {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
 		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
@@ -40,6 +42,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 			publisher:     pub,
 			analyzer:      anlz,
 			orchestrator:  orch,
+			crawler:       crawl,
 			schedulesRepo: schedRepo,
 			clipsRepo:     clipsRepo,
 		}
@@ -50,6 +53,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 		publisher:     pub,
 		analyzer:      anlz,
 		orchestrator:  orch,
+		crawler:       crawl,
 		schedulesRepo: schedRepo,
 		clipsRepo:     clipsRepo,
 	}
@@ -157,6 +161,10 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.produceAndPublish
 	case "analyze_and_improve":
 		return s.analyzer.AnalyzeAndImprove
+	case "fetch_analytics":
+		return s.publisher.FetchAnalytics
+	case "crawl_knowledge":
+		return s.crawler.CrawlAll
 	default:
 		return nil
 	}
