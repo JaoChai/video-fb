@@ -14,6 +14,7 @@ type QuestionTemplateData struct {
 	Category       string
 	RAGContext     string
 	PreviousTopics string
+	PreviousNames  string
 }
 
 type QuestionAgent struct {
@@ -64,11 +65,31 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model
 		previousList = "\n\nห้ามซ้ำกับหัวข้อเหล่านี้:\n- " + strings.Join(recent, "\n- ")
 	}
 
+	nameRows, err := a.pool.Query(ctx,
+		`SELECT DISTINCT questioner_name FROM clips WHERE created_at > NOW() - INTERVAL '60 days' AND questioner_name != '' ORDER BY questioner_name LIMIT 50`)
+	if err != nil {
+		return nil, fmt.Errorf("query recent names: %w", err)
+	}
+	defer nameRows.Close()
+
+	var recentNames []string
+	for nameRows.Next() {
+		var n string
+		nameRows.Scan(&n)
+		recentNames = append(recentNames, n)
+	}
+
+	previousNames := ""
+	if len(recentNames) > 0 {
+		previousNames = "\n\nห้ามใช้ชื่อซ้ำกับเหล่านี้: " + strings.Join(recentNames, ", ")
+	}
+
 	userPrompt, err := renderTemplate(promptTemplate, QuestionTemplateData{
 		Count:          count,
 		Category:       category,
 		RAGContext:     ragContext.String(),
 		PreviousTopics: previousList,
+		PreviousNames:  previousNames,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render question template: %w", err)

@@ -22,7 +22,7 @@ interface Agent {
 }
 
 const TEMPLATE_VARS: Record<string, string[]> = {
-  question: ['Count', 'Category', 'RAGContext', 'PreviousTopics'],
+  question: ['Count', 'Category', 'RAGContext', 'PreviousTopics', 'PreviousNames'],
   script: ['Question', 'QuestionerName', 'Category', 'RAGContext'],
   image: ['ThemeDescription', 'QuestionerName', 'QuestionText', 'PrimaryColor', 'AccentColor'],
 };
