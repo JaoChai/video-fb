@@ -13,13 +13,13 @@ import {
 } from "lucide-react"
 import { Button } from "./ui/button"
 
-const PIPELINE_NAV = [
+export const PIPELINE_NAV = [
   { to: "/", label: "Content", icon: LayoutDashboard },
   { to: "/schedules", label: "Schedules", icon: CalendarClock },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ]
 
-const CONFIG_NAV = [
+export const CONFIG_NAV = [
   { to: "/knowledge", label: "Knowledge", icon: BookOpen },
   { to: "/agents", label: "Agents", icon: Bot },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -43,7 +43,7 @@ export function Sidebar() {
   }, [isDark])
 
   return (
-    <aside className="flex h-screen w-[240px] flex-col bg-sidebar sticky top-0">
+    <aside className="hidden md:flex h-screen w-[240px] flex-col bg-sidebar sticky top-0">
       <div className="px-6 py-5">
         <span className="text-lg font-bold tracking-tight text-sidebar-foreground">
           Ads Vance
