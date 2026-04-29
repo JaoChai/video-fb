@@ -1,19 +1,33 @@
 package agent
 
 import (
-	"bytes"
 	"fmt"
-	"text/template"
+	"reflect"
+	"strconv"
+	"strings"
 )
 
 func renderTemplate(tmplStr string, data any) (string, error) {
-	tmpl, err := template.New("prompt").Parse(tmplStr)
-	if err != nil {
-		return "", fmt.Errorf("parse template: %w", err)
+	v := reflect.ValueOf(data)
+	if v.Kind() != reflect.Struct {
+		return "", fmt.Errorf("template data must be a struct")
 	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute template: %w", err)
+	t := v.Type()
+
+	pairs := make([]string, 0, t.NumField()*2)
+	for i := range t.NumField() {
+		key := "{{." + t.Field(i).Name + "}}"
+		field := v.Field(i)
+		var val string
+		switch field.Kind() {
+		case reflect.String:
+			val = field.String()
+		case reflect.Int, reflect.Int64:
+			val = strconv.FormatInt(field.Int(), 10)
+		default:
+			val = fmt.Sprint(field.Interface())
+		}
+		pairs = append(pairs, key, val)
 	}
-	return buf.String(), nil
+	return strings.NewReplacer(pairs...).Replace(tmplStr), nil
 }

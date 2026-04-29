@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,8 +27,13 @@ var (
 // Gemini TTS chokes on URLs and brand handles, often truncating audio mid-sentence.
 // Brand mentions are normalized using the brandAliases map (loaded from DB settings).
 func sanitizeVoiceText(s string, brandAliases map[string]string) string {
-	for eng, thai := range brandAliases {
-		s = strings.ReplaceAll(s, eng, thai)
+	keys := make([]string, 0, len(brandAliases))
+	for k := range brandAliases {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	for _, k := range keys {
+		s = strings.ReplaceAll(s, k, brandAliases[k])
 	}
 	s = urlRegex.ReplaceAllString(s, "")
 	s = atHandleRgx.ReplaceAllString(s, "")
@@ -97,7 +103,10 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		aliasesJSON = "{}"
 	}
 	var brandAliases map[string]string
-	json.Unmarshal([]byte(aliasesJSON), &brandAliases)
+	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
+		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
+		brandAliases = map[string]string{}
+	}
 
 	log.Printf("Producing %d clips for category: %s", count, category)
 
@@ -236,7 +245,10 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 		aliasesJSON = "{}"
 	}
 	var brandAliases map[string]string
-	json.Unmarshal([]byte(aliasesJSON), &brandAliases)
+	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
+		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
+		brandAliases = map[string]string{}
+	}
 
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
