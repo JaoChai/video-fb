@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -115,17 +116,28 @@ func (c *LLMClient) Generate(ctx context.Context, model, systemPrompt, userPromp
 }
 
 func (c *LLMClient) GenerateJSON(ctx context.Context, model, systemPrompt, userPrompt string, temperature float64, target any) error {
-	text, err := c.Generate(ctx, model, systemPrompt, userPrompt, temperature)
-	if err != nil {
-		return err
-	}
+	const maxRetries = 2
+	var lastErr error
+	for attempt := range maxRetries + 1 {
+		temp := temperature
+		if attempt > 0 {
+			temp = max(0, temperature-0.2*float64(attempt))
+			log.Printf("LLM JSON retry %d/%d (temperature: %.2f)", attempt, maxRetries, temp)
+		}
 
-	cleaned := extractJSON(text)
+		text, err := c.Generate(ctx, model, systemPrompt, userPrompt, temp)
+		if err != nil {
+			return err
+		}
 
-	if err := json.Unmarshal([]byte(cleaned), target); err != nil {
-		return fmt.Errorf("parse JSON from LLM: %w\nraw: %s", err, text[:min(len(text), 300)])
+		cleaned := extractJSON(text)
+		if err := json.Unmarshal([]byte(cleaned), target); err != nil {
+			lastErr = fmt.Errorf("parse JSON from LLM: %w\nraw: %s", err, text[:min(len(text), 300)])
+			continue
+		}
+		return nil
 	}
-	return nil
+	return lastErr
 }
 
 func extractJSON(text string) string {

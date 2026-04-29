@@ -11,6 +11,8 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
+const historyPrefixSkills = "[skills] "
+
 type Analyzer struct {
 	pool       *pgxpool.Pool
 	llm        *agent.LLMClient
@@ -27,7 +29,7 @@ type improvementResult struct {
 
 type agentImprovement struct {
 	AgentName string `json:"agent_name"`
-	NewPrompt string `json:"new_prompt"`
+	NewSkills string `json:"new_skills"`
 	Reason    string `json:"reason"`
 }
 
@@ -47,21 +49,33 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 		return fmt.Errorf("get analytics agent config: %w", err)
 	}
 
-	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube channel for the last 7 days:
+	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube channel for the last 14 days:
 
 %s
 
-Current agent system prompts:
+Current agent configurations (system_prompt + skills + prompt_template):
 %s
 
-Based on this data, analyze which videos performed best and worst. Then improve each agent's system_prompt to produce more viral, engaging content.
+Based on this data, analyze which videos performed best and worst.
+Then improve each agent's "skills" field to produce more engaging content.
+
+CRITICAL RULES — you MUST preserve these in every new skills text:
+- Script: "ห้ามมีอักขระ @ และห้ามมี URL ใดๆ ใน voice_text" must remain
+- Script: "เรียกแบรนด์ว่า แอดส์แวนซ์ ใน voice_text" must remain
+- Script: JSON output format rules (scenes array, youtube_title, etc.) must remain
+- Image: "ห้ามใส่ logo, mascot, ชื่อแบรนด์" must remain
+- Question: "ห้ามสร้างคำถามที่แนะนำการทำผิดนโยบาย" must remain
+- All agents: JSON output format instructions must remain
+
+You may ONLY change the "skills" field. Do NOT change system_prompt or prompt_template.
+Focus on: content quality, engagement hooks, audience targeting, variety.
 
 Return JSON only:
 {
   "agents": [
-    {"agent_name": "question", "new_prompt": "...", "reason": "..."},
-    {"agent_name": "script", "new_prompt": "...", "reason": "..."},
-    {"agent_name": "image", "new_prompt": "...", "reason": "..."}
+    {"agent_name": "question", "new_skills": "...", "reason": "..."},
+    {"agent_name": "script", "new_skills": "...", "reason": "..."},
+    {"agent_name": "image", "new_skills": "...", "reason": "..."}
   ]
 }`, data, a.currentPrompts(ctx))
 
@@ -82,31 +96,31 @@ Return JSON only:
 	}
 	agentMap := make(map[string]string, len(agents))
 	for _, ag := range agents {
-		agentMap[ag.AgentName] = ag.SystemPrompt
+		agentMap[ag.AgentName] = ag.Skills
 	}
 
 	for _, imp := range result.Agents {
-		if imp.AgentName == "analytics" || imp.NewPrompt == "" {
+		if imp.AgentName == "analytics" || imp.NewSkills == "" {
 			continue
 		}
 
-		oldPrompt, exists := agentMap[imp.AgentName]
+		oldSkills, exists := agentMap[imp.AgentName]
 		if !exists {
 			log.Printf("Analyzer: skip unknown agent %s", imp.AgentName)
 			continue
 		}
 
-		if err := a.agentsRepo.SavePromptHistory(ctx, imp.AgentName, oldPrompt, imp.NewPrompt, imp.Reason); err != nil {
+		if err := a.agentsRepo.SavePromptHistory(ctx, imp.AgentName, oldSkills, imp.NewSkills, historyPrefixSkills+imp.Reason); err != nil {
 			log.Printf("Analyzer: failed to save history for %s: %v", imp.AgentName, err)
 			continue
 		}
 
-		if err := a.agentsRepo.UpdatePromptByName(ctx, imp.AgentName, imp.NewPrompt); err != nil {
-			log.Printf("Analyzer: failed to update prompt for %s: %v", imp.AgentName, err)
+		if err := a.agentsRepo.UpdateSkillsByName(ctx, imp.AgentName, imp.NewSkills); err != nil {
+			log.Printf("Analyzer: failed to update skills for %s: %v", imp.AgentName, err)
 			continue
 		}
 
-		log.Printf("Analyzer: updated %s prompt — reason: %s", imp.AgentName, imp.Reason)
+		log.Printf("Analyzer: updated %s skills — reason: %s", imp.AgentName, imp.Reason)
 	}
 
 	return nil
@@ -172,7 +186,14 @@ func (a *Analyzer) currentPrompts(ctx context.Context) string {
 		if ag.AgentName == "analytics" {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("### %s\n%s", ag.AgentName, ag.SystemPrompt))
+		section := fmt.Sprintf("### %s\n**System Prompt:**\n%s", ag.AgentName, ag.SystemPrompt)
+		if ag.Skills != "" {
+			section += fmt.Sprintf("\n\n**Skills:**\n%s", ag.Skills)
+		}
+		if ag.PromptTemplate != "" {
+			section += fmt.Sprintf("\n\n**Prompt Template:**\n%s", ag.PromptTemplate)
+		}
+		lines = append(lines, section)
 	}
-	return strings.Join(lines, "\n\n")
+	return strings.Join(lines, "\n\n---\n\n")
 }

@@ -188,6 +188,22 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases)
 }
 
+func validateScript(script *agent.GeneratedScript) {
+	const suffix = " | Ads Vance"
+	const maxLen = 70
+
+	title := strings.TrimSuffix(script.YoutubeTitle, suffix)
+	titleRunes := []rune(title)
+	suffixLen := len([]rune(suffix))
+	maxContent := maxLen - suffixLen
+
+	if len(titleRunes) > maxContent {
+		titleRunes = titleRunes[:maxContent]
+		log.Printf("Warning: youtube_title truncated to fit %d chars", maxLen)
+	}
+	script.YoutubeTitle = string(titleRunes) + suffix
+}
+
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
 	o.tracker.StartStep("script")
 	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, buildPrompt(scriptCfg), scriptCfg.Temperature, scriptCfg.PromptTemplate)
@@ -195,6 +211,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
 	}
+	validateScript(script)
 	o.tracker.CompleteStep("script")
 
 	for _, scene := range script.Scenes {

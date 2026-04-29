@@ -69,6 +69,16 @@ func (r *AgentsRepo) UpdatePromptByName(ctx context.Context, agentName, newPromp
 	return nil
 }
 
+func (r *AgentsRepo) UpdateSkillsByName(ctx context.Context, agentName, newSkills string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE agent_configs SET skills = $2 WHERE agent_name = $1`,
+		agentName, newSkills)
+	if err != nil {
+		return fmt.Errorf("update skills for agent %s: %w", agentName, err)
+	}
+	return nil
+}
+
 func (r *AgentsRepo) SavePromptHistory(ctx context.Context, agentName, oldPrompt, newPrompt, reason string) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO agent_prompt_history (agent_name, old_prompt, new_prompt, reason)
