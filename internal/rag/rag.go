@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pgvector/pgvector-go"
 )
 
 type Engine struct {
@@ -117,23 +116,15 @@ func (e *Engine) GenerateEmbedding(ctx context.Context, text string) ([]float64,
 }
 
 func (e *Engine) StoreChunk(ctx context.Context, sourceID, content, url string, embedding []float64) error {
-	vec := toFloat32(embedding)
+	embStr := formatVector(embedding)
 	_, err := e.pool.Exec(ctx,
 		`INSERT INTO knowledge_chunks (source_id, content, url, embedding)
-		 VALUES ($1, $2, $3, $4)`,
-		sourceID, content, url, pgvector.NewVector(vec))
+		 VALUES ($1, $2, $3, $4::vector)`,
+		sourceID, content, url, embStr)
 	if err != nil {
 		return fmt.Errorf("store chunk: %w", err)
 	}
 	return nil
-}
-
-func toFloat32(f64 []float64) []float32 {
-	f32 := make([]float32, len(f64))
-	for i, v := range f64 {
-		f32[i] = float32(v)
-	}
-	return f32
 }
 
 type SearchResult struct {
@@ -148,13 +139,13 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]SearchRe
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	vec := pgvector.NewVector(toFloat32(embedding))
+	embStr := formatVector(embedding)
 	rows, err := e.pool.Query(ctx,
-		`SELECT content, COALESCE(url, ''), 1 - (embedding <=> $1) AS similarity
+		`SELECT content, COALESCE(url, ''), 1 - (embedding <=> $1::vector) AS similarity
 		 FROM knowledge_chunks
-		 ORDER BY embedding <=> $1
+		 ORDER BY embedding <=> $1::vector
 		 LIMIT $2`,
-		vec, topK)
+		embStr, topK)
 	if err != nil {
 		return nil, fmt.Errorf("search chunks: %w", err)
 	}
@@ -169,6 +160,14 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]SearchRe
 		results = append(results, r)
 	}
 	return results, nil
+}
+
+func formatVector(v []float64) string {
+	parts := make([]string, len(v))
+	for i, f := range v {
+		parts[i] = fmt.Sprintf("%f", f)
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 func ChunkText(text string, maxChunkSize int, overlap int) []string {

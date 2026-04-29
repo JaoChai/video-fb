@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jaochai/video-fb/internal/models"
@@ -127,31 +128,37 @@ func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) (int, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
+	log.Printf("[embed:%s] deleting old chunks", sourceID[:8])
 	if err := h.repo.DeleteChunksBySource(ctx, sourceID); err != nil {
 		return 0, fmt.Errorf("delete chunks: %w", err)
 	}
+	log.Printf("[embed:%s] old chunks deleted", sourceID[:8])
 
 	if strings.TrimSpace(content) == "" {
 		return 0, nil
 	}
 
 	chunks := rag.ChunkText(content, 200, 30)
+	log.Printf("[embed:%s] %d chunks to process", sourceID[:8], len(chunks))
 	stored := 0
-	for _, chunk := range chunks {
+	for i, chunk := range chunks {
 		if len(strings.Fields(chunk)) < 10 {
 			continue
 		}
+		log.Printf("[embed:%s] generating embedding %d/%d", sourceID[:8], i+1, len(chunks))
 		embedding, err := h.engine.GenerateEmbedding(ctx, chunk)
 		if err != nil {
 			return stored, fmt.Errorf("embedding chunk %d: %w", stored+1, err)
 		}
+		log.Printf("[embed:%s] storing chunk %d", sourceID[:8], i+1)
 		if err := h.engine.StoreChunk(ctx, sourceID, chunk, "", embedding); err != nil {
 			return stored, fmt.Errorf("store chunk %d: %w", stored+1, err)
 		}
 		stored++
 	}
-	log.Printf("Embedded %d/%d chunks for source %s", stored, len(chunks), sourceID)
+	log.Printf("[embed:%s] done: %d/%d chunks stored", sourceID[:8], stored, len(chunks))
 	return stored, nil
 }
