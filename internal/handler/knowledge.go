@@ -113,12 +113,15 @@ func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := h.rebuildChunks(id, source.Content)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{"chunks": n}})
+	go func() {
+		n, err := h.rebuildChunks(id, source.Content)
+		if err != nil {
+			log.Printf("Embed source %s failed: %v", id, err)
+		} else {
+			log.Printf("Embedded source %s: %d chunks", id, n)
+		}
+	}()
+	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Embedding started in background"})
 }
 
 func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) (int, error) {
