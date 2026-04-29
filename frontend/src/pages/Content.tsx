@@ -2,20 +2,19 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 import ProductionProgress from '../components/ProductionProgress';
+import { PageHeader } from '../components/page-header';
+import { StatusBadge } from '../components/status-badge';
+import { Button } from '../components/ui/button';
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '../components/ui/table';
+import { Plus, RotateCcw, Send, Trash2, Loader2 } from 'lucide-react';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
   category: string; status: string; created_at: string;
   fail_reason?: string; retry_count: number;
 }
-
-const statusColor: Record<string, string> = {
-  published: '#22c55e',
-  ready: '#f59e0b',
-  producing: '#f5851f',
-  failed: '#ef4444',
-  draft: '#555',
-};
 
 export default function ContentPage() {
   const queryClient = useQueryClient();
@@ -24,8 +23,6 @@ export default function ContentPage() {
   const [publishing, setPublishing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // ProductionProgress already polls production-status with its own interval.
-  // Reading from the same query key shares cached data via TanStack Query.
   const { data: prodStatus } = useQuery({
     queryKey: ['production-status'],
     queryFn: () => apiFetch<{ active: boolean }>('/api/v1/production/status'),
@@ -97,125 +94,126 @@ export default function ContentPage() {
     }
   }
 
-  function renderClipList(): React.ReactNode {
-    if (isLoading) {
-      return <p style={{ color: '#555' }}>Loading...</p>;
-    }
-    if (!clips?.length) {
-      return <p style={{ color: '#555' }}>No clips yet. Scheduler will auto-produce at noon & midnight.</p>;
-    }
-    return (
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #1a1a1a' }}>
-            {['Title', 'Category', 'Status', 'Created', ''].map((h, i) => (
-              <th key={h || `col-${i}`} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, fontWeight: 500, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {clips.map(clip => (
-            <tr key={clip.id} style={{ borderBottom: '1px solid #111', transition: 'background 0.15s' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#111')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <td style={{ padding: '12px', fontSize: 14 }}>
-                {clip.title}
-                {clip.status === 'failed' && clip.fail_reason && (
-                  <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, opacity: 0.8 }}>
-                    {clip.fail_reason}
-                  </div>
-                )}
-              </td>
-              <td style={{ padding: '12px', fontSize: 13, color: '#888' }}>{clip.category}</td>
-              <td style={{ padding: '12px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor[clip.status] || '#555' }} />
-                  {clip.status}
-                  {clip.status === 'failed' && clip.retry_count > 0 && (
-                    <span style={{ fontSize: 10, color: '#888' }}>({clip.retry_count}/2)</span>
-                  )}
-                  {clip.status === 'producing' && (
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f5851f', animation: 'pulse 1.5s ease-in-out infinite' }} />
-                  )}
-                </span>
-              </td>
-              <td style={{ padding: '12px', fontSize: 12, color: '#555' }}>{new Date(clip.created_at).toLocaleDateString('th-TH')}</td>
-              <td style={{ padding: '12px', textAlign: 'right' }}>
-                <button
-                  onClick={() => handleDelete(clip)}
-                  disabled={deletingId === clip.id}
-                  title="Delete clip"
-                  style={{
-                    padding: '4px 10px', fontSize: 12, fontWeight: 500,
-                    background: 'transparent', color: deletingId === clip.id ? '#555' : '#ef4444',
-                    border: '1px solid #1f1f1f', borderRadius: 4,
-                    cursor: deletingId === clip.id ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => { if (deletingId !== clip.id) { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#ef4444'; } }}
-                  onMouseLeave={e => { if (deletingId !== clip.id) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.borderColor = '#1f1f1f'; } }}
-                >
-                  {deletingId === clip.id ? 'Deleting…' : 'Delete'}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600 }}>Content</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {!isProducing && (
-            <button
-              onClick={handleProduce}
-              disabled={producing}
-              style={{
-                padding: '8px 16px', fontSize: 13, fontWeight: 500,
-                background: producing ? '#333' : '#f5851f', color: '#fff',
-                border: 'none', borderRadius: 6, cursor: producing ? 'not-allowed' : 'pointer',
-                opacity: producing ? 0.6 : 1, transition: 'all 0.15s',
-              }}
-            >
-              {producing ? 'Producing...' : 'Produce 1 Clip'}
-            </button>
-          )}
-          {readyCount > 0 && !isProducing && (
-            <button
-              onClick={handlePublish}
-              disabled={publishing}
-              style={{
-                padding: '8px 16px', fontSize: 13, fontWeight: 500,
-                background: publishing ? '#333' : '#22c55e', color: '#fff',
-                border: 'none', borderRadius: 6, cursor: publishing ? 'not-allowed' : 'pointer',
-                opacity: publishing ? 0.6 : 1, transition: 'all 0.15s',
-              }}
-            >
-              {publishing ? 'Publishing...' : `Publish (${readyCount})`}
-            </button>
-          )}
-          {failedCount > 0 && !isProducing && (
-            <button
-              onClick={handleRetryAll}
-              disabled={retrying}
-              style={{
-                padding: '8px 16px', fontSize: 13, fontWeight: 500,
-                background: retrying ? '#333' : '#ef4444', color: '#fff',
-                border: 'none', borderRadius: 6, cursor: retrying ? 'not-allowed' : 'pointer',
-                opacity: retrying ? 0.6 : 1, transition: 'all 0.15s',
-              }}
-            >
-              {retrying ? 'Retrying...' : `Retry Failed (${failedCount})`}
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Content"
+        actions={
+          !isProducing ? (
+            <>
+              <Button onClick={handleProduce} disabled={producing} size="sm">
+                {producing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+                {producing ? 'Producing...' : 'Produce 1 Clip'}
+              </Button>
+              {failedCount > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleRetryAll}
+                  disabled={retrying}
+                >
+                  {retrying ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-4" />
+                  )}
+                  {retrying ? 'Retrying...' : `Retry Failed (${failedCount})`}
+                </Button>
+              )}
+              {readyCount > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handlePublish}
+                  disabled={publishing}
+                >
+                  {publishing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Send className="size-4" />
+                  )}
+                  {publishing ? 'Publishing...' : `Publish Ready (${readyCount})`}
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+      />
+
       <ProductionProgress />
-      {renderClipList()}
+
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      ) : !clips?.length ? (
+        <p className="text-sm text-muted-foreground">
+          No clips yet. Scheduler will auto-produce at noon &amp; midnight.
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead className="w-[60px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {clips.map(clip => (
+              <TableRow key={clip.id}>
+                <TableCell>
+                  <div className="text-sm">{clip.title}</div>
+                  {clip.status === 'failed' && clip.fail_reason && (
+                    <div className="text-xs text-destructive mt-1 opacity-80">
+                      {clip.fail_reason}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {clip.category}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={clip.status} />
+                    {clip.status === 'failed' && clip.retry_count > 0 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        ({clip.retry_count}/2)
+                      </span>
+                    )}
+                    {clip.status === 'producing' && (
+                      <span className="size-1.5 rounded-full bg-orange-500 animate-pulse" />
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {new Date(clip.created_at).toLocaleDateString('th-TH')}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(clip)}
+                    disabled={deletingId === clip.id}
+                    title="Delete clip"
+                    className="size-8 text-muted-foreground hover:text-destructive"
+                  >
+                    {deletingId === clip.id ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
