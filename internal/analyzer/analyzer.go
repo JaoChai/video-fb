@@ -80,7 +80,7 @@ Return JSON only:
 }`, data, a.currentPrompts(ctx))
 
 	var result improvementResult
-	err = a.llm.GenerateJSON(ctx, analyticsAgent.Model, analyticsAgent.SystemPrompt, userPrompt, analyticsAgent.Temperature, &result)
+	err = a.llm.GenerateJSON(ctx, analyticsAgent.Model, analyticsAgent.BuildSystemPrompt(), userPrompt, analyticsAgent.Temperature, &result)
 	if err != nil {
 		return fmt.Errorf("LLM analysis: %w", err)
 	}

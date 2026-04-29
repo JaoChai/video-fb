@@ -102,6 +102,13 @@ type AgentConfig struct {
 	Config         json.RawMessage `json:"config"`
 }
 
+func (c *AgentConfig) BuildSystemPrompt() string {
+	if c.Skills == "" {
+		return c.SystemPrompt
+	}
+	return c.SystemPrompt + "\n\n## Skills & Guidelines\n" + c.Skills
+}
+
 type Schedule struct {
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
