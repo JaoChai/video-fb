@@ -24,25 +24,16 @@ var (
 
 // sanitizeVoiceText strips URLs and @handles from voice script before TTS.
 // Gemini TTS chokes on URLs and brand handles, often truncating audio mid-sentence.
-// Brand mentions are normalized to a Thai phonetic spelling so the model says it correctly.
-func sanitizeVoiceText(s string) string {
-	replacer := strings.NewReplacer(
-		"@adsvance", "แอดส์แวนซ์",
-		"@AdsVance", "แอดส์แวนซ์",
-		"@Adsvance", "แอดส์แวนซ์",
-		"AdsVance", "แอดส์แวนซ์",
-		"Adsvance", "แอดส์แวนซ์",
-		"adsvance", "แอดส์แวนซ์",
-		"Ads Vance", "แอดส์แวนซ์",
-	)
-	s = replacer.Replace(s)
+// Brand mentions are normalized using the brandAliases map (loaded from DB settings).
+func sanitizeVoiceText(s string, brandAliases map[string]string) string {
+	for eng, thai := range brandAliases {
+		s = strings.ReplaceAll(s, eng, thai)
+	}
 	s = urlRegex.ReplaceAllString(s, "")
 	s = atHandleRgx.ReplaceAllString(s, "")
 	s = strings.Join(strings.Fields(s), " ")
 	return s
 }
-
-var categories = []string{"account", "payment", "campaign", "pixel"}
 
 type Orchestrator struct {
 	pool          *pgxpool.Pool
@@ -85,7 +76,29 @@ func buildPrompt(cfg *models.AgentConfig) string {
 
 func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+
+	var categoriesJSON string
+	err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'categories'`).Scan(&categoriesJSON)
+	if err != nil {
+		return fmt.Errorf("read categories setting: %w", err)
+	}
+	var categories []string
+	if err := json.Unmarshal([]byte(categoriesJSON), &categories); err != nil {
+		return fmt.Errorf("parse categories: %w", err)
+	}
+	if len(categories) == 0 {
+		return fmt.Errorf("no categories configured")
+	}
 	category := categories[weekNum%len(categories)]
+
+	var aliasesJSON string
+	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
+		log.Printf("No brand_aliases setting, using empty: %v", err)
+		aliasesJSON = "{}"
+	}
+	var brandAliases map[string]string
+	json.Unmarshal([]byte(aliasesJSON), &brandAliases)
+
 	log.Printf("Producing %d clips for category: %s", count, category)
 
 	defer o.tracker.FinishProduction()
@@ -100,7 +113,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, buildPrompt(qaCfg), qaCfg.Temperature)
+	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, buildPrompt(qaCfg), qaCfg.Temperature, qaCfg.PromptTemplate)
 	if err != nil {
 		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)
@@ -134,7 +147,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -147,7 +160,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
 		Title:          q.Question,
@@ -163,12 +176,12 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases)
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, buildPrompt(scriptCfg), scriptCfg.Temperature)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, buildPrompt(scriptCfg), scriptCfg.Temperature, scriptCfg.PromptTemplate)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -192,7 +205,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature, imageCfg.PromptTemplate)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
@@ -204,7 +217,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	for _, s := range script.Scenes {
 		fullVoice += s.VoiceText + " "
 	}
-	fullVoice = sanitizeVoiceText(fullVoice)
+	fullVoice = sanitizeVoiceText(fullVoice, brandAliases)
 
 	o.pool.Exec(ctx,
 		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
@@ -217,6 +230,13 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
+
+	var aliasesJSON string
+	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
+		aliasesJSON = "{}"
+	}
+	var brandAliases map[string]string
+	json.Unmarshal([]byte(aliasesJSON), &brandAliases)
 
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
@@ -246,19 +266,19 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 		if err != nil {
 			return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
 		}
-		return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg)
+		return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases)
 	}
 
 	if scenes[0].ImagePrompt == "" {
 		log.Printf("Retry %s: scenes exist, resuming from image prompts (saving Claude script credits)", clip.ID)
-		return o.resumeFromImagePrompts(ctx, clip.ID, scenes, q.QuestionerName)
+		return o.resumeFromImagePrompts(ctx, clip.ID, scenes, q.QuestionerName, brandAliases)
 	}
 
 	log.Printf("Retry %s: scenes + image prompts exist, resuming from production (saving all Claude credits)", clip.ID)
-	return o.resumeFromProduction(ctx, clip.ID, scenes, q.QuestionerName)
+	return o.resumeFromProduction(ctx, clip.ID, scenes, q.QuestionerName, brandAliases)
 }
 
-func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string, scenes []models.Scene, questionerName string) error {
+func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {
 	theme, err := o.themesRepo.GetActive(ctx)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("get theme: %w", err))
@@ -271,7 +291,7 @@ func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string
 	genScenes := scenesToGenerated(scenes)
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg.Model, buildPrompt(imageCfg), imageCfg.Temperature, imageCfg.PromptTemplate)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
@@ -279,19 +299,19 @@ func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string
 	o.saveImagePrompts(ctx, clipID, imagePrompts)
 	o.tracker.CompleteStep("image_prompts")
 
-	voiceScript := buildVoiceScript(scenes)
+	voiceScript := buildVoiceScript(scenes, brandAliases)
 	return o.runProduction(ctx, clipID, genScenes, imagePrompts, voiceScript)
 }
 
-func (o *Orchestrator) resumeFromProduction(ctx context.Context, clipID string, scenes []models.Scene, questionerName string) error {
+func (o *Orchestrator) resumeFromProduction(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {
 	imagePrompts, err := parseImagePrompts(scenes)
 	if err != nil {
 		log.Printf("Retry %s: failed to parse image prompts, regenerating: %v", clipID, err)
-		return o.resumeFromImagePrompts(ctx, clipID, scenes, questionerName)
+		return o.resumeFromImagePrompts(ctx, clipID, scenes, questionerName, brandAliases)
 	}
 
 	genScenes := scenesToGenerated(scenes)
-	voiceScript := buildVoiceScript(scenes)
+	voiceScript := buildVoiceScript(scenes, brandAliases)
 	return o.runProduction(ctx, clipID, genScenes, imagePrompts, voiceScript)
 }
 
@@ -343,13 +363,13 @@ func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 	return gen
 }
 
-func buildVoiceScript(scenes []models.Scene) string {
+func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) string {
 	var b strings.Builder
 	for _, s := range scenes {
 		b.WriteString(s.VoiceText)
 		b.WriteString(" ")
 	}
-	return sanitizeVoiceText(b.String())
+	return sanitizeVoiceText(b.String(), brandAliases)
 }
 
 func parseImagePrompts(scenes []models.Scene) ([]agent.SceneImagePrompts, error) {

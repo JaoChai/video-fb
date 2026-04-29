@@ -14,10 +14,21 @@ interface Agent {
   id: string;
   agent_name: string;
   system_prompt: string;
+  prompt_template: string;
   model: string;
   temperature: number;
   enabled: boolean;
   skills: string;
+}
+
+const TEMPLATE_VARS: Record<string, string[]> = {
+  question: ['Count', 'Category', 'RAGContext', 'PreviousTopics'],
+  script: ['Question', 'QuestionerName', 'Category', 'RAGContext'],
+  image: ['ThemeDescription', 'QuestionerName', 'QuestionText', 'PrimaryColor', 'AccentColor'],
+};
+
+function getTemplateVars(agentName: string): string[] {
+  return TEMPLATE_VARS[agentName] ?? [];
 }
 
 export default function AgentsPage() {
@@ -37,6 +48,7 @@ export default function AgentsPage() {
       agents.forEach((a) => {
         initial[a.id] = {
           system_prompt: a.system_prompt,
+          prompt_template: a.prompt_template ?? '',
           skills: a.skills ?? '',
           temperature: a.temperature,
           enabled: a.enabled,
@@ -54,6 +66,7 @@ export default function AgentsPage() {
         method: 'PATCH',
         body: JSON.stringify({
           system_prompt: e.system_prompt ?? agent.system_prompt,
+          prompt_template: e.prompt_template ?? agent.prompt_template ?? '',
           model: e.model ?? agent.model,
           temperature: e.temperature ?? agent.temperature,
           enabled: e.enabled ?? agent.enabled,
@@ -131,6 +144,31 @@ export default function AgentsPage() {
                           handleEdit(agent.id, 'system_prompt', ev.target.value)
                         }
                       />
+                    </div>
+
+                    {/* Prompt Template */}
+                    <div className="grid gap-2">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Prompt Template
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        ใช้ {'{{.VariableName}}'} สำหรับตัวแปร — ระบบจะแทนที่ให้อัตโนมัติตอนรัน
+                      </p>
+                      <Textarea
+                        rows={12}
+                        className="font-mono text-xs"
+                        value={e.prompt_template ?? agent.prompt_template ?? ''}
+                        onChange={(ev) =>
+                          handleEdit(agent.id, 'prompt_template', ev.target.value)
+                        }
+                      />
+                      <div className="flex flex-wrap gap-1.5">
+                        {getTemplateVars(agent.agent_name).map((v) => (
+                          <span key={v} className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-muted-foreground">
+                            {`{{.${v}}}`}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     {/* Model */}

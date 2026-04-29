@@ -9,6 +9,13 @@ import (
 	"github.com/jaochai/video-fb/internal/rag"
 )
 
+type QuestionTemplateData struct {
+	Count          int
+	Category       string
+	RAGContext     string
+	PreviousTopics string
+}
+
 type QuestionAgent struct {
 	llm  *LLMClient
 	rag  *rag.Engine
@@ -26,7 +33,7 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model, systemPrompt string, temperature float64) ([]GeneratedQuestion, error) {
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model, systemPrompt string, temperature float64, promptTemplate string) ([]GeneratedQuestion, error) {
 	ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s problems common issues", category), 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -57,19 +64,15 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model
 		previousList = "\n\nห้ามซ้ำกับหัวข้อเหล่านี้:\n- " + strings.Join(recent, "\n- ")
 	}
 
-	userPrompt := fmt.Sprintf(`สร้าง %d คำถามจากลูกค้าเกี่ยวกับ Facebook Ads หมวด "%s"
-
-ข้อมูลอ้างอิงจาก knowledge base:
-%s
-%s
-
-ตอบเป็น JSON array เท่านั้น แต่ละ object มี:
-- "question": คำถามภาษาไทย สั้น กระชับ เหมือนลูกค้าถามจริง
-- "questioner_name": ชื่อไทย เช่น "คุณ สมชาย" "คุณ มานี"
-- "category": "%s"
-- "pain_point": ปัญหาหลักเป็นภาษาอังกฤษ เช่น "account_banned" "payment_failed"
-
-ห้ามสร้างคำถามที่แนะนำการทำผิดนโยบาย Facebook`, count, category, ragContext.String(), previousList, category)
+	userPrompt, err := renderTemplate(promptTemplate, QuestionTemplateData{
+		Count:          count,
+		Category:       category,
+		RAGContext:     ragContext.String(),
+		PreviousTopics: previousList,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("render question template: %w", err)
+	}
 
 	var questions []GeneratedQuestion
 	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &questions); err != nil {

@@ -58,6 +58,8 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"elevenlabs_voice":          true,
 		"zernio_api_key":            true,
 		"zernio_youtube_account_id": true,
+		"categories":                true,
+		"brand_aliases":             true,
 	}
 
 	for k, v := range req {
