@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
+import { PageHeader } from '../components/page-header';
+import { Button } from '../components/ui/button';
+import { Card, CardHeader, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { ChevronDown, Plus, RefreshCw } from 'lucide-react';
 
 interface SourceSummary {
   id: string;
@@ -24,19 +31,6 @@ const categoryLabels: Record<string, string> = {
   content_strategy: 'Content Strategy',
   guidelines: 'Guidelines',
   general: 'General',
-};
-
-const textareaStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 14px', borderRadius: 6,
-  border: '1px solid #222', background: '#0a0a0a', color: '#fafafa',
-  fontSize: 13, lineHeight: 1.7, outline: 'none', resize: 'vertical',
-  fontFamily: 'inherit', transition: 'border-color 0.15s',
-};
-
-const inputStyle: React.CSSProperties = {
-  flex: 1, padding: '10px 14px', borderRadius: 6,
-  border: '1px solid #222', background: '#0a0a0a', color: '#fafafa',
-  fontSize: 14, outline: 'none', transition: 'border-color 0.15s',
 };
 
 export default function KnowledgePage() {
@@ -164,216 +158,177 @@ export default function KnowledgePage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600 }}>Knowledge Base</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={rebuildAll}
-            disabled={rebuildingAll}
-            style={{
-              padding: '8px 16px', borderRadius: 6, border: '1px solid #222',
-              background: 'transparent', color: rebuildingAll ? '#333' : '#888',
-              fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
-            }}>
-            {rebuildingAll ? `Embedding ${rebuildProgress}` : 'Rebuild Embeddings'}
-          </button>
-          <button onClick={() => setShowNew(true)}
-            style={{
-              padding: '8px 20px', borderRadius: 6, border: 'none',
-              background: '#fff', color: '#000', fontSize: 12, fontWeight: 600,
-              cursor: 'pointer', transition: 'all 0.15s',
-            }}>
-            + Add Document
-          </button>
-        </div>
-      </div>
-
+      <PageHeader
+        title="Knowledge Base"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={rebuildAll} disabled={rebuildingAll}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${rebuildingAll ? 'animate-spin' : ''}`} />
+              {rebuildingAll ? `Embedding ${rebuildProgress}` : 'Rebuild Embeddings'}
+            </Button>
+            <Button size="sm" onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Document
+            </Button>
+          </>
+        }
+      />
 
       {/* New document form */}
       {showNew && (
-        <div style={{
-          background: '#111', borderRadius: 10, padding: 22, marginBottom: 20,
-          border: '1px solid #333',
-        }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>New Document</h3>
-          <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-            <input
-              type="text" placeholder="Document name"
-              value={newDoc.name}
-              onChange={e => setNewDoc(prev => ({ ...prev, name: e.target.value }))}
-              style={inputStyle}
-              onFocus={e => (e.target.style.borderColor = '#444')}
-              onBlur={e => (e.target.style.borderColor = '#222')}
+        <Card className="border-dashed mb-5">
+          <CardHeader className="pb-4">
+            <h3 className="text-sm font-semibold">New Document</h3>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-3">
+              <Input
+                placeholder="Document name"
+                value={newDoc.name}
+                onChange={e => setNewDoc(prev => ({ ...prev, name: e.target.value }))}
+                className="flex-1"
+              />
+              <select
+                value={newDoc.category}
+                onChange={e => setNewDoc(prev => ({ ...prev, category: e.target.value }))}
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-[180px]"
+              >
+                {CATEGORIES.map(c => (
+                  <option key={c} value={c}>{categoryLabels[c]}</option>
+                ))}
+              </select>
+            </div>
+            <Textarea
+              rows={8}
+              placeholder="Paste or write knowledge content here..."
+              value={newDoc.content}
+              onChange={e => setNewDoc(prev => ({ ...prev, content: e.target.value }))}
             />
-            <select
-              value={newDoc.category}
-              onChange={e => setNewDoc(prev => ({ ...prev, category: e.target.value }))}
-              style={{ ...inputStyle, flex: 'none', width: 180 }}>
-              {CATEGORIES.map(c => (
-                <option key={c} value={c}>{categoryLabels[c]}</option>
-              ))}
-            </select>
-          </div>
-          <textarea
-            rows={8} placeholder="Paste or write knowledge content here..."
-            value={newDoc.content}
-            onChange={e => setNewDoc(prev => ({ ...prev, content: e.target.value }))}
-            style={textareaStyle}
-            onFocus={e => (e.target.style.borderColor = '#444')}
-            onBlur={e => (e.target.style.borderColor = '#222')}
-          />
-          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button onClick={() => createSource.mutate(newDoc)}
-              disabled={createSource.isPending || !newDoc.name || !newDoc.content}
-              style={{
-                padding: '9px 24px', borderRadius: 6, border: 'none',
-                background: newDoc.name && newDoc.content ? '#fff' : '#222',
-                color: newDoc.name && newDoc.content ? '#000' : '#555',
-                fontSize: 13, fontWeight: 600, cursor: newDoc.name && newDoc.content ? 'pointer' : 'default',
-              }}>
-              {createSource.isPending ? 'Saving...' : 'Save & Embed'}
-            </button>
-            <button onClick={() => setShowNew(false)}
-              style={{
-                padding: '9px 16px', borderRadius: 6, border: '1px solid #222',
-                background: 'transparent', color: '#888', fontSize: 13, cursor: 'pointer',
-              }}>
-              Cancel
-            </button>
-          </div>
-        </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => createSource.mutate(newDoc)}
+                disabled={createSource.isPending || !newDoc.name || !newDoc.content}
+              >
+                {createSource.isPending ? 'Saving...' : 'Save & Embed'}
+              </Button>
+              <Button variant="outline" onClick={() => setShowNew(false)}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : (
-        <div style={{ display: 'grid', gap: 24 }}>
+      {isLoading ? (
+        <p className="text-muted-foreground">Loading...</p>
+      ) : (
+        <div className="grid gap-6">
           {grouped && Object.entries(grouped).map(([cat, items]) => (
             <div key={cat}>
-              <h2 style={{
-                fontSize: 11, fontWeight: 500, color: '#555', textTransform: 'uppercase',
-                letterSpacing: '0.08em', marginBottom: 10, padding: '0 4px',
-              }}>
+              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 px-1">
                 {categoryLabels[cat] || cat} — {items.length} docs
               </h2>
-              <div style={{ display: 'grid', gap: 8 }}>
+              <div className="grid gap-2">
                 {items.map(source => {
                   const e = edits[source.id] ?? {};
                   const isExpanded = expanded[source.id] ?? false;
                   const isDirty = dirty[source.id] ?? false;
 
                   return (
-                    <div key={source.id} style={{
-                      background: '#111', borderRadius: 8, overflow: 'hidden',
-                      border: '1px solid #1a1a1a', transition: 'border-color 0.15s',
-                    }}
-                      onMouseEnter={ev => (ev.currentTarget.style.borderColor = '#333')}
-                      onMouseLeave={ev => (ev.currentTarget.style.borderColor = '#1a1a1a')}>
-
+                    <Card key={source.id} className="overflow-hidden">
                       {/* Header */}
-                      <div style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '14px 18px', cursor: 'pointer',
-                      }}
-                        onClick={() => toggleExpand(source.id)}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ fontSize: 14, fontWeight: 500 }}>{source.name}</span>
-                          <span style={{
-                            fontSize: 10, color: '#555', background: '#1a1a1a',
-                            padding: '2px 8px', borderRadius: 4,
-                          }}>
+                      <div
+                        className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => toggleExpand(source.id)}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-sm font-medium">{source.name}</span>
+                          <Badge variant="secondary" className="text-[10px] px-2 py-0">
                             {source.chunk_count} chunks
-                          </span>
+                          </Badge>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{
-                            width: 6, height: 6, borderRadius: '50%',
-                            background: source.enabled ? '#22c55e' : '#ef4444',
-                          }} />
-                          <span style={{
-                            fontSize: 12, color: '#555', transition: 'transform 0.2s',
-                            transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                          }}>▼</span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              source.enabled ? 'bg-green-500' : 'bg-red-500'
+                            }`}
+                          />
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                              isExpanded ? 'rotate-180' : ''
+                            }`}
+                          />
                         </div>
                       </div>
 
-                      {/* Preview */}
+                      {/* Preview (collapsed) */}
                       {!isExpanded && (
-                        <div style={{
-                          padding: '0 18px 12px', fontSize: 12, color: '#555',
-                          overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-                        }}>
+                        <div className="px-4 pb-3 text-xs text-muted-foreground truncate">
                           {source.content_preview}...
                         </div>
                       )}
 
                       {/* Expanded */}
                       {isExpanded && (
-                        <div style={{ padding: '0 18px 18px', display: 'grid', gap: 14 }}>
-                          <div style={{ display: 'flex', gap: 12 }}>
-                            <input
-                              type="text"
+                        <CardContent className="pt-0 space-y-3">
+                          <div className="flex gap-3">
+                            <Input
                               value={e.name ?? source.name}
                               onChange={ev => handleEdit(source.id, 'name', ev.target.value)}
-                              style={inputStyle}
-                              onFocus={ev => (ev.target.style.borderColor = '#444')}
-                              onBlur={ev => (ev.target.style.borderColor = '#222')}
+                              className="flex-1"
                             />
                             <select
                               value={e.category ?? source.category}
                               onChange={ev => handleEdit(source.id, 'category', ev.target.value)}
-                              style={{ ...inputStyle, flex: 'none', width: 180 }}>
+                              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-[180px]"
+                            >
                               {CATEGORIES.map(c => (
                                 <option key={c} value={c}>{categoryLabels[c]}</option>
                               ))}
                             </select>
                           </div>
                           {fullSources[source.id] ? (
-                            <textarea
+                            <Textarea
                               rows={12}
                               value={e.content ?? fullSources[source.id].content}
                               onChange={ev => handleEdit(source.id, 'content', ev.target.value)}
-                              style={textareaStyle}
-                              onFocus={ev => (ev.target.style.borderColor = '#444')}
-                              onBlur={ev => (ev.target.style.borderColor = '#222')}
                             />
                           ) : (
-                            <p style={{ color: '#555', fontSize: 13, padding: '10px 0' }}>Loading content...</p>
+                            <p className="text-muted-foreground text-sm py-2">Loading content...</p>
                           )}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <button onClick={() => handleSave(source.id)}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              onClick={() => handleSave(source.id)}
                               disabled={updateSource.isPending || !isDirty}
-                              style={{
-                                padding: '9px 24px', borderRadius: 6, border: 'none',
-                                background: isDirty ? '#fff' : '#222', color: isDirty ? '#000' : '#555',
-                                fontSize: 13, fontWeight: 600,
-                                cursor: isDirty ? 'pointer' : 'default',
-                              }}>
+                              size="sm"
+                            >
                               {updateSource.isPending ? 'Saving...' : 'Save'}
-                            </button>
-                            <button onClick={() => embedSource.mutate(source.id)}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => embedSource.mutate(source.id)}
                               disabled={embedSource.isPending}
-                              style={{
-                                padding: '9px 16px', borderRadius: 6, border: '1px solid #222',
-                                background: 'transparent', color: embedSource.isPending ? '#333' : '#fafafa',
-                                fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
-                              }}>
+                            >
                               {embedSource.isPending ? 'Embedding...' : 'Embed'}
-                            </button>
-                            <button onClick={() => {
-                              if (confirm('Delete this document?')) deleteSource.mutate(source.id);
-                            }}
-                              style={{
-                                padding: '9px 16px', borderRadius: 6, border: '1px solid #222',
-                                background: 'transparent', color: '#ef4444', fontSize: 12,
-                                cursor: 'pointer', transition: 'all 0.15s',
-                              }}>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => {
+                                if (confirm('Delete this document?')) deleteSource.mutate(source.id);
+                              }}
+                            >
                               Delete
-                            </button>
+                            </Button>
                             {updateSource.isSuccess && !isDirty && (
-                              <span style={{ fontSize: 12, color: '#22c55e' }}>Saved</span>
+                              <span className="text-xs text-green-500">Saved</span>
                             )}
                           </div>
-                        </div>
+                        </CardContent>
                       )}
-                    </div>
+                    </Card>
                   );
                 })}
               </div>

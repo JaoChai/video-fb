@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '../api';
+import { PageHeader } from '../components/page-header';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp } from 'lucide-react';
 
 interface Clip { id: string; title: string; status: string; category: string; }
 interface ClipAnalytics {
@@ -51,79 +54,106 @@ export default function AnalyticsPage() {
 
   const platforms = ['youtube', 'tiktok', 'instagram', 'facebook'];
 
+  const kpiIcons = {
+    Views: Eye,
+    Likes: ThumbsUp,
+    Comments: MessageSquare,
+    Shares: Share2,
+    'Watch Time': Clock,
+    Retention: TrendingUp,
+  } as const;
+
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 32 }}>Analytics</h1>
+      <PageHeader title="Analytics" />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 40 }}>
+      <div className="grid grid-cols-4 gap-3 mb-10">
         {stats.map(({ label, value }) => (
-          <div key={label} style={{
-            background: '#111', borderRadius: 8, padding: '20px 24px',
-            border: '1px solid #1a1a1a',
-          }}>
-            <div style={{ fontSize: 12, color: '#555', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-            <div style={{ fontSize: 28, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-          </div>
+          <Card key={label}>
+            <CardContent className="p-5">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{label}</div>
+              <div className="text-3xl font-bold tabular-nums">{value}</div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Published Clips</h2>
-      {isLoading ? <p style={{ color: '#555' }}>Loading...</p> : published.length === 0 ? (
-        <p style={{ color: '#555', fontSize: 14 }}>No published clips yet.</p>
+      <h2 className="text-sm font-semibold mb-4">Published Clips</h2>
+      {isLoading ? (
+        <p className="text-muted-foreground">Loading...</p>
+      ) : published.length === 0 ? (
+        <Card>
+          <CardContent className="p-6">
+            <p className="text-sm text-muted-foreground">No published clips yet.</p>
+          </CardContent>
+        </Card>
       ) : (
-        <div style={{ display: 'grid', gap: 8, marginBottom: 32 }}>
+        <div className="grid gap-2 mb-8">
           {published.map(clip => (
-            <div key={clip.id} onClick={() => setSelectedClipId(clip.id === selectedClipId ? null : clip.id)} style={{
-              background: clip.id === selectedClipId ? '#1a1a1a' : '#111',
-              borderRadius: 6, padding: '12px 16px',
-              border: clip.id === selectedClipId ? '1px solid #333' : '1px solid #1a1a1a',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              cursor: 'pointer', transition: 'background 0.15s',
-            }}>
-              <span style={{ fontSize: 14 }}>{clip.title}</span>
-              <span style={{ fontSize: 12, color: '#555' }}>{clip.category}</span>
-            </div>
+            <Card
+              key={clip.id}
+              className={`cursor-pointer transition-colors hover:bg-muted/50 ${
+                clip.id === selectedClipId ? 'border-ring bg-muted/30' : ''
+              }`}
+              onClick={() => setSelectedClipId(clip.id === selectedClipId ? null : clip.id)}
+            >
+              <CardContent className="flex items-center justify-between p-3 px-4">
+                <span className="text-sm">{clip.title}</span>
+                <span className="text-xs text-muted-foreground">{clip.category}</span>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
 
       {selectedClipId && (
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>
-            Platform Analytics
-          </h2>
-          {analyticsLoading ? <p style={{ color: '#555' }}>Loading analytics...</p> :
-           !analytics || analytics.length === 0 ? (
-            <p style={{ color: '#555', fontSize: 14 }}>No analytics data yet for this clip.</p>
+          <h2 className="text-sm font-semibold mb-4">Platform Analytics</h2>
+          {analyticsLoading ? (
+            <p className="text-muted-foreground">Loading analytics...</p>
+          ) : !analytics || analytics.length === 0 ? (
+            <Card>
+              <CardContent className="p-6">
+                <p className="text-sm text-muted-foreground">No analytics data yet for this clip.</p>
+              </CardContent>
+            </Card>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               {platforms.map(platform => {
                 const data = analyticsMap.get(platform);
                 if (!data) return null;
+
+                const kpis = [
+                  { label: 'Views' as const, value: data.views.toLocaleString() },
+                  { label: 'Likes' as const, value: data.likes.toLocaleString() },
+                  { label: 'Comments' as const, value: data.comments.toLocaleString() },
+                  { label: 'Shares' as const, value: data.shares.toLocaleString() },
+                  { label: 'Watch Time' as const, value: `${Math.round(data.watch_time_seconds / 60)}m` },
+                  { label: 'Retention' as const, value: `${(data.retention_rate * 100).toFixed(1)}%` },
+                ];
+
                 return (
-                  <div key={platform} style={{
-                    background: '#111', borderRadius: 8, padding: 20,
-                    border: '1px solid #1a1a1a',
-                  }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, textTransform: 'capitalize' }}>
-                      {platform}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {[
-                        { label: 'Views', value: data.views.toLocaleString() },
-                        { label: 'Likes', value: data.likes.toLocaleString() },
-                        { label: 'Comments', value: data.comments.toLocaleString() },
-                        { label: 'Shares', value: data.shares.toLocaleString() },
-                        { label: 'Watch Time', value: `${Math.round(data.watch_time_seconds / 60)}m` },
-                        { label: 'Retention', value: `${(data.retention_rate * 100).toFixed(1)}%` },
-                      ].map(({ label, value }) => (
-                        <div key={label}>
-                          <div style={{ fontSize: 11, color: '#555', marginBottom: 4 }}>{label}</div>
-                          <div style={{ fontSize: 16, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <Card key={platform}>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-semibold capitalize">{platform}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-3">
+                        {kpis.map(({ label, value }) => {
+                          const Icon = kpiIcons[label];
+                          return (
+                            <div key={label} className="flex items-start gap-2">
+                              <Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                              <div>
+                                <div className="text-[11px] text-muted-foreground mb-0.5">{label}</div>
+                                <div className="text-base font-semibold tabular-nums">{value}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>

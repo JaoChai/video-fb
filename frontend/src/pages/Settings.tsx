@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
+import { PageHeader } from '../components/page-header';
+import { Button } from '../components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Input } from '../components/ui/input';
 
 interface ZernioAccount {
   _id: string;
@@ -55,18 +60,6 @@ const FIELDS = [
   { key: 'elevenlabs_voice', label: 'TTS Voice (Gemini)', placeholder: 'alloy', secret: false, testable: false, dropdown: TTS_VOICES },
   { key: 'zernio_api_key', label: 'Zernio API Key', placeholder: 'zrn-...', secret: true, testable: false },
 ];
-
-const inputStyle: React.CSSProperties = {
-  flex: 1, padding: '10px 14px', borderRadius: 6,
-  border: '1px solid #222', background: '#111', color: '#fafafa',
-  fontSize: 14, outline: 'none', transition: 'border-color 0.15s',
-};
-
-const smallBtnStyle: React.CSSProperties = {
-  padding: '8px 14px', borderRadius: 6, border: '1px solid #222',
-  background: 'transparent', color: '#555', fontSize: 12, cursor: 'pointer',
-  transition: 'color 0.15s',
-};
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -158,199 +151,219 @@ export default function SettingsPage() {
   const hasDirty = Object.values(dirty).some(Boolean);
   const hasAgentModelDirty = Object.values(agentModelDirty).some(Boolean);
 
+  // Separate fields by type for card grouping
+  const apiKeyFields = FIELDS.filter(f => f.secret);
+  const voiceField = FIELDS.find(f => f.dropdown);
+
   return (
     <div>
-      <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 32 }}>Settings</h1>
+      <PageHeader title="Settings" />
 
-      {/* API Keys & General */}
-      <div style={{ display: 'grid', gap: 16, maxWidth: 640 }}>
-        {FIELDS.map(({ key, label, placeholder, secret, testable, dropdown }) => (
-          <div key={key}>
-            <label style={{ display: 'block', fontSize: 12, color: '#555', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {dropdown ? (
-                <select
-                  value={form[key] ?? ''}
-                  onChange={e => handleChange(key, e.target.value)}
-                  style={{ ...inputStyle, cursor: 'pointer' }}
-                >
-                  {dropdown.map(v => (
-                    <option key={v} value={v}>{v}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={secret && !showKeys[key] ? 'password' : 'text'}
-                  value={form[key] ?? ''}
-                  placeholder={placeholder}
-                  onChange={e => handleChange(key, e.target.value)}
-                  style={inputStyle}
-                  onFocus={e => (e.target.style.borderColor = '#444')}
-                  onBlur={e => (e.target.style.borderColor = '#222')}
-                />
-              )}
-              {secret && (
-                <button onClick={() => setShowKeys(prev => ({ ...prev, [key]: !prev[key] }))} style={smallBtnStyle}>
-                  {showKeys[key] ? 'Hide' : 'Show'}
-                </button>
-              )}
-              {testable && (
-                <button onClick={() => testKey.mutate(form[key] ?? '')}
-                  disabled={testKey.isPending || !form[key]}
-                  style={{
-                    ...smallBtnStyle,
-                    color: testKey.isPending ? '#333' : '#fafafa',
-                    opacity: !form[key] ? 0.3 : 1,
-                  }}>
-                  {testKey.isPending ? 'Testing...' : 'Test'}
-                </button>
-              )}
-            </div>
-            {testable && testResult && (
-              <div style={{
-                marginTop: 8, padding: '8px 12px', borderRadius: 6, fontSize: 12,
-                background: testResult.error ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                color: testResult.error ? '#ef4444' : '#22c55e',
-                border: `1px solid ${testResult.error ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`,
-              }}>
-                {testResult.error ? `Failed: ${testResult.error}` : (
-                  <span style={{ display: 'flex', gap: 16 }}>
-                    <span>Connected</span>
-                    {testResult.data?.label && <span>Label: {testResult.data.label}</span>}
-                    {testResult.data?.limit_remaining != null && <span>Credits: {testResult.data.limit_remaining.toLocaleString()}</span>}
-                    <span>{testResult.data?.is_free_tier ? 'Free' : 'Paid'}</span>
-                  </span>
+      <div className="grid gap-6 max-w-2xl">
+        {/* API Keys Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">API Keys</CardTitle>
+            <CardDescription>Configure API keys for external services</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {apiKeyFields.map(({ key, label, placeholder, testable }) => (
+              <div key={key}>
+                <label className="block text-xs text-muted-foreground uppercase tracking-wide mb-1.5">
+                  {label}
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    type={showKeys[key] ? 'text' : 'password'}
+                    value={form[key] ?? ''}
+                    placeholder={placeholder}
+                    onChange={e => handleChange(key, e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowKeys(prev => ({ ...prev, [key]: !prev[key] }))}
+                  >
+                    {showKeys[key] ? 'Hide' : 'Show'}
+                  </Button>
+                  {testable && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => testKey.mutate(form[key] ?? '')}
+                      disabled={testKey.isPending || !form[key]}
+                    >
+                      {testKey.isPending ? 'Testing...' : 'Test'}
+                    </Button>
+                  )}
+                </div>
+                {testable && testResult && (
+                  <div className={`mt-2 px-3 py-2 rounded-md text-xs border ${
+                    testResult.error
+                      ? 'bg-destructive/10 text-destructive border-destructive/20'
+                      : 'bg-green-500/10 text-green-500 border-green-500/20'
+                  }`}>
+                    {testResult.error ? `Failed: ${testResult.error}` : (
+                      <span className="flex gap-4">
+                        <span>Connected</span>
+                        {testResult.data?.label && <span>Label: {testResult.data.label}</span>}
+                        {testResult.data?.limit_remaining != null && <span>Credits: {testResult.data.limit_remaining.toLocaleString()}</span>}
+                        <span>{testResult.data?.is_free_tier ? 'Free' : 'Paid'}</span>
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-        ))}
+            ))}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-          <button onClick={handleSave} disabled={save.isPending || !hasDirty}
-            style={{
-              padding: '10px 28px', borderRadius: 6, border: 'none',
-              background: hasDirty ? '#fff' : '#222', color: hasDirty ? '#000' : '#555',
-              fontSize: 14, fontWeight: 600, cursor: hasDirty ? 'pointer' : 'default',
-              transition: 'all 0.15s',
-            }}>
-            {save.isPending ? 'Saving...' : 'Save'}
-          </button>
-          {save.isSuccess && <span style={{ fontSize: 12, color: '#22c55e' }}>Saved</span>}
-        </div>
-      </div>
-
-      {/* Zernio Connected Channels */}
-      <div style={{ marginTop: 48, maxWidth: 640 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Connected Channels</h2>
-          <span style={{ fontSize: 11, color: '#555', background: '#1a1a1a', padding: '3px 10px', borderRadius: 4 }}>
-            via Zernio
-          </span>
-        </div>
-
-        {zernioLoading ? (
-          <div style={{ color: '#555', fontSize: 13 }}>Loading channels...</div>
-        ) : zernioData?.accounts?.length ? (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {zernioData.accounts.filter(a => a._id === saved?.zernio_youtube_account_id).map(account => {
-              const isSelected = true;
-              const extra = account.metadata?.profileData?.extraData;
-              return (
-                <div key={account._id} style={{
-                  display: 'flex', alignItems: 'center', gap: 14,
-                  background: isSelected ? 'rgba(34,197,94,0.06)' : '#111',
-                  borderRadius: 8, padding: '14px 18px',
-                  border: isSelected ? '1px solid rgba(34,197,94,0.3)' : '1px solid #1a1a1a',
-                }}>
-                  <img src={account.profilePicture} alt="" style={{ width: 40, height: 40, borderRadius: '50%' }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{account.displayName}</span>
-                      {isSelected && (
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
-                      <span style={{ fontSize: 11, color: '#555' }}>@{account.username}</span>
-                      <span style={{ fontSize: 11, color: '#555', textTransform: 'capitalize' }}>{account.platform}</span>
-                      {account.followersCount > 0 && (
-                        <span style={{ fontSize: 11, color: '#555' }}>{account.followersCount.toLocaleString()} subs</span>
-                      )}
-                      {extra?.videoCount != null && (
-                        <span style={{ fontSize: 11, color: '#555' }}>{extra.videoCount} videos</span>
-                      )}
-                    </div>
-                  </div>
-                  <span style={{
-                    fontSize: 10, flexShrink: 0, padding: '3px 8px', borderRadius: 4,
-                    background: account.isActive ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                    color: account.isActive ? '#22c55e' : '#ef4444',
-                  }}>
-                    {account.isActive ? 'Connected' : 'Disconnected'}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{ color: '#555', fontSize: 13 }}>No channels connected. Set Zernio API Key above and connect channels in Zernio dashboard.</div>
-        )}
-      </div>
-
-      {/* Agent Models Section */}
-      <div style={{ marginTop: 48, maxWidth: 640 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Agent Models</h2>
-          <span style={{ fontSize: 11, color: '#555', background: '#1a1a1a', padding: '3px 10px', borderRadius: 4 }}>
-            Assign model per agent
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gap: 12 }}>
-          {agents?.map(agent => (
-            <div key={agent.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              background: '#111', borderRadius: 8, padding: '14px 18px',
-              border: '1px solid #1a1a1a',
-            }}>
-              <div style={{ width: 120, flexShrink: 0 }}>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{agent.agent_name}</span>
-              </div>
-              <input
-                type="text"
-                value={agentModels[agent.id] ?? agent.model}
-                onChange={e => handleAgentModelChange(agent.id, e.target.value)}
-                placeholder="openai/gpt-4.1"
-                style={{ ...inputStyle, fontSize: 13 }}
-                onFocus={e => (e.target.style.borderColor = '#444')}
-                onBlur={e => (e.target.style.borderColor = '#222')}
-              />
-              <span style={{
-                fontSize: 10, flexShrink: 0, padding: '3px 8px', borderRadius: 4,
-                background: agent.enabled ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
-                color: agent.enabled ? '#22c55e' : '#ef4444',
-              }}>
-                {agent.enabled ? 'ON' : 'OFF'}
-              </span>
+            <div className="flex items-center gap-3 pt-2">
+              <Button onClick={handleSave} disabled={save.isPending || !hasDirty}>
+                {save.isPending ? 'Saving...' : 'Save'}
+              </Button>
+              {save.isSuccess && <span className="text-xs text-green-500">Saved</span>}
             </div>
-          ))}
-        </div>
+          </CardContent>
+        </Card>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <button onClick={handleSaveAgentModels} disabled={saveAgentModel.isPending || !hasAgentModelDirty}
-            style={{
-              padding: '10px 28px', borderRadius: 6, border: 'none',
-              background: hasAgentModelDirty ? '#fff' : '#222', color: hasAgentModelDirty ? '#000' : '#555',
-              fontSize: 14, fontWeight: 600, cursor: hasAgentModelDirty ? 'pointer' : 'default',
-              transition: 'all 0.15s',
-            }}>
-            {saveAgentModel.isPending ? 'Saving...' : 'Save Models'}
-          </button>
-          {saveAgentModel.isSuccess && <span style={{ fontSize: 12, color: '#22c55e' }}>Saved</span>}
-        </div>
+        {/* Voice Settings Card */}
+        {voiceField && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Voice Settings</CardTitle>
+              <CardDescription>Select the TTS voice for video narration</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <label className="block text-xs text-muted-foreground uppercase tracking-wide mb-1.5">
+                {voiceField.label}
+              </label>
+              <select
+                value={form[voiceField.key] ?? ''}
+                onChange={e => handleChange(voiceField.key, e.target.value)}
+                className="h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+              >
+                {voiceField.dropdown!.map(v => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Connected Accounts Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-base">Connected Accounts</CardTitle>
+              <Badge variant="secondary" className="text-[10px]">via Zernio</Badge>
+            </div>
+            <CardDescription>YouTube and social media accounts connected through Zernio</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {zernioLoading ? (
+              <p className="text-sm text-muted-foreground">Loading channels...</p>
+            ) : zernioData?.accounts?.length ? (
+              <div className="grid gap-3">
+                {zernioData.accounts.filter(a => a._id === saved?.zernio_youtube_account_id).map(account => {
+                  const isSelected = true;
+                  const extra = account.metadata?.profileData?.extraData;
+                  return (
+                    <div
+                      key={account._id}
+                      className={`flex items-center gap-3.5 rounded-lg p-3.5 border ${
+                        isSelected
+                          ? 'bg-green-500/5 border-green-500/30'
+                          : 'bg-card border-border'
+                      }`}
+                    >
+                      <img src={account.profilePicture} alt="" className="w-10 h-10 rounded-full" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{account.displayName}</span>
+                          {isSelected && (
+                            <Badge variant="secondary" className="text-[10px] bg-green-500/15 text-green-500 border-0">
+                              Active
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex gap-3 mt-1">
+                          <span className="text-[11px] text-muted-foreground">@{account.username}</span>
+                          <span className="text-[11px] text-muted-foreground capitalize">{account.platform}</span>
+                          {account.followersCount > 0 && (
+                            <span className="text-[11px] text-muted-foreground">{account.followersCount.toLocaleString()} subs</span>
+                          )}
+                          {extra?.videoCount != null && (
+                            <span className="text-[11px] text-muted-foreground">{extra.videoCount} videos</span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge
+                        variant={account.isActive ? 'secondary' : 'destructive'}
+                        className={`text-[10px] shrink-0 ${
+                          account.isActive
+                            ? 'bg-green-500/10 text-green-500 border-0'
+                            : 'bg-red-500/10 text-red-500 border-0'
+                        }`}
+                      >
+                        {account.isActive ? 'Connected' : 'Disconnected'}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No channels connected. Set Zernio API Key above and connect channels in Zernio dashboard.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Agent Models Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <CardTitle className="text-base">Agent Models</CardTitle>
+              <Badge variant="secondary" className="text-[10px]">Assign model per agent</Badge>
+            </div>
+            <CardDescription>Configure which LLM model each agent uses</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {agents?.map(agent => (
+              <div
+                key={agent.id}
+                className="flex items-center gap-3 rounded-lg border bg-card p-3.5"
+              >
+                <div className="w-[120px] shrink-0">
+                  <span className="text-sm font-medium">{agent.agent_name}</span>
+                </div>
+                <Input
+                  value={agentModels[agent.id] ?? agent.model}
+                  onChange={e => handleAgentModelChange(agent.id, e.target.value)}
+                  placeholder="openai/gpt-4.1"
+                  className="flex-1 text-[13px]"
+                />
+                <Badge
+                  variant={agent.enabled ? 'secondary' : 'destructive'}
+                  className={`text-[10px] shrink-0 ${
+                    agent.enabled
+                      ? 'bg-green-500/10 text-green-500 border-0'
+                      : 'bg-red-500/10 text-red-500 border-0'
+                  }`}
+                >
+                  {agent.enabled ? 'ON' : 'OFF'}
+                </Badge>
+              </div>
+            ))}
+
+            <div className="flex items-center gap-3 pt-1">
+              <Button onClick={handleSaveAgentModels} disabled={saveAgentModel.isPending || !hasAgentModelDirty}>
+                {saveAgentModel.isPending ? 'Saving...' : 'Save Models'}
+              </Button>
+              {saveAgentModel.isSuccess && <span className="text-xs text-green-500">Saved</span>}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
