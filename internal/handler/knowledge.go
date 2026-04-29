@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jaochai/video-fb/internal/models"
@@ -114,51 +113,40 @@ func (h *KnowledgeHandler) EmbedSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Starting embed for source %s (%d chars)", id, len(source.Content))
-	content := source.Content
-	go func() {
-		n, err := h.rebuildChunks(id, content)
-		if err != nil {
-			log.Printf("Embed source %s failed: %v", id, err)
-		} else {
-			log.Printf("Embedded source %s: %d chunks", id, n)
-		}
-	}()
-	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Embedding started in background"})
+	n, err := h.rebuildChunks(id, source.Content)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{"chunks": n}})
 }
 
 func (h *KnowledgeHandler) rebuildChunks(sourceID, content string) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
+	ctx := context.Background()
 
-	log.Printf("[embed:%s] deleting old chunks", sourceID[:8])
 	if err := h.repo.DeleteChunksBySource(ctx, sourceID); err != nil {
 		return 0, fmt.Errorf("delete chunks: %w", err)
 	}
-	log.Printf("[embed:%s] old chunks deleted", sourceID[:8])
 
 	if strings.TrimSpace(content) == "" {
 		return 0, nil
 	}
 
 	chunks := rag.ChunkText(content, 200, 30)
-	log.Printf("[embed:%s] %d chunks to process", sourceID[:8], len(chunks))
 	stored := 0
-	for i, chunk := range chunks {
+	for _, chunk := range chunks {
 		if len(strings.Fields(chunk)) < 10 {
 			continue
 		}
-		log.Printf("[embed:%s] generating embedding %d/%d", sourceID[:8], i+1, len(chunks))
 		embedding, err := h.engine.GenerateEmbedding(ctx, chunk)
 		if err != nil {
 			return stored, fmt.Errorf("embedding chunk %d: %w", stored+1, err)
 		}
-		log.Printf("[embed:%s] storing chunk %d", sourceID[:8], i+1)
 		if err := h.engine.StoreChunk(ctx, sourceID, chunk, "", embedding); err != nil {
 			return stored, fmt.Errorf("store chunk %d: %w", stored+1, err)
 		}
 		stored++
 	}
-	log.Printf("[embed:%s] done: %d/%d chunks stored", sourceID[:8], stored, len(chunks))
+	log.Printf("Embedded %d/%d chunks for source %s", stored, len(chunks), sourceID)
 	return stored, nil
 }
