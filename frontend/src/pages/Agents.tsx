@@ -10,6 +10,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { useToast } from '../components/ui/toaster';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface Agent {
   id: string;
@@ -98,7 +99,19 @@ export default function AgentsPage() {
       <PageHeader title="Agents" description="Configure AI agent prompts and models" />
 
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <div className="grid gap-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="rounded-xl border p-4">
+              <div className="flex justify-between">
+                <div className="flex gap-3">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-5 w-40 rounded-full" />
+                </div>
+                <Skeleton className="h-6 w-12 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid gap-4">
           {agents?.map((agent) => {

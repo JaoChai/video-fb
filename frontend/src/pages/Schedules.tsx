@@ -5,6 +5,7 @@ import { Card, CardHeader, CardDescription } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
 import { Badge } from '../components/ui/badge';
 import { useToast } from '../components/ui/toaster';
+import { Skeleton } from '../components/ui/skeleton';
 
 interface Schedule {
   id: string;
@@ -58,7 +59,17 @@ export default function SchedulesPage() {
     <div>
       <PageHeader title="Schedules" />
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <div className="grid gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="rounded-xl border p-4 space-y-2">
+              <div className="flex justify-between">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-6 w-12 rounded-full" />
+              </div>
+              <Skeleton className="h-4 w-64" />
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid gap-4">
           {schedules?.map((s) => (
