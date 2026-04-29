@@ -8,7 +8,8 @@ import { Button } from '../components/ui/button';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
-import { Plus, RotateCcw, Send, Trash2, Loader2, Film } from 'lucide-react';
+import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle } from 'lucide-react';
+import { KpiCard } from '../components/kpi-card';
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
@@ -152,6 +153,15 @@ export default function ContentPage() {
       />
 
       <ProductionProgress />
+
+      {clips && clips.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <KpiCard label="Total" value={clips.length} icon={LayoutDashboard} />
+          <KpiCard label="Published" value={clips.filter(c => c.status === 'published').length} icon={CheckCircle2} />
+          <KpiCard label="Ready" value={readyCount} icon={Zap} />
+          <KpiCard label="Failed" value={failedCount} icon={AlertTriangle} />
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-3">
