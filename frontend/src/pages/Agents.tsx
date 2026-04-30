@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 import { ChevronDown } from 'lucide-react';
@@ -11,6 +11,7 @@ import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { useToast } from '../components/ui/toaster';
 import { Skeleton } from '../components/ui/skeleton';
+import { useEditableList } from '../hooks/useEditableList';
 
 interface Agent {
   id: string;
@@ -41,9 +42,7 @@ export default function AgentsPage() {
     queryFn: () => apiFetch<Agent[]>('/api/v1/agents'),
   });
 
-  const [edits, setEdits] = useState<Record<string, Partial<Agent>>>({});
-  const [dirty, setDirty] = useState<Record<string, boolean>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const { edits, setEdits, handleEdit, toggleExpand, isDirty, isExpanded, getEdit, resetDirty } = useEditableList<Agent & Record<string, unknown>>();
 
   useEffect(() => {
     if (agents) {
@@ -79,20 +78,11 @@ export default function AgentsPage() {
     },
     onSuccess: (_data, { id, agent }) => {
       qc.invalidateQueries({ queryKey: ['agents'] });
-      setDirty((prev) => ({ ...prev, [id]: false }));
+      resetDirty(id);
       success(`บันทึก ${agent.agent_name} แล้ว`);
     },
     onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
   });
-
-  const handleEdit = (id: string, field: keyof Agent, value: string | number | boolean) => {
-    setEdits((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
-    setDirty((prev) => ({ ...prev, [id]: true }));
-  };
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
 
   return (
     <div>
@@ -115,9 +105,7 @@ export default function AgentsPage() {
       ) : (
         <div className="grid gap-4">
           {agents?.map((agent) => {
-            const e = edits[agent.id] ?? {};
-            const isExpanded = expanded[agent.id] ?? false;
-            const isDirty = dirty[agent.id] ?? false;
+            const e = getEdit(agent.id);
 
             return (
               <Card key={agent.id}>
@@ -140,16 +128,15 @@ export default function AgentsPage() {
                       />
                       <ChevronDown
                         className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180' : ''
+                          isExpanded(agent.id) ? 'rotate-180' : ''
                         }`}
                       />
                     </div>
                   </div>
                 </CardHeader>
 
-                {isExpanded && (
+                {isExpanded(agent.id) && (
                   <CardContent className="grid gap-4">
-                    {/* System Prompt */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         System Prompt
@@ -163,7 +150,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Prompt Template */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Prompt Template
@@ -188,7 +174,6 @@ export default function AgentsPage() {
                       </div>
                     </div>
 
-                    {/* Model */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Model
@@ -201,7 +186,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Temperature */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Temperature
@@ -218,7 +202,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Skills */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Skills
@@ -235,9 +218,8 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Save */}
                     <div className="flex items-center gap-3">
-                      {isDirty && (
+                      {isDirty(agent.id) && (
                         <Button
                           onClick={() => update.mutate({ id: agent.id, agent })}
                           disabled={update.isPending}
@@ -245,7 +227,7 @@ export default function AgentsPage() {
                           {update.isPending ? 'Saving...' : 'Save'}
                         </Button>
                       )}
-                      {update.isSuccess && !isDirty && (
+                      {update.isSuccess && !isDirty(agent.id) && (
                         <span className="text-xs text-green-500">Saved</span>
                       )}
                     </div>

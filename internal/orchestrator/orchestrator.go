@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/producer"
@@ -42,7 +41,7 @@ func sanitizeVoiceText(s string, brandAliases map[string]string) string {
 }
 
 type Orchestrator struct {
-	pool          *pgxpool.Pool
+	settingsRepo  *repository.SettingsRepo
 	questionAgent *agent.QuestionAgent
 	scriptAgent   *agent.ScriptAgent
 	imageAgent    *agent.ImageAgent
@@ -55,7 +54,6 @@ type Orchestrator struct {
 }
 
 func New(
-	pool *pgxpool.Pool,
 	qa *agent.QuestionAgent,
 	sa *agent.ScriptAgent,
 	ia *agent.ImageAgent,
@@ -64,10 +62,11 @@ func New(
 	scenes *repository.ScenesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
+	settings *repository.SettingsRepo,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
-		pool: pool, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
+		settingsRepo: settings, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
@@ -76,29 +75,18 @@ func New(
 func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
 
-	var categoriesJSON string
-	err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'categories'`).Scan(&categoriesJSON)
+	categories, err := o.settingsRepo.GetCategories(ctx)
 	if err != nil {
-		return fmt.Errorf("read categories setting: %w", err)
-	}
-	var categories []string
-	if err := json.Unmarshal([]byte(categoriesJSON), &categories); err != nil {
-		return fmt.Errorf("parse categories: %w", err)
+		return fmt.Errorf("read categories: %w", err)
 	}
 	if len(categories) == 0 {
 		return fmt.Errorf("no categories configured")
 	}
 	category := categories[weekNum%len(categories)]
 
-	var aliasesJSON string
-	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
-		log.Printf("No brand_aliases setting, using empty: %v", err)
-		aliasesJSON = "{}"
-	}
-	var brandAliases map[string]string
-	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
-		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
-		brandAliases = map[string]string{}
+	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
+	if err != nil {
+		return fmt.Errorf("read brand aliases: %w", err)
 	}
 
 	log.Printf("Producing %d clips for category: %s", count, category)
@@ -115,7 +103,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, qaCfg.BuildSystemPrompt(), qaCfg.Temperature, qaCfg.PromptTemplate)
+	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg)
 	if err != nil {
 		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)
@@ -199,7 +187,7 @@ func validateScript(script *agent.GeneratedScript) {
 
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, scriptCfg.BuildSystemPrompt(), scriptCfg.Temperature, scriptCfg.PromptTemplate)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -224,7 +212,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, imageCfg.BuildSystemPrompt(), imageCfg.Temperature, imageCfg.PromptTemplate)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
@@ -238,26 +226,53 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 	fullVoice = sanitizeVoiceText(fullVoice, brandAliases)
 
-	o.pool.Exec(ctx,
-		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (clip_id) DO UPDATE SET youtube_title=$2, youtube_description=$3, youtube_tags=$4`,
-		clipID, script.YoutubeTitle, script.YoutubeDescription, script.YoutubeTags)
+	o.clipsRepo.UpsertMetadata(ctx, models.ClipMetadata{
+		ClipID:       clipID,
+		YoutubeTitle: &script.YoutubeTitle,
+		YoutubeDesc:  &script.YoutubeDescription,
+		YoutubeTags:  script.YoutubeTags,
+	})
 
 	return o.runProduction(ctx, clipID, script.Scenes, imagePrompts, fullVoice)
+}
+
+func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error {
+	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries)
+	if err != nil {
+		return fmt.Errorf("list failed: %w", err)
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+
+	o.tracker.StartProduction(len(failed))
+	defer o.tracker.FinishProduction()
+
+	for i, clip := range failed {
+		if ctx.Err() != nil {
+			o.tracker.AddErrorLog(fmt.Sprintf("Retry stopped at clip %d/%d", i+1, len(failed)))
+			break
+		}
+		c := clip
+		o.tracker.StartClip(i+1, c.Title)
+		log.Printf("Retrying clip %s (%s)", c.ID, c.Title)
+		if err := o.RetryClip(ctx, &c); err != nil {
+			log.Printf("Retry failed for %s: %v", c.ID, err)
+			o.tracker.AddErrorLog(fmt.Sprintf("Retry %s failed: %v", c.ID, err))
+		} else {
+			log.Printf("Retry succeeded for %s", c.ID)
+			o.tracker.CompleteStep("complete")
+		}
+	}
+	return nil
 }
 
 func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
 
-	var aliasesJSON string
-	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
-		aliasesJSON = "{}"
-	}
-	var brandAliases map[string]string
-	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
-		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
-		brandAliases = map[string]string{}
+	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("read brand aliases: %w", err))
 	}
 
 	status := "producing"
@@ -313,7 +328,7 @@ func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string
 	genScenes := scenesToGenerated(scenes)
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg.Model, imageCfg.BuildSystemPrompt(), imageCfg.Temperature, imageCfg.PromptTemplate)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))

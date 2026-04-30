@@ -79,7 +79,7 @@ func main() {
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine)
 	imageAgent := agent.NewImageAgent(llm)
 
-	kie := producer.NewKieClient(pool)
+	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
 	tracker := progress.NewTracker()
 	orClient := producer.NewOpenRouterClient(pool)
@@ -90,9 +90,10 @@ func main() {
 	themesRepo := repository.NewThemesRepo(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
+	settingsRepo := repository.NewSettingsRepo(pool)
 
-	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
-		clipsRepo, scenesRepo, themesRepo, agentsRepo, tracker)
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, prod,
+		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
@@ -126,7 +127,7 @@ func main() {
 	}
 
 	r := router.New(pool, cfg.APIKey, ragEngine, tracker)
-	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub, clipsRepo)
+	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
 	router.SetOrchestrator(r, orchHandler)
 
 	addr := ":" + cfg.Port
