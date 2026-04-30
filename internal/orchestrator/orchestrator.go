@@ -236,6 +236,37 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	return o.runProduction(ctx, clipID, script.Scenes, imagePrompts, fullVoice)
 }
 
+func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error {
+	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries)
+	if err != nil {
+		return fmt.Errorf("list failed: %w", err)
+	}
+	if len(failed) == 0 {
+		return nil
+	}
+
+	o.tracker.StartProduction(len(failed))
+	defer o.tracker.FinishProduction()
+
+	for i, clip := range failed {
+		if ctx.Err() != nil {
+			o.tracker.AddErrorLog(fmt.Sprintf("Retry stopped at clip %d/%d", i+1, len(failed)))
+			break
+		}
+		c := clip
+		o.tracker.StartClip(i+1, c.Title)
+		log.Printf("Retrying clip %s (%s)", c.ID, c.Title)
+		if err := o.RetryClip(ctx, &c); err != nil {
+			log.Printf("Retry failed for %s: %v", c.ID, err)
+			o.tracker.AddErrorLog(fmt.Sprintf("Retry %s failed: %v", c.ID, err))
+		} else {
+			log.Printf("Retry succeeded for %s", c.ID)
+			o.tracker.CompleteStep("complete")
+		}
+	}
+	return nil
+}
+
 func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
 
