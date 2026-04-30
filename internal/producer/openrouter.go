@@ -146,15 +146,59 @@ func (o *OpenRouterClient) generateImageOnce(ctx context.Context, prompt, aspect
 }
 
 func (o *OpenRouterClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
-	return retryableCall(ctx, "openrouter-tts", func() error {
-		return o.generateVoiceOnce(ctx, text, voice, outputPath)
-	})
+	chunks := splitVoiceText(text, ttsMaxChunkRunes)
+	if len(chunks) == 0 {
+		return fmt.Errorf("no text to generate voice for")
+	}
+
+	if len(chunks) > 1 {
+		log.Printf("Splitting voice text into %d chunks for TTS (%d chars total)", len(chunks), len([]rune(text)))
+	}
+
+	var allPCM []byte
+	for i, chunk := range chunks {
+		if len(chunks) > 1 {
+			log.Printf("Generating TTS chunk %d/%d (%d chars)", i+1, len(chunks), len([]rune(chunk)))
+		}
+
+		var pcm []byte
+		err := retryableCall(ctx, "openrouter-tts", func() error {
+			var genErr error
+			pcm, genErr = o.generatePCM(ctx, chunk, voice)
+			return genErr
+		})
+		if err != nil {
+			return fmt.Errorf("TTS chunk %d/%d: %w", i+1, len(chunks), err)
+		}
+		allPCM = append(allPCM, pcm...)
+	}
+
+	// Validate audio duration
+	const sampleRate = 24000
+	const bytesPerSample = 2 // 16-bit mono
+	durationSec := float64(len(allPCM)) / float64(sampleRate*bytesPerSample)
+	if durationSec < 5.0 && len([]rune(text)) > 100 {
+		log.Printf("WARNING: TTS audio unusually short (%.1fs for %d chars) — possible truncation", durationSec, len([]rune(text)))
+	}
+
+	wavData := wrapPCMAsWAV(allPCM, sampleRate, 1, 16)
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	if err := os.WriteFile(outputPath, wavData, 0644); err != nil {
+		return fmt.Errorf("write audio: %w", err)
+	}
+
+	log.Printf("Saved TTS audio (%d bytes PCM → %d bytes WAV, %.1fs, %d chunks) to %s",
+		len(allPCM), len(wavData), durationSec, len(chunks), outputPath)
+	return nil
 }
 
-func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, outputPath string) error {
+func (o *OpenRouterClient) generatePCM(ctx context.Context, text, voice string) ([]byte, error) {
 	apiKey, err := o.getAPIKey(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	reqBody := struct {
@@ -171,46 +215,36 @@ func (o *OpenRouterClient) generateVoiceOnce(ctx context.Context, text, voice, o
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("marshal TTS: %w", err)
+		return nil, fmt.Errorf("marshal TTS: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", openRouterTTSAPI, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create TTS request: %w", err)
+		return nil, fmt.Errorf("create TTS request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := o.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("TTS request failed: %w", err)
+		return nil, fmt.Errorf("TTS request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("TTS %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+		return nil, fmt.Errorf("TTS %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
 	}
 
 	pcmData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read TTS audio: %w", err)
+		return nil, fmt.Errorf("read TTS audio: %w", err)
 	}
 	if len(pcmData) == 0 {
-		return fmt.Errorf("no audio data received from TTS")
+		return nil, fmt.Errorf("no audio data received from TTS")
 	}
 
-	wavData := wrapPCMAsWAV(pcmData, 24000, 1, 16)
-
-	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return fmt.Errorf("create output directory: %w", err)
-	}
-	if err := os.WriteFile(outputPath, wavData, 0644); err != nil {
-		return fmt.Errorf("write audio: %w", err)
-	}
-
-	log.Printf("Saved TTS audio (%d bytes PCM → %d bytes WAV) to %s", len(pcmData), len(wavData), outputPath)
-	return nil
+	return pcmData, nil
 }
 
 func saveBase64Image(dataURL, outputPath string) error {
