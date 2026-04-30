@@ -31,6 +31,7 @@ export default function ContentPage() {
   const { data: prodStatus } = useQuery({
     queryKey: ['production-status'],
     queryFn: () => apiFetch<{ active: boolean }>('/api/v1/production/status'),
+    refetchInterval: 5000,
   });
 
   const isProducing = prodStatus?.active ?? false;
