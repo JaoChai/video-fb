@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,4 +52,31 @@ func (r *SettingsRepo) Set(ctx context.Context, key, value string) error {
 		return fmt.Errorf("set setting %s: %w", key, err)
 	}
 	return nil
+}
+
+func (r *SettingsRepo) GetCategories(ctx context.Context) ([]string, error) {
+	raw, err := r.Get(ctx, "categories")
+	if err != nil {
+		return nil, fmt.Errorf("get categories: %w", err)
+	}
+	var categories []string
+	if err := json.Unmarshal([]byte(raw), &categories); err != nil {
+		return nil, fmt.Errorf("parse categories: %w", err)
+	}
+	if len(categories) == 0 {
+		return nil, fmt.Errorf("categories setting is empty")
+	}
+	return categories, nil
+}
+
+func (r *SettingsRepo) GetBrandAliases(ctx context.Context) (map[string]string, error) {
+	raw, err := r.Get(ctx, "brand_aliases")
+	if err != nil {
+		return map[string]string{}, nil
+	}
+	var aliases map[string]string
+	if err := json.Unmarshal([]byte(raw), &aliases); err != nil {
+		return map[string]string{}, nil
+	}
+	return aliases, nil
 }
