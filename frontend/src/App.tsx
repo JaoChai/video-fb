@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { ROUTES } from "./lib/routes"
 import { ErrorBoundary } from "./components/error-boundary"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { ToastProvider } from "./components/ui/toaster"
@@ -33,13 +34,13 @@ export default function App() {
               <main className="flex-1 overflow-y-auto px-4 py-6 md:px-8 md:py-8 max-w-5xl">
                 <ErrorBoundary>
                   <Routes>
-                    <Route path="/" element={<ContentPage />} />
-                    <Route path="/schedules" element={<SchedulesPage />} />
-                    <Route path="/analytics" element={<AnalyticsPage />} />
-                    <Route path="/knowledge" element={<KnowledgePage />} />
-                    <Route path="/agents" element={<AgentsPage />} />
-                    <Route path="/prompt-history" element={<PromptHistoryPage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path={ROUTES.CONTENT} element={<ContentPage />} />
+                    <Route path={ROUTES.SCHEDULES} element={<SchedulesPage />} />
+                    <Route path={ROUTES.ANALYTICS} element={<AnalyticsPage />} />
+                    <Route path={ROUTES.KNOWLEDGE} element={<KnowledgePage />} />
+                    <Route path={ROUTES.AGENTS} element={<AgentsPage />} />
+                    <Route path={ROUTES.PROMPT_HISTORY} element={<PromptHistoryPage />} />
+                    <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
                   </Routes>
                 </ErrorBoundary>
               </main>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { NavLink } from "react-router-dom"
 import { cn } from "../lib/utils"
+import { ROUTES } from "../lib/routes"
 import {
   LayoutDashboard,
   CalendarClock,
@@ -15,16 +16,16 @@ import {
 import { Button } from "./ui/button"
 
 export const PIPELINE_NAV = [
-  { to: "/", label: "Content", icon: LayoutDashboard },
-  { to: "/schedules", label: "Schedules", icon: CalendarClock },
-  { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: ROUTES.CONTENT, label: "Content", icon: LayoutDashboard },
+  { to: ROUTES.SCHEDULES, label: "Schedules", icon: CalendarClock },
+  { to: ROUTES.ANALYTICS, label: "Analytics", icon: BarChart3 },
 ]
 
 export const CONFIG_NAV = [
-  { to: "/knowledge", label: "Knowledge", icon: BookOpen },
-  { to: "/agents", label: "Agents", icon: Bot },
-  { to: "/prompt-history", label: "Prompt History", icon: History },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: ROUTES.KNOWLEDGE, label: "Knowledge", icon: BookOpen },
+  { to: ROUTES.AGENTS, label: "Agents", icon: Bot },
+  { to: ROUTES.PROMPT_HISTORY, label: "Prompt History", icon: History },
+  { to: ROUTES.SETTINGS, label: "Settings", icon: Settings },
 ]
 
 export function Sidebar() {
