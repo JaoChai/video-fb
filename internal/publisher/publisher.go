@@ -82,9 +82,10 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		}
 
 		// Post 16:9 (YouTube regular)
+		// Zernio uses Content's first line as YouTube title
 		result169, err := p.zernio.Post(ctx, PostRequest{
 			Title:      title,
-			Content:    desc,
+			Content:    title + "\n\n" + desc,
 			Platforms:  platforms,
 			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 			Visibility: VisibilityPrivate,
@@ -107,7 +108,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 			result916, err := p.zernio.Post(ctx, PostRequest{
 				Title:      shortsTitle,
-				Content:    desc,
+				Content:    shortsTitle + "\n\n" + desc,
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				Visibility: VisibilityPrivate,
