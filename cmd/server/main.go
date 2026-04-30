@@ -79,7 +79,7 @@ func main() {
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine)
 	imageAgent := agent.NewImageAgent(llm)
 
-	kie := producer.NewKieClient(pool)
+	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
 	tracker := progress.NewTracker()
 	orClient := producer.NewOpenRouterClient(pool)

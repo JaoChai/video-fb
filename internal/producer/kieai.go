@@ -19,17 +19,39 @@ import (
 
 const kieAPI = "https://api.kie.ai/api/v1"
 
+type KieConfig struct {
+	ImageTaskTimeout time.Duration
+	VoiceTaskTimeout time.Duration
+	PollInterval     time.Duration
+	MaxRetries       int
+	HTTPTimeout      time.Duration
+	UploadTimeout    time.Duration
+}
+
+func DefaultKieConfig() KieConfig {
+	return KieConfig{
+		ImageTaskTimeout: 180 * time.Second,
+		VoiceTaskTimeout: 300 * time.Second,
+		PollInterval:     3 * time.Second,
+		MaxRetries:       5,
+		HTTPTimeout:      30 * time.Second,
+		UploadTimeout:    5 * time.Minute,
+	}
+}
+
 type KieClient struct {
 	pool         *pgxpool.Pool
+	cfg          KieConfig
 	client       *http.Client
 	uploadClient *http.Client
 }
 
-func NewKieClient(pool *pgxpool.Pool) *KieClient {
+func NewKieClient(pool *pgxpool.Pool, cfg KieConfig) *KieClient {
 	return &KieClient{
 		pool:         pool,
-		client:       &http.Client{Timeout: 30 * time.Second},
-		uploadClient: &http.Client{Timeout: 5 * time.Minute},
+		cfg:          cfg,
+		client:       &http.Client{Timeout: cfg.HTTPTimeout},
+		uploadClient: &http.Client{Timeout: cfg.UploadTimeout},
 	}
 }
 
@@ -68,7 +90,7 @@ type kieStatusResponse struct {
 }
 
 func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outputPath string) error {
-	return retryableCall(ctx, "generate-image", func() error {
+	return k.retryableCall(ctx, "generate-image", func() error {
 		taskID, err := k.createTask(ctx, "gpt-image-2-text-to-image", map[string]any{
 			"prompt":       prompt,
 			"aspect_ratio": aspectRatio,
@@ -78,7 +100,7 @@ func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outp
 			return fmt.Errorf("create image task: %w", err)
 		}
 
-		result, err := k.pollTask(ctx, taskID, 180*time.Second)
+		result, err := k.pollTask(ctx, taskID, k.cfg.ImageTaskTimeout)
 		if err != nil {
 			return fmt.Errorf("poll image task: %w", err)
 		}
@@ -93,7 +115,7 @@ func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outp
 }
 
 func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
-	return retryableCall(ctx, "generate-voice", func() error {
+	return k.retryableCall(ctx, "generate-voice", func() error {
 		taskID, err := k.createTask(ctx, "elevenlabs/text-to-dialogue-v3", map[string]any{
 			"dialogue":      []map[string]string{{"text": text, "voice": voice}},
 			"language_code": "th",
@@ -103,7 +125,7 @@ func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath s
 			return fmt.Errorf("create voice task: %w", err)
 		}
 
-		result, err := k.pollTask(ctx, taskID, 300*time.Second)
+		result, err := k.pollTask(ctx, taskID, k.cfg.VoiceTaskTimeout)
 		if err != nil {
 			return fmt.Errorf("poll voice task: %w", err)
 		}
@@ -177,7 +199,7 @@ func (k *KieClient) pollTask(ctx context.Context, taskID string, timeout time.Du
 		resp, err := k.client.Do(req)
 		if err != nil {
 			log.Printf("Poll task %s HTTP error: %v", taskID, err)
-			time.Sleep(3 * time.Second)
+			time.Sleep(k.cfg.PollInterval)
 			continue
 		}
 
@@ -185,7 +207,7 @@ func (k *KieClient) pollTask(ctx context.Context, taskID string, timeout time.Du
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
 			log.Printf("Poll task %s decode error: %v", taskID, err)
-			time.Sleep(3 * time.Second)
+			time.Sleep(k.cfg.PollInterval)
 			continue
 		}
 		resp.Body.Close()
@@ -240,14 +262,19 @@ func isRetryable(err error) bool {
 	return false
 }
 
-const maxRetries = 5
-
+// retryableCall is a package-level helper used by OpenRouterClient (fixed 5 retries).
 func retryableCall(ctx context.Context, operation string, fn func() error) error {
+	cfg := DefaultKieConfig()
+	tmp := &KieClient{cfg: cfg}
+	return tmp.retryableCall(ctx, operation, fn)
+}
+
+func (k *KieClient) retryableCall(ctx context.Context, operation string, fn func() error) error {
 	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := 0; attempt <= k.cfg.MaxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(attempt) * 30 * time.Second
-			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, maxRetries, backoff, lastErr)
+			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, k.cfg.MaxRetries, backoff, lastErr)
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -269,7 +296,7 @@ func retryableCall(ctx context.Context, operation string, fn func() error) error
 			return lastErr
 		}
 	}
-	return fmt.Errorf("%s failed after %d retries: %w", operation, maxRetries, lastErr)
+	return fmt.Errorf("%s failed after %d retries: %w", operation, k.cfg.MaxRetries, lastErr)
 }
 
 func (k *KieClient) downloadFile(ctx context.Context, url, outputPath string) error {
@@ -324,7 +351,7 @@ func (k *KieClient) UploadFile(ctx context.Context, localPath, uploadPath string
 	fileName := filepath.Base(localPath)
 
 	var fileURL string
-	err = retryableCall(ctx, "upload-file", func() error {
+	err = k.retryableCall(ctx, "upload-file", func() error {
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 
