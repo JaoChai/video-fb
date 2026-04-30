@@ -266,3 +266,51 @@ func mapVoice(voice string) string {
 	}
 	return "Kore"
 }
+
+const ttsMaxChunkRunes = 400
+
+func splitVoiceText(text string, maxChunkRunes int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if len([]rune(text)) <= maxChunkRunes {
+		return []string{text}
+	}
+
+	const sep = "..."
+	parts := strings.Split(text, sep)
+
+	var chunks []string
+	var segments []string
+	currentLen := 0
+
+	for _, part := range parts {
+		partRunes := len([]rune(part))
+		sepLen := 0
+		if len(segments) > 0 {
+			sepLen = len([]rune(sep))
+		}
+
+		if currentLen+sepLen+partRunes > maxChunkRunes && len(segments) > 0 {
+			chunk := strings.TrimSpace(strings.Join(segments, sep))
+			if chunk != "" {
+				chunks = append(chunks, chunk)
+			}
+			segments = []string{part}
+			currentLen = partRunes
+		} else {
+			segments = append(segments, part)
+			currentLen += sepLen + partRunes
+		}
+	}
+
+	if len(segments) > 0 {
+		chunk := strings.TrimSpace(strings.Join(segments, sep))
+		if chunk != "" {
+			chunks = append(chunks, chunk)
+		}
+	}
+
+	return chunks
+}
