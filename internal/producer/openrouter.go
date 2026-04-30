@@ -170,6 +170,15 @@ func (o *OpenRouterClient) GenerateVoice(ctx context.Context, text, voice, outpu
 		if err != nil {
 			return fmt.Errorf("TTS chunk %d/%d: %w", i+1, len(chunks), err)
 		}
+
+		if len(chunks) > 1 {
+			trimLeading := i > 0
+			trimTrailing := i < len(chunks)-1
+			pcm = trimPCMSilence(pcm, trimLeading, trimTrailing)
+			if i > 0 {
+				allPCM = append(allPCM, make([]byte, gapBytes)...)
+			}
+		}
 		allPCM = append(allPCM, pcm...)
 	}
 
@@ -302,6 +311,40 @@ func mapVoice(voice string) string {
 }
 
 const ttsMaxChunkRunes = 400
+const silenceThreshold = 500
+const gapDurationMs = 150
+const gapBytes = 24000 * 2 * gapDurationMs / 1000 // 24kHz × 2 bytes × 150ms = 7200 bytes
+
+func trimPCMSilence(pcm []byte, trimLeading, trimTrailing bool) []byte {
+	if len(pcm) < 2 {
+		return pcm
+	}
+
+	start := 0
+	end := len(pcm)
+
+	if trimLeading {
+		for start < end-1 {
+			sample := int16(pcm[start]) | int16(pcm[start+1])<<8
+			if sample > silenceThreshold || sample < -silenceThreshold {
+				break
+			}
+			start += 2
+		}
+	}
+
+	if trimTrailing {
+		for end > start+1 {
+			sample := int16(pcm[end-2]) | int16(pcm[end-1])<<8
+			if sample > silenceThreshold || sample < -silenceThreshold {
+				break
+			}
+			end -= 2
+		}
+	}
+
+	return pcm[start:end]
+}
 
 func splitVoiceText(text string, maxChunkRunes int) []string {
 	text = strings.TrimSpace(text)

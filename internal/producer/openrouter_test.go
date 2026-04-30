@@ -1,8 +1,77 @@
 package producer
 
 import (
+	"encoding/binary"
 	"testing"
 )
+
+func makePCM(samples []int16) []byte {
+	buf := make([]byte, len(samples)*2)
+	for i, s := range samples {
+		binary.LittleEndian.PutUint16(buf[i*2:], uint16(s))
+	}
+	return buf
+}
+
+func TestTrimPCMSilence(t *testing.T) {
+	loud := int16(5000)
+	silent := int16(0)
+
+	tests := []struct {
+		name         string
+		samples      []int16
+		trimLeading  bool
+		trimTrailing bool
+		wantSamples  int
+	}{
+		{
+			name:         "trim leading silence",
+			samples:      []int16{silent, silent, silent, loud, loud, loud},
+			trimLeading:  true,
+			trimTrailing: false,
+			wantSamples:  3,
+		},
+		{
+			name:         "trim trailing silence",
+			samples:      []int16{loud, loud, loud, silent, silent, silent},
+			trimLeading:  false,
+			trimTrailing: true,
+			wantSamples:  3,
+		},
+		{
+			name:         "trim both",
+			samples:      []int16{silent, silent, loud, loud, silent, silent},
+			trimLeading:  true,
+			trimTrailing: true,
+			wantSamples:  2,
+		},
+		{
+			name:         "no trim",
+			samples:      []int16{silent, loud, loud, silent},
+			trimLeading:  false,
+			trimTrailing: false,
+			wantSamples:  4,
+		},
+		{
+			name:         "all silence trims to minimum",
+			samples:      []int16{silent, silent, silent},
+			trimLeading:  true,
+			trimTrailing: true,
+			wantSamples:  0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pcm := makePCM(tc.samples)
+			got := trimPCMSilence(pcm, tc.trimLeading, tc.trimTrailing)
+			gotSamples := len(got) / 2
+			if gotSamples != tc.wantSamples {
+				t.Errorf("trimPCMSilence() returned %d samples, want %d", gotSamples, tc.wantSamples)
+			}
+		})
+	}
+}
 
 func TestSplitVoiceText(t *testing.T) {
 	tests := []struct {
