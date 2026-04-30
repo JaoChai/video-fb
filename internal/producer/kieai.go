@@ -262,11 +262,11 @@ func isRetryable(err error) bool {
 	return false
 }
 
-// retryableCall is a package-level helper used by OpenRouterClient (fixed 5 retries).
+var defaultRetryConfig = DefaultKieConfig()
+
 func retryableCall(ctx context.Context, operation string, fn func() error) error {
-	cfg := DefaultKieConfig()
-	tmp := &KieClient{cfg: cfg}
-	return tmp.retryableCall(ctx, operation, fn)
+	k := &KieClient{cfg: defaultRetryConfig}
+	return k.retryableCall(ctx, operation, fn)
 }
 
 func (k *KieClient) retryableCall(ctx context.Context, operation string, fn func() error) error {

@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../../api';
 import { Button } from '../ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
-import { useToast } from '../ui/toaster';
+import { useMutationWithToast } from '../../hooks/useMutationWithToast';
 
 interface Agent {
   id: string;
@@ -22,8 +21,6 @@ interface AgentModelsCardProps {
 }
 
 export function AgentModelsCard({ agents }: AgentModelsCardProps) {
-  const qc = useQueryClient();
-  const { success, error: showError } = useToast();
   const [models, setModels] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
@@ -35,8 +32,8 @@ export function AgentModelsCard({ agents }: AgentModelsCardProps) {
     }
   }, [agents]);
 
-  const saveAgentModel = useMutation({
-    mutationFn: ({ id, agent }: { id: string; agent: Agent }) =>
+  const saveAgentModel = useMutationWithToast<unknown, { id: string; agent: Agent }>({
+    mutationFn: ({ id, agent }) =>
       apiFetch(`/api/v1/agents/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -47,12 +44,9 @@ export function AgentModelsCard({ agents }: AgentModelsCardProps) {
           skills: agent.skills,
         }),
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['agents'] });
-      setDirty({});
-      success('บันทึก model แล้ว');
-    },
-    onError: (e) => showError(`บันทึก model ล้มเหลว: ${(e as Error).message}`),
+    invalidateKeys: [['agents']],
+    successMsg: 'บันทึก model แล้ว',
+    onSuccess: () => setDirty({}),
   });
 
   const handleChange = (id: string, value: string) => {

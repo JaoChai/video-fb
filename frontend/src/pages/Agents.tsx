@@ -13,7 +13,7 @@ import { useToast } from '../components/ui/toaster';
 import { Skeleton } from '../components/ui/skeleton';
 import { useEditableList } from '../hooks/useEditableList';
 
-interface Agent extends Record<string, unknown> {
+interface Agent {
   id: string;
   agent_name: string;
   system_prompt: string;
@@ -42,7 +42,7 @@ export default function AgentsPage() {
     queryFn: () => apiFetch<Agent[]>('/api/v1/agents'),
   });
 
-  const { edits, setEdits, handleEdit, toggleExpand, isDirty, isExpanded, getEdit, resetDirty } = useEditableList<Agent>(agents);
+  const { edits, setEdits, handleEdit, toggleExpand, isDirty, isExpanded, getEdit, resetDirty } = useEditableList<Agent & Record<string, unknown>>();
 
   useEffect(() => {
     if (agents) {
@@ -137,7 +137,6 @@ export default function AgentsPage() {
 
                 {isExpanded(agent.id) && (
                   <CardContent className="grid gap-4">
-                    {/* System Prompt */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         System Prompt
@@ -151,7 +150,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Prompt Template */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Prompt Template
@@ -176,7 +174,6 @@ export default function AgentsPage() {
                       </div>
                     </div>
 
-                    {/* Model */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Model
@@ -189,7 +186,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Temperature */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Temperature
@@ -206,7 +202,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Skills */}
                     <div className="grid gap-2">
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                         Skills
@@ -223,7 +218,6 @@ export default function AgentsPage() {
                       />
                     </div>
 
-                    {/* Save */}
                     <div className="flex items-center gap-3">
                       {isDirty(agent.id) && (
                         <Button

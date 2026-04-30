@@ -1,41 +1,30 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 
-export function useEditableList<T extends Record<string, unknown>>(
-  _items: T[] | undefined,
-  _idKey: keyof T = 'id' as keyof T,
-) {
+export function useEditableList<T extends Record<string, unknown>>() {
   const [edits, setEdits] = useState<Record<string, Partial<T>>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const handleEdit = useCallback(
-    (id: string, field: keyof T, value: T[keyof T]) => {
-      setEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } as Partial<T> }));
-      setDirty(prev => ({ ...prev, [id]: true }));
-    },
-    [],
-  );
+  function handleEdit(id: string, field: keyof T, value: T[keyof T]) {
+    setEdits(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } as Partial<T> }));
+    setDirty(prev => ({ ...prev, [id]: true }));
+  }
 
-  const toggleExpand = useCallback((id: string) => {
+  function toggleExpand(id: string) {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
-  }, []);
+  }
 
-  const resetDirty = useCallback((id?: string) => {
+  function resetDirty(id?: string) {
     if (id) {
       setDirty(prev => ({ ...prev, [id]: false }));
     } else {
       setDirty({});
     }
-  }, []);
+  }
 
-  const getEdit = useCallback(
-    (id: string) => edits[id] ?? ({} as Partial<T>),
-    [edits],
-  );
-
-  const isDirty = useCallback((id: string) => dirty[id] ?? false, [dirty]);
-
-  const isExpanded = useCallback((id: string) => expanded[id] ?? false, [expanded]);
+  const getEdit = (id: string) => edits[id] ?? ({} as Partial<T>);
+  const isDirty = (id: string) => dirty[id] ?? false;
+  const isExpanded = (id: string) => expanded[id] ?? false;
 
   return {
     edits,
