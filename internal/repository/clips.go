@@ -160,3 +160,15 @@ func (r *ClipsRepo) CountConsecutiveFailed(ctx context.Context) (int, error) {
 	}
 	return count, nil
 }
+
+func (r *ClipsRepo) UpsertMetadata(ctx context.Context, m models.ClipMetadata) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (clip_id) DO UPDATE SET youtube_title=$2, youtube_description=$3, youtube_tags=$4`,
+		m.ClipID, m.YoutubeTitle, m.YoutubeDesc, m.YoutubeTags)
+	if err != nil {
+		return fmt.Errorf("upsert metadata for clip %s: %w", m.ClipID, err)
+	}
+	return nil
+}
