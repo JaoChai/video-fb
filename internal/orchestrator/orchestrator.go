@@ -115,7 +115,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg.Model, qaCfg.BuildSystemPrompt(), qaCfg.Temperature, qaCfg.PromptTemplate)
+	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg)
 	if err != nil {
 		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)
@@ -199,7 +199,7 @@ func validateScript(script *agent.GeneratedScript) {
 
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg.Model, scriptCfg.BuildSystemPrompt(), scriptCfg.Temperature, scriptCfg.PromptTemplate)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -224,7 +224,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg.Model, imageCfg.BuildSystemPrompt(), imageCfg.Temperature, imageCfg.PromptTemplate)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
@@ -313,7 +313,7 @@ func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string
 	genScenes := scenesToGenerated(scenes)
 
 	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg.Model, imageCfg.BuildSystemPrompt(), imageCfg.Temperature, imageCfg.PromptTemplate)
+	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg)
 	if err != nil {
 		o.tracker.FailStep("image_prompts", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))

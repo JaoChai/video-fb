@@ -29,7 +29,7 @@ type SceneImagePrompts struct {
 	ImagePrompt916 string `json:"image_prompt_9_16"`
 }
 
-func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName, model, systemPrompt string, temperature float64, promptTemplate string) ([]SceneImagePrompts, error) {
+func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScene, theme *models.BrandTheme, questionerName string, cfg *models.AgentConfig) ([]SceneImagePrompts, error) {
 	themeDesc := fmt.Sprintf(
 		"Brand: primary=%s, secondary=%s, accent=%s, font=%s. Style: %s",
 		theme.PrimaryColor, theme.SecondaryColor, theme.AccentColor, theme.FontName,
@@ -40,7 +40,7 @@ func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScen
 		questionText = scenes[0].TextContent
 	}
 
-	userPrompt, err := renderTemplate(promptTemplate, ImageTemplateData{
+	userPrompt, err := renderTemplate(cfg.PromptTemplate, ImageTemplateData{
 		ThemeDescription: themeDesc,
 		QuestionerName:   questionerName,
 		QuestionText:     questionText,
@@ -52,7 +52,7 @@ func (a *ImageAgent) GeneratePrompts(ctx context.Context, scenes []GeneratedScen
 	}
 
 	var prompts []SceneImagePrompts
-	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &prompts); err != nil {
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &prompts); err != nil {
 		return nil, fmt.Errorf("generate image prompts: %w", err)
 	}
 	return prompts, nil

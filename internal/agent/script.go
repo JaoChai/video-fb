@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/rag"
 )
 
@@ -42,7 +43,7 @@ type GeneratedScript struct {
 	YoutubeTags        []string         `json:"youtube_tags"`
 }
 
-func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category, model, systemPrompt string, temperature float64, promptTemplate string) (*GeneratedScript, error) {
+func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, cfg *models.AgentConfig) (*GeneratedScript, error) {
 	ragResults, err := a.rag.Search(ctx, question, 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -54,7 +55,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 		ragContext.WriteString("\n---\n")
 	}
 
-	userPrompt, err := renderTemplate(promptTemplate, ScriptTemplateData{
+	userPrompt, err := renderTemplate(cfg.PromptTemplate, ScriptTemplateData{
 		Question:       question,
 		QuestionerName: questionerName,
 		Category:       category,
@@ -65,7 +66,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 	}
 
 	var script GeneratedScript
-	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &script); err != nil {
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &script); err != nil {
 		return nil, fmt.Errorf("generate script: %w", err)
 	}
 	return &script, nil

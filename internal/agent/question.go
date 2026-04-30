@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/rag"
 )
 
@@ -34,7 +35,7 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model, systemPrompt string, temperature float64, promptTemplate string) ([]GeneratedQuestion, error) {
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
 	ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s problems common issues", category), 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -84,7 +85,7 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model
 		previousNames = "\n\nห้ามใช้ชื่อซ้ำกับเหล่านี้: " + strings.Join(recentNames, ", ")
 	}
 
-	userPrompt, err := renderTemplate(promptTemplate, QuestionTemplateData{
+	userPrompt, err := renderTemplate(cfg.PromptTemplate, QuestionTemplateData{
 		Count:          count,
 		Category:       category,
 		RAGContext:     ragContext.String(),
@@ -96,7 +97,7 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category, model
 	}
 
 	var questions []GeneratedQuestion
-	if err := a.llm.GenerateJSON(ctx, model, systemPrompt, userPrompt, temperature, &questions); err != nil {
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &questions); err != nil {
 		return nil, fmt.Errorf("generate questions: %w", err)
 	}
 
