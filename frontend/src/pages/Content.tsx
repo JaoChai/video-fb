@@ -39,7 +39,7 @@ export default function ContentPage() {
   const { data: clips, isLoading } = useQuery({
     queryKey: ['clips'],
     queryFn: () => apiFetch<Clip[]>('/api/v1/clips'),
-    refetchInterval: isProducing ? 5000 : false,
+    refetchInterval: (isProducing || publishing) ? 5000 : false,
   });
 
   const failedCount = clips?.filter(c => c.status === 'failed' && c.retry_count < 2).length ?? 0;
@@ -66,9 +66,10 @@ export default function ContentPage() {
       success('เริ่ม publish คลิปแล้ว');
     } catch (e) {
       showError(`Publish ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
       setPublishing(false);
+      return;
     }
+    setTimeout(() => setPublishing(false), 30000);
   }
 
   async function handleDelete(clip: Clip): Promise<void> {
