@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/producer"
@@ -42,7 +41,7 @@ func sanitizeVoiceText(s string, brandAliases map[string]string) string {
 }
 
 type Orchestrator struct {
-	pool          *pgxpool.Pool
+	settingsRepo  *repository.SettingsRepo
 	questionAgent *agent.QuestionAgent
 	scriptAgent   *agent.ScriptAgent
 	imageAgent    *agent.ImageAgent
@@ -55,7 +54,6 @@ type Orchestrator struct {
 }
 
 func New(
-	pool *pgxpool.Pool,
 	qa *agent.QuestionAgent,
 	sa *agent.ScriptAgent,
 	ia *agent.ImageAgent,
@@ -64,10 +62,11 @@ func New(
 	scenes *repository.ScenesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
+	settings *repository.SettingsRepo,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
-		pool: pool, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
+		settingsRepo: settings, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
@@ -76,29 +75,18 @@ func New(
 func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
 
-	var categoriesJSON string
-	err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'categories'`).Scan(&categoriesJSON)
+	categories, err := o.settingsRepo.GetCategories(ctx)
 	if err != nil {
-		return fmt.Errorf("read categories setting: %w", err)
-	}
-	var categories []string
-	if err := json.Unmarshal([]byte(categoriesJSON), &categories); err != nil {
-		return fmt.Errorf("parse categories: %w", err)
+		return fmt.Errorf("read categories: %w", err)
 	}
 	if len(categories) == 0 {
 		return fmt.Errorf("no categories configured")
 	}
 	category := categories[weekNum%len(categories)]
 
-	var aliasesJSON string
-	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
-		log.Printf("No brand_aliases setting, using empty: %v", err)
-		aliasesJSON = "{}"
-	}
-	var brandAliases map[string]string
-	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
-		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
-		brandAliases = map[string]string{}
+	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
+	if err != nil {
+		return fmt.Errorf("read brand aliases: %w", err)
 	}
 
 	log.Printf("Producing %d clips for category: %s", count, category)
@@ -238,11 +226,12 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 	fullVoice = sanitizeVoiceText(fullVoice, brandAliases)
 
-	o.pool.Exec(ctx,
-		`INSERT INTO clip_metadata (clip_id, youtube_title, youtube_description, youtube_tags)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (clip_id) DO UPDATE SET youtube_title=$2, youtube_description=$3, youtube_tags=$4`,
-		clipID, script.YoutubeTitle, script.YoutubeDescription, script.YoutubeTags)
+	o.clipsRepo.UpsertMetadata(ctx, models.ClipMetadata{
+		ClipID:       clipID,
+		YoutubeTitle: &script.YoutubeTitle,
+		YoutubeDesc:  &script.YoutubeDescription,
+		YoutubeTags:  script.YoutubeTags,
+	})
 
 	return o.runProduction(ctx, clipID, script.Scenes, imagePrompts, fullVoice)
 }
@@ -250,14 +239,9 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
 
-	var aliasesJSON string
-	if err := o.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'brand_aliases'`).Scan(&aliasesJSON); err != nil {
-		aliasesJSON = "{}"
-	}
-	var brandAliases map[string]string
-	if err := json.Unmarshal([]byte(aliasesJSON), &brandAliases); err != nil {
-		log.Printf("Invalid brand_aliases JSON, using empty: %v", err)
-		brandAliases = map[string]string{}
+	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("read brand aliases: %w", err))
 	}
 
 	status := "producing"

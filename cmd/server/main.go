@@ -90,9 +90,10 @@ func main() {
 	themesRepo := repository.NewThemesRepo(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
+	settingsRepo := repository.NewSettingsRepo(pool)
 
-	orch := orchestrator.New(pool, questionAgent, scriptAgent, imageAgent, prod,
-		clipsRepo, scenesRepo, themesRepo, agentsRepo, tracker)
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, prod,
+		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
