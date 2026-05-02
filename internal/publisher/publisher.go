@@ -130,6 +130,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 
 		log.Printf("Published clip %s via Zernio", clipID)
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate ready clips: %w", err)
+	}
 	return nil
 }
 
@@ -148,8 +151,13 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	var clips []clipPost
 	for rows.Next() {
 		var cp clipPost
-		rows.Scan(&cp.ClipID, &cp.PostID)
+		if err := rows.Scan(&cp.ClipID, &cp.PostID); err != nil {
+			return fmt.Errorf("scan clip metadata: %w", err)
+		}
 		clips = append(clips, cp)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate published clips: %w", err)
 	}
 
 	platforms := []string{"youtube", "tiktok", "instagram", "facebook"}

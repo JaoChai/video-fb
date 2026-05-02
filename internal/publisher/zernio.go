@@ -139,8 +139,17 @@ func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string
 	}
 	defer resp.Body.Close()
 
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read analytics response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("analytics API returned %d for post %s/%s: %s", resp.StatusCode, postID, platform, string(respBody[:min(len(respBody), 300)]))
+	}
+
 	var result AnalyticsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("parse analytics: %w", err)
 	}
 	return &result, nil
