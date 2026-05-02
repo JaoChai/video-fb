@@ -76,6 +76,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	})
 
 	analytics := handler.NewAnalyticsHandler(repository.NewAnalyticsRepo(pool))
+	r.Get("/api/v1/analytics/summary", analytics.Summary)
 	r.Get("/api/v1/clips/{clipId}/analytics", analytics.ListByClip)
 
 	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))

@@ -25,3 +25,20 @@ func (h *AnalyticsHandler) ListByClip(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, models.APIResponse{Data: analytics})
 }
+
+func (h *AnalyticsHandler) Summary(w http.ResponseWriter, r *http.Request) {
+	summary, err := h.repo.Summary(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	topClips, err := h.repo.TopClips(r.Context(), 10)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{
+		"summary":   summary,
+		"top_clips": topClips,
+	}})
+}

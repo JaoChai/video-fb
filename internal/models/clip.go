@@ -62,3 +62,25 @@ type ClipAnalytics struct {
 	RetentionRate    float64   `json:"retention_rate"`
 	FetchedAt        time.Time `json:"fetched_at"`
 }
+
+type AnalyticsSummary struct {
+	TotalViews     int     `json:"total_views"`
+	TotalLikes     int     `json:"total_likes"`
+	TotalComments  int     `json:"total_comments"`
+	TotalShares    int     `json:"total_shares"`
+	AvgRetention   float64 `json:"avg_retention_rate"`
+	TotalWatchTime float64 `json:"total_watch_time_seconds"`
+	ClipCount      int     `json:"clip_count"`
+}
+
+type ClipPerformance struct {
+	ClipID           string  `json:"clip_id"`
+	Title            string  `json:"title"`
+	Category         string  `json:"category"`
+	Views            int     `json:"views"`
+	Likes            int     `json:"likes"`
+	Comments         int     `json:"comments"`
+	Shares           int     `json:"shares"`
+	RetentionRate    float64 `json:"retention_rate"`
+	WatchTimeSeconds float64 `json:"watch_time_seconds"`
+}
