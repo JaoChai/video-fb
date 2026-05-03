@@ -60,6 +60,15 @@ func (r *AgentsRepo) GetByName(ctx context.Context, name string) (*models.AgentC
 }
 
 func (r *AgentsRepo) Update(ctx context.Context, id string, prompt, promptTemplate, model string, temp float64, enabled bool, skills string) error {
+	if promptTemplate == "" {
+		_, err := r.pool.Exec(ctx,
+			`UPDATE agent_configs SET system_prompt=$2, model=$3, temperature=$4, enabled=$5, skills=$6 WHERE id=$1`,
+			id, prompt, model, temp, enabled, skills)
+		if err != nil {
+			return fmt.Errorf("update agent %s: %w", id, err)
+		}
+		return nil
+	}
 	_, err := r.pool.Exec(ctx,
 		`UPDATE agent_configs SET system_prompt=$2, prompt_template=$3, model=$4, temperature=$5, enabled=$6, skills=$7 WHERE id=$1`,
 		id, prompt, promptTemplate, model, temp, enabled, skills)
