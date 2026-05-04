@@ -136,7 +136,7 @@ export default function AnalyticsPage() {
 
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Top Clips</h2>
-            <span className="text-xs text-muted-foreground">{summary.clip_count} clips with data</span>
+            <span className="text-xs text-muted-foreground">{summary.clip_count} published clips</span>
           </div>
 
           <Table>

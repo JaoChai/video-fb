@@ -52,11 +52,11 @@ func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models
 func (r *AnalyticsRepo) Summary(ctx context.Context) (models.AnalyticsSummary, error) {
 	var s models.AnalyticsSummary
 	err := r.pool.QueryRow(ctx, latestAnalyticsCTE+`
-		SELECT COALESCE(SUM(views),0), COALESCE(SUM(likes),0),
-			   COALESCE(SUM(comments),0), COALESCE(SUM(shares),0),
-			   COALESCE(AVG(retention_rate),0), COALESCE(SUM(watch_time_seconds),0),
-			   COUNT(DISTINCT clip_id)
-		FROM latest`).Scan(
+		SELECT COALESCE(SUM(l.views),0), COALESCE(SUM(l.likes),0),
+			   COALESCE(SUM(l.comments),0), COALESCE(SUM(l.shares),0),
+			   COALESCE(AVG(l.retention_rate),0), COALESCE(SUM(l.watch_time_seconds),0),
+			   (SELECT COUNT(*) FROM clips WHERE status = 'published')
+		FROM latest l`).Scan(
 		&s.TotalViews, &s.TotalLikes, &s.TotalComments, &s.TotalShares,
 		&s.AvgRetention, &s.TotalWatchTime, &s.ClipCount)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *AnalyticsRepo) TopClips(ctx context.Context, limit int) ([]models.ClipP
 			   COALESCE(SUM(l.shares),0), COALESCE(AVG(l.retention_rate),0),
 			   COALESCE(SUM(l.watch_time_seconds),0)
 		FROM clips c
-		JOIN latest l ON l.clip_id = c.id
+		LEFT JOIN latest l ON l.clip_id = c.id
 		WHERE c.status = 'published'
 		GROUP BY c.id, c.title, c.category
 		ORDER BY total_views DESC
