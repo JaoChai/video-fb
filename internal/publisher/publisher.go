@@ -2,6 +2,7 @@ package publisher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -239,6 +240,42 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 					failed++
 					continue
 				}
+				watchTime, retention := 0.0, 0.0
+				if platform == "youtube" && metrics.Views > 0 {
+					ytAccountID, _ := p.getSetting(ctx, "zernio_youtube_account_id")
+					var ytVideoID string
+					for _, pa := range resp.PlatformAnalytics {
+						if pa.Platform == "youtube" {
+							ytVideoID = pa.PlatformPostID
+							break
+						}
+					}
+					if ytAccountID != "" && ytVideoID != "" {
+						daily, err := p.zernio.GetYouTubeDailyViews(ctx, ytVideoID, ytAccountID)
+						if err != nil {
+							if errors.Is(err, ErrYouTubeScopeMissing) {
+								log.Printf("FetchAnalytics: YouTube analytics scope missing — re-auth needed (skipping watchTime)")
+							} else {
+								log.Printf("FetchAnalytics WATCHTIME_FAIL clip=%s video=%s: %v", cp.ClipID, ytVideoID, err)
+							}
+						} else {
+							var totalMinutes, avgDurSum float64
+							for _, dv := range daily.DailyViews {
+								totalMinutes += dv.EstimatedMinutesWatched
+								avgDurSum += dv.AverageViewDuration
+							}
+							watchTime = totalMinutes * 60
+							if len(daily.DailyViews) > 0 {
+								avgDur := avgDurSum / float64(len(daily.DailyViews))
+								// retention = avg view duration / 60s (assume 60s Short); cap 1.0
+								retention = avgDur / 60.0
+								if retention > 1.0 {
+									retention = 1.0
+								}
+							}
+						}
+					}
+				}
 				if err := p.analytics.Create(ctx, models.ClipAnalytics{
 					ClipID:           cp.ClipID,
 					Platform:         platform,
@@ -246,8 +283,8 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 					Likes:            metrics.Likes,
 					Comments:         metrics.Comments,
 					Shares:           metrics.Shares,
-					WatchTimeSeconds: 0,
-					RetentionRate:    0,
+					WatchTimeSeconds: watchTime,
+					RetentionRate:    retention,
 				}); err != nil {
 					log.Printf("FetchAnalytics DB_FAIL clip=%s platform=%s: %v", cp.ClipID, platform, err)
 					dbFailed++
@@ -259,4 +296,10 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	}
 	log.Printf("FetchAnalytics done: %d clips, %d success, %d api_fail, %d db_fail", len(clips), success, failed, dbFailed)
 	return nil
+}
+
+func (p *Publisher) getSetting(ctx context.Context, key string) (string, error) {
+	var v string
+	err := p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key=$1`, key).Scan(&v)
+	return v, err
 }

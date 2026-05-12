@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -100,6 +101,69 @@ type AnalyticsResponse struct {
 	PlatformAnalytics []PlatformAnalyticsEntry `json:"platformAnalytics"`
 	SyncStatus        string                   `json:"syncStatus"`
 	Message           string                   `json:"message"`
+}
+
+type DailyViewEntry struct {
+	Date                    string  `json:"date"`
+	Views                   int     `json:"views"`
+	EstimatedMinutesWatched float64 `json:"estimatedMinutesWatched"`
+	AverageViewDuration     float64 `json:"averageViewDuration"`
+	SubscribersGained       int     `json:"subscribersGained"`
+	SubscribersLost         int     `json:"subscribersLost"`
+	Likes                   int     `json:"likes"`
+	Comments                int     `json:"comments"`
+	Shares                  int     `json:"shares"`
+}
+
+type YouTubeDailyViewsResponse struct {
+	Success     bool             `json:"success"`
+	VideoID     string           `json:"videoId"`
+	TotalViews  int              `json:"totalViews"`
+	DailyViews  []DailyViewEntry `json:"dailyViews"`
+	ScopeStatus struct {
+		HasAnalyticsScope bool `json:"hasAnalyticsScope"`
+	} `json:"scopeStatus"`
+	LastSyncedAt string `json:"lastSyncedAt"`
+}
+
+// ErrYouTubeScopeMissing indicates the user must re-authorize YouTube to expose daily-views.
+var ErrYouTubeScopeMissing = errors.New("youtube analytics scope missing")
+
+func (z *ZernioClient) GetYouTubeDailyViews(ctx context.Context, videoID, accountID string) (*YouTubeDailyViewsResponse, error) {
+	q := neturl.Values{}
+	q.Set("videoId", videoID)
+	q.Set("accountId", accountID)
+	endpoint := fmt.Sprintf("%s/analytics/youtube/daily-views?%s", z.baseURL, q.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+z.getAPIKey(ctx))
+
+	resp, err := z.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get daily-views: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read daily-views response: %w", err)
+	}
+
+	if resp.StatusCode == 412 {
+		return nil, ErrYouTubeScopeMissing
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("daily-views API %d for video %s: %s", resp.StatusCode, videoID, string(respBody[:min(len(respBody), 300)]))
+	}
+
+	var result YouTubeDailyViewsResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("parse daily-views: %w", err)
+	}
+	return &result, nil
 }
 
 func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse, error) {
