@@ -6,12 +6,13 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jaochai/video-fb/internal/handler"
 	"github.com/jaochai/video-fb/internal/progress"
+	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker) *chi.Mux {
+func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -75,9 +76,10 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Patch("/{id}", themes.Update)
 	})
 
-	analytics := handler.NewAnalyticsHandler(repository.NewAnalyticsRepo(pool))
+	analytics := handler.NewAnalyticsHandler(repository.NewAnalyticsRepo(pool), pub)
 	r.Get("/api/v1/analytics/summary", analytics.Summary)
 	r.Get("/api/v1/clips/{clipId}/analytics", analytics.ListByClip)
+	r.Post("/api/v1/analytics/fetch", analytics.Trigger)
 
 	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))
 	r.Route("/api/v1/settings", func(r chi.Router) {

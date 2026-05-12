@@ -1,19 +1,27 @@
 package handler
 
 import (
+	"context"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
-type AnalyticsHandler struct {
-	repo *repository.AnalyticsRepo
+type analyticsFetcher interface {
+	FetchAnalytics(ctx context.Context) error
 }
 
-func NewAnalyticsHandler(repo *repository.AnalyticsRepo) *AnalyticsHandler {
-	return &AnalyticsHandler{repo: repo}
+type AnalyticsHandler struct {
+	repo      *repository.AnalyticsRepo
+	publisher analyticsFetcher
+}
+
+func NewAnalyticsHandler(repo *repository.AnalyticsRepo, publisher analyticsFetcher) *AnalyticsHandler {
+	return &AnalyticsHandler{repo: repo, publisher: publisher}
 }
 
 func (h *AnalyticsHandler) ListByClip(w http.ResponseWriter, r *http.Request) {
@@ -37,8 +45,21 @@ func (h *AnalyticsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
 	}
+	lastFetched, _ := h.repo.LastFetchedAt(r.Context())
 	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{
-		"summary":   summary,
-		"top_clips": topClips,
+		"summary":         summary,
+		"top_clips":       topClips,
+		"last_fetched_at": lastFetched,
 	}})
+}
+
+func (h *AnalyticsHandler) Trigger(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := h.publisher.FetchAnalytics(ctx); err != nil {
+			log.Printf("Manual FetchAnalytics failed: %v", err)
+		}
+	}()
+	writeJSON(w, http.StatusAccepted, models.APIResponse{Data: map[string]string{"status": "triggered"}})
 }

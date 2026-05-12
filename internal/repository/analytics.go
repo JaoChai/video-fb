@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
@@ -97,6 +98,15 @@ func (r *AnalyticsRepo) TopClips(ctx context.Context, limit int) ([]models.ClipP
 		return nil, fmt.Errorf("iterate top clips: %w", err)
 	}
 	return results, nil
+}
+
+func (r *AnalyticsRepo) LastFetchedAt(ctx context.Context) (*time.Time, error) {
+	var t *time.Time
+	err := r.pool.QueryRow(ctx, `SELECT MAX(fetched_at) FROM clip_analytics`).Scan(&t)
+	if err != nil {
+		return nil, fmt.Errorf("query last fetched: %w", err)
+	}
+	return t, nil
 }
 
 func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) error {

@@ -126,7 +126,7 @@ func main() {
 		log.Printf("Warning: scheduler start failed: %v", err)
 	}
 
-	r := router.New(pool, cfg.APIKey, ragEngine, tracker)
+	r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub)
 	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
 	router.SetOrchestrator(r, orchHandler)
 
