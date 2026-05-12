@@ -177,7 +177,7 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	log.Printf("FetchAnalytics: platforms=%v", platforms)
 
 	var totalPublished int
-	p.pool.QueryRow(ctx, `SELECT COUNT(*) FROM clips WHERE status = 'published'`).Scan(&totalPublished)
+	_ = p.pool.QueryRow(ctx, `SELECT COUNT(*) FROM clips WHERE status = 'published'`).Scan(&totalPublished)
 
 	rows, err := p.pool.Query(ctx,
 		`SELECT cm.clip_id, cm.zernio_post_id, cm.zernio_shorts_post_id
@@ -208,7 +208,7 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	}
 	log.Printf("FetchAnalytics: %d clips with zernio IDs / %d total published", len(clips), totalPublished)
 
-	var success, failed int
+	var success, failed, dbFailed int
 	for _, cp := range clips {
 		var posts []postRef
 		if cp.PostID != nil && *cp.PostID != "" {
@@ -219,26 +219,44 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 		}
 		for _, post := range posts {
 			for _, platform := range platforms {
-				stats, err := p.zernio.GetAnalytics(ctx, post.id, platform)
+				resp, err := p.zernio.GetAnalytics(ctx, post.id, platform)
 				if err != nil {
 					log.Printf("FetchAnalytics FAIL clip=%s type=%s platform=%s post=%s: %v", cp.ClipID, post.label, platform, post.id, err)
 					failed++
 					continue
 				}
-				p.analytics.Create(ctx, models.ClipAnalytics{
+				var metrics PostMetrics
+				found := false
+				for _, pa := range resp.PlatformAnalytics {
+					if pa.Platform == platform {
+						metrics = pa.Analytics
+						found = true
+						break
+					}
+				}
+				if !found {
+					log.Printf("FetchAnalytics NO_PLATFORM_DATA clip=%s platform=%s post=%s syncStatus=%s", cp.ClipID, platform, post.id, resp.SyncStatus)
+					failed++
+					continue
+				}
+				if err := p.analytics.Create(ctx, models.ClipAnalytics{
 					ClipID:           cp.ClipID,
 					Platform:         platform,
-					Views:            stats.Views,
-					Likes:            stats.Likes,
-					Comments:         stats.Comments,
-					Shares:           stats.Shares,
-					WatchTimeSeconds: stats.WatchTimeSeconds,
-					RetentionRate:    stats.RetentionRate,
-				})
+					Views:            metrics.Views,
+					Likes:            metrics.Likes,
+					Comments:         metrics.Comments,
+					Shares:           metrics.Shares,
+					WatchTimeSeconds: 0,
+					RetentionRate:    0,
+				}); err != nil {
+					log.Printf("FetchAnalytics DB_FAIL clip=%s platform=%s: %v", cp.ClipID, platform, err)
+					dbFailed++
+					continue
+				}
 				success++
 			}
 		}
 	}
-	log.Printf("FetchAnalytics done: %d clips, %d success, %d failed", len(clips), success, failed)
+	log.Printf("FetchAnalytics done: %d clips, %d success, %d api_fail, %d db_fail", len(clips), success, failed, dbFailed)
 	return nil
 }
