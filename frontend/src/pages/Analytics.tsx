@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { apiFetch } from '../api';
 import { PageHeader } from '../components/page-header';
@@ -43,6 +43,7 @@ interface ClipAnalytics {
 interface SummaryResponse {
   summary: AnalyticsSummary;
   top_clips: ClipPerformance[] | null;
+  last_fetched_at: string | null;
 }
 
 function formatNum(n: number): string {
@@ -75,10 +76,18 @@ function formatKpiValue(key: string, val: number): string {
 
 export default function AnalyticsPage() {
   const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: summaryData, isLoading } = useQuery({
     queryKey: ['analytics-summary'],
     queryFn: () => apiFetch<SummaryResponse>('/api/v1/analytics/summary'),
+  });
+
+  const triggerFetch = useMutation({
+    mutationFn: () => apiFetch('/api/v1/analytics/fetch', { method: 'POST' }),
+    onSuccess: () => {
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['analytics-summary'] }), 15000);
+    },
   });
 
   const { data: clipAnalytics, isLoading: detailLoading } = useQuery({
@@ -100,6 +109,25 @@ export default function AnalyticsPage() {
   return (
     <div>
       <PageHeader title="Analytics" />
+
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-xs text-muted-foreground">
+          {summaryData?.last_fetched_at
+            ? <>Last updated: {new Date(summaryData.last_fetched_at).toLocaleString('th-TH')}
+                {Date.now() - new Date(summaryData.last_fetched_at).getTime() > 36 * 3600 * 1000 && (
+                  <span className="ml-2 text-amber-600">⚠ data over 36h old</span>
+                )}</>
+            : 'No fetch yet'}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={triggerFetch.isPending}
+          onClick={() => triggerFetch.mutate()}
+        >
+          {triggerFetch.isPending ? 'Fetching…' : 'Refresh now'}
+        </Button>
+      </div>
 
       {isLoading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
