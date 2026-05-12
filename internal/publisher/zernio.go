@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +22,7 @@ type ZernioClient struct {
 	fallbackKey string
 	pool        *pgxpool.Pool
 	client      *http.Client
+	baseURL     string
 }
 
 func NewZernioClient(fallbackKey string, pool *pgxpool.Pool) *ZernioClient {
@@ -28,6 +30,7 @@ func NewZernioClient(fallbackKey string, pool *pgxpool.Pool) *ZernioClient {
 		fallbackKey: fallbackKey,
 		pool:        pool,
 		client:      &http.Client{Timeout: 60 * time.Second},
+		baseURL:     zernioAPI,
 	}
 }
 
@@ -69,13 +72,34 @@ type PostResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+type PostMetrics struct {
+	Impressions    int     `json:"impressions"`
+	Reach          int     `json:"reach"`
+	Likes          int     `json:"likes"`
+	Comments       int     `json:"comments"`
+	Shares         int     `json:"shares"`
+	Saves          int     `json:"saves"`
+	Clicks         int     `json:"clicks"`
+	Views          int     `json:"views"`
+	EngagementRate float64 `json:"engagementRate"`
+	LastUpdated    string  `json:"lastUpdated"`
+}
+
+type PlatformAnalyticsEntry struct {
+	Platform       string      `json:"platform"`
+	PlatformPostID string      `json:"platformPostId"`
+	AccountID      string      `json:"accountId"`
+	Analytics      PostMetrics `json:"analytics"`
+	SyncStatus     string      `json:"syncStatus"`
+}
+
 type AnalyticsResponse struct {
-	Views            int     `json:"views"`
-	Likes            int     `json:"likes"`
-	Comments         int     `json:"comments"`
-	Shares           int     `json:"shares"`
-	WatchTimeSeconds float64 `json:"watchTimeSeconds"`
-	RetentionRate    float64 `json:"retentionRate"`
+	PostID            string                   `json:"postId"`
+	Status            string                   `json:"status"`
+	Analytics         PostMetrics              `json:"analytics"`
+	PlatformAnalytics []PlatformAnalyticsEntry `json:"platformAnalytics"`
+	SyncStatus        string                   `json:"syncStatus"`
+	Message           string                   `json:"message"`
 }
 
 func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse, error) {
@@ -126,8 +150,12 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 }
 
 func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string) (*AnalyticsResponse, error) {
-	url := fmt.Sprintf("%s/analytics/%s?platform=%s", zernioAPI, postID, platform)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	q := neturl.Values{}
+	q.Set("postId", postID)
+	q.Set("platform", platform)
+	endpoint := fmt.Sprintf("%s/analytics?%s", z.baseURL, q.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -144,13 +172,24 @@ func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string
 		return nil, fmt.Errorf("read analytics response: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	// 200 = ready, 202 = sync pending (still parseable), 424 = all platforms failed
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != 424 {
 		return nil, fmt.Errorf("analytics API returned %d for post %s/%s: %s", resp.StatusCode, postID, platform, string(respBody[:min(len(respBody), 300)]))
 	}
 
 	var result AnalyticsResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parse analytics: %w", err)
+		return nil, fmt.Errorf("parse analytics: %w (body=%s)", err, string(respBody[:min(len(respBody), 300)]))
 	}
 	return &result, nil
+}
+
+// newTestZernioClient is used by tests to inject a fake API base URL.
+func newTestZernioClient(baseURL, apiKey string) *ZernioClient {
+	return &ZernioClient{
+		fallbackKey: apiKey,
+		pool:        nil,
+		client:      &http.Client{Timeout: 5 * time.Second},
+		baseURL:     baseURL,
+	}
 }
