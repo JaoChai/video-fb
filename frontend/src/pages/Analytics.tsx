@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../api';
 import { PageHeader } from '../components/page-header';
 import { Card, CardContent } from '../components/ui/card';
@@ -83,10 +83,14 @@ export default function AnalyticsPage() {
     queryFn: () => apiFetch<SummaryResponse>('/api/v1/analytics/summary'),
   });
 
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerFetch = useMutation({
     mutationFn: () => apiFetch('/api/v1/analytics/fetch', { method: 'POST' }),
     onSuccess: () => {
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ['analytics-summary'] }), 15000);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['analytics-summary'] });
+      }, 15000);
     },
   });
 
@@ -112,12 +116,17 @@ export default function AnalyticsPage() {
 
       <div className="mb-4 flex items-center justify-between">
         <div className="text-xs text-muted-foreground">
-          {summaryData?.last_fetched_at
-            ? <>Last updated: {new Date(summaryData.last_fetched_at).toLocaleString('th-TH')}
-                {Date.now() - new Date(summaryData.last_fetched_at).getTime() > 36 * 3600 * 1000 && (
-                  <span className="ml-2 text-amber-600">⚠ data over 36h old</span>
-                )}</>
-            : 'No fetch yet'}
+          {(() => {
+            if (!summaryData?.last_fetched_at) return 'No fetch yet';
+            const fetched = new Date(summaryData.last_fetched_at);
+            const stale = Date.now() - fetched.getTime() > 36 * 3600 * 1000;
+            return (
+              <>
+                Last updated: {fetched.toLocaleString('th-TH')}
+                {stale && <span className="ml-2 text-amber-600">⚠ data over 36h old</span>}
+              </>
+            );
+          })()}
         </div>
         <Button
           size="sm"

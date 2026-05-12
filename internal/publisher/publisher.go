@@ -13,6 +13,8 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
+const platformYouTube = "youtube"
+
 func isContactInfo(title string) bool {
 	lower := strings.ToLower(title)
 	return strings.Contains(lower, "line id") ||
@@ -177,6 +179,9 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	}
 	log.Printf("FetchAnalytics: platforms=%v", platforms)
 
+	var ytAccountID string
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&ytAccountID)
+
 	var totalPublished int
 	_ = p.pool.QueryRow(ctx, `SELECT COUNT(*) FROM clips WHERE status = 'published'`).Scan(&totalPublished)
 
@@ -241,40 +246,8 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 					continue
 				}
 				watchTime, retention := 0.0, 0.0
-				if platform == "youtube" && metrics.Views > 0 {
-					ytAccountID, _ := p.getSetting(ctx, "zernio_youtube_account_id")
-					var ytVideoID string
-					for _, pa := range resp.PlatformAnalytics {
-						if pa.Platform == "youtube" {
-							ytVideoID = pa.PlatformPostID
-							break
-						}
-					}
-					if ytAccountID != "" && ytVideoID != "" {
-						daily, err := p.zernio.GetYouTubeDailyViews(ctx, ytVideoID, ytAccountID)
-						if err != nil {
-							if errors.Is(err, ErrYouTubeScopeMissing) {
-								log.Printf("FetchAnalytics: YouTube analytics scope missing — re-auth needed (skipping watchTime)")
-							} else {
-								log.Printf("FetchAnalytics WATCHTIME_FAIL clip=%s video=%s: %v", cp.ClipID, ytVideoID, err)
-							}
-						} else {
-							var totalMinutes, avgDurSum float64
-							for _, dv := range daily.DailyViews {
-								totalMinutes += dv.EstimatedMinutesWatched
-								avgDurSum += dv.AverageViewDuration
-							}
-							watchTime = totalMinutes * 60
-							if len(daily.DailyViews) > 0 {
-								avgDur := avgDurSum / float64(len(daily.DailyViews))
-								// retention = avg view duration / 60s (assume 60s Short); cap 1.0
-								retention = avgDur / 60.0
-								if retention > 1.0 {
-									retention = 1.0
-								}
-							}
-						}
-					}
+				if platform == platformYouTube && metrics.Views > 0 {
+					watchTime, retention = p.fetchYouTubeWatchTime(ctx, cp.ClipID, ytAccountID, resp)
 				}
 				if err := p.analytics.Create(ctx, models.ClipAnalytics{
 					ClipID:           cp.ClipID,
@@ -298,8 +271,41 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	return nil
 }
 
-func (p *Publisher) getSetting(ctx context.Context, key string) (string, error) {
-	var v string
-	err := p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key=$1`, key).Scan(&v)
-	return v, err
+func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccountID string, resp *AnalyticsResponse) (watchTime, retention float64) {
+	if ytAccountID == "" {
+		return 0, 0
+	}
+	var videoID string
+	for _, pa := range resp.PlatformAnalytics {
+		if pa.Platform == platformYouTube {
+			videoID = pa.PlatformPostID
+			break
+		}
+	}
+	if videoID == "" {
+		return 0, 0
+	}
+	daily, err := p.zernio.GetYouTubeDailyViews(ctx, videoID, ytAccountID)
+	if err != nil {
+		if errors.Is(err, ErrYouTubeScopeMissing) {
+			log.Printf("FetchAnalytics: YouTube analytics scope missing — re-auth needed (skipping watchTime)")
+		} else {
+			log.Printf("FetchAnalytics WATCHTIME_FAIL clip=%s video=%s: %v", clipID, videoID, err)
+		}
+		return 0, 0
+	}
+	if len(daily.DailyViews) == 0 {
+		return 0, 0
+	}
+	var totalMinutes, avgDurSum float64
+	for _, dv := range daily.DailyViews {
+		totalMinutes += dv.EstimatedMinutesWatched
+		avgDurSum += dv.AverageViewDuration
+	}
+	watchTime = totalMinutes * 60
+	retention = (avgDurSum / float64(len(daily.DailyViews))) / 60.0
+	if retention > 1.0 {
+		retention = 1.0
+	}
+	return watchTime, retention
 }

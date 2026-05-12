@@ -7,7 +7,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+func newTestZernioClient(baseURL, apiKey string) *ZernioClient {
+	return &ZernioClient{
+		fallbackKey: apiKey,
+		pool:        nil,
+		client:      &http.Client{Timeout: 5 * time.Second},
+		baseURL:     baseURL,
+	}
+}
 
 func TestGetAnalytics_UsesQueryParamPostID(t *testing.T) {
 	var capturedURL string

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,6 +19,7 @@ type analyticsFetcher interface {
 type AnalyticsHandler struct {
 	repo      *repository.AnalyticsRepo
 	publisher analyticsFetcher
+	fetching  sync.Mutex
 }
 
 func NewAnalyticsHandler(repo *repository.AnalyticsRepo, publisher analyticsFetcher) *AnalyticsHandler {
@@ -54,7 +56,12 @@ func (h *AnalyticsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AnalyticsHandler) Trigger(w http.ResponseWriter, r *http.Request) {
+	if !h.fetching.TryLock() {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "fetch already in progress"})
+		return
+	}
 	go func() {
+		defer h.fetching.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		if err := h.publisher.FetchAnalytics(ctx); err != nil {

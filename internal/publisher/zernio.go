@@ -248,12 +248,3 @@ func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string
 	return &result, nil
 }
 
-// newTestZernioClient is used by tests to inject a fake API base URL.
-func newTestZernioClient(baseURL, apiKey string) *ZernioClient {
-	return &ZernioClient{
-		fallbackKey: apiKey,
-		pool:        nil,
-		client:      &http.Client{Timeout: 5 * time.Second},
-		baseURL:     baseURL,
-	}
-}
