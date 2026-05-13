@@ -72,7 +72,7 @@ func (r *AnalyticsRepo) TopClips(ctx context.Context, limit int) ([]models.ClipP
 		SELECT c.id, c.title, c.category,
 			   COALESCE(SUM(l.views),0) AS total_views,
 			   COALESCE(SUM(l.likes),0), COALESCE(SUM(l.comments),0),
-			   COALESCE(SUM(l.shares),0), COALESCE(AVG(l.retention_rate),0),
+			   COALESCE(SUM(l.shares),0), COALESCE(AVG(NULLIF(l.retention_rate, 0)),0),
 			   COALESCE(SUM(l.watch_time_seconds),0)
 		FROM clips c
 		LEFT JOIN latest l ON l.clip_id = c.id
