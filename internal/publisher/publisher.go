@@ -252,6 +252,7 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				if err := p.analytics.Create(ctx, models.ClipAnalytics{
 					ClipID:           cp.ClipID,
 					Platform:         platform,
+					PostType:         post.label,
 					Views:            metrics.Views,
 					Likes:            metrics.Likes,
 					Comments:         metrics.Comments,

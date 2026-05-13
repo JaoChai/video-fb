@@ -54,6 +54,7 @@ type ClipAnalytics struct {
 	ID               string    `json:"id"`
 	ClipID           string    `json:"clip_id"`
 	Platform         string    `json:"platform"`
+	PostType         string    `json:"post_type"`
 	Views            int       `json:"views"`
 	Likes            int       `json:"likes"`
 	Comments         int       `json:"comments"`

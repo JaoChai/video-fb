@@ -10,11 +10,11 @@ import (
 )
 
 const latestAnalyticsCTE = `WITH latest AS (
-	SELECT DISTINCT ON (clip_id, platform)
-		clip_id, views, likes, comments, shares,
+	SELECT DISTINCT ON (clip_id, platform, post_type)
+		clip_id, platform, post_type, views, likes, comments, shares,
 		watch_time_seconds, retention_rate
 	FROM clip_analytics
-	ORDER BY clip_id, platform, fetched_at DESC
+	ORDER BY clip_id, platform, post_type, fetched_at DESC
 )`
 
 type AnalyticsRepo struct {
@@ -27,7 +27,7 @@ func NewAnalyticsRepo(pool *pgxpool.Pool) *AnalyticsRepo {
 
 func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models.ClipAnalytics, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, clip_id, platform, views, likes, comments, shares,
+		`SELECT id, clip_id, platform, post_type, views, likes, comments, shares,
 		        watch_time_seconds, retention_rate, fetched_at
 		 FROM clip_analytics WHERE clip_id = $1 ORDER BY fetched_at DESC`, clipID)
 	if err != nil {
@@ -38,7 +38,7 @@ func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models
 	var results []models.ClipAnalytics
 	for rows.Next() {
 		var a models.ClipAnalytics
-		if err := rows.Scan(&a.ID, &a.ClipID, &a.Platform, &a.Views, &a.Likes,
+		if err := rows.Scan(&a.ID, &a.ClipID, &a.Platform, &a.PostType, &a.Views, &a.Likes,
 			&a.Comments, &a.Shares, &a.WatchTimeSeconds, &a.RetentionRate, &a.FetchedAt); err != nil {
 			return nil, fmt.Errorf("scan analytics: %w", err)
 		}
@@ -55,7 +55,8 @@ func (r *AnalyticsRepo) Summary(ctx context.Context) (models.AnalyticsSummary, e
 	err := r.pool.QueryRow(ctx, latestAnalyticsCTE+`
 		SELECT COALESCE(SUM(l.views),0), COALESCE(SUM(l.likes),0),
 			   COALESCE(SUM(l.comments),0), COALESCE(SUM(l.shares),0),
-			   COALESCE(AVG(l.retention_rate),0), COALESCE(SUM(l.watch_time_seconds),0),
+			   COALESCE(AVG(NULLIF(l.retention_rate, 0)),0),
+			   COALESCE(SUM(l.watch_time_seconds),0),
 			   (SELECT COUNT(*) FROM clips WHERE status = 'published')
 		FROM latest l`).Scan(
 		&s.TotalViews, &s.TotalLikes, &s.TotalComments, &s.TotalShares,
@@ -110,10 +111,13 @@ func (r *AnalyticsRepo) LastFetchedAt(ctx context.Context) (*time.Time, error) {
 }
 
 func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) error {
+	if a.PostType == "" {
+		a.PostType = "regular"
+	}
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO clip_analytics (clip_id, platform, views, likes, comments, shares, watch_time_seconds, retention_rate)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		a.ClipID, a.Platform, a.Views, a.Likes, a.Comments, a.Shares, a.WatchTimeSeconds, a.RetentionRate)
+		`INSERT INTO clip_analytics (clip_id, platform, post_type, views, likes, comments, shares, watch_time_seconds, retention_rate)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		a.ClipID, a.Platform, a.PostType, a.Views, a.Likes, a.Comments, a.Shares, a.WatchTimeSeconds, a.RetentionRate)
 	if err != nil {
 		return fmt.Errorf("create analytics: %w", err)
 	}
