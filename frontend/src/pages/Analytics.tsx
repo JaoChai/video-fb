@@ -35,7 +35,7 @@ interface ClipPerformance {
 }
 
 interface ClipAnalytics {
-  id: string; clip_id: string; platform: string;
+  id: string; clip_id: string; platform: string; post_type: string;
   views: number; likes: number; comments: number; shares: number;
   watch_time_seconds: number; retention_rate: number; fetched_at: string;
 }
@@ -106,7 +106,7 @@ export default function AnalyticsPage() {
   const platformMap = useMemo(() => {
     if (detailLoading) return new Map<string, ClipAnalytics>();
     const map = new Map<string, ClipAnalytics>();
-    clipAnalytics?.forEach(a => map.set(a.platform, a));
+    clipAnalytics?.forEach(a => map.set(`${a.platform}-${a.post_type}`, a));
     return map;
   }, [clipAnalytics, detailLoading]);
 
@@ -212,25 +212,29 @@ export default function AnalyticsPage() {
                                 <p className="text-xs text-muted-foreground">No platform data</p>
                               ) : (
                                 <div className="flex flex-wrap gap-2">
-                                  {['youtube', 'tiktok', 'instagram', 'facebook'].map(p => {
-                                    const d = platformMap.get(p);
-                                    if (!d) return null;
-                                    return (
-                                      <div key={p} className="rounded-lg border bg-background p-2.5 min-w-[140px]">
-                                        <div className="text-xs font-medium capitalize mb-1.5">{p}</div>
-                                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                                          <span className="text-muted-foreground">Views</span>
-                                          <span className="tabular-nums text-right">{formatNum(d.views)}</span>
-                                          <span className="text-muted-foreground">Likes</span>
-                                          <span className="tabular-nums text-right">{formatNum(d.likes)}</span>
-                                          <span className="text-muted-foreground">Retention</span>
-                                          <span className="tabular-nums text-right">{(d.retention_rate * 100).toFixed(1)}%</span>
-                                          <span className="text-muted-foreground">Watch</span>
-                                          <span className="tabular-nums text-right">{formatWatchTime(d.watch_time_seconds)}</span>
+                                  {(['youtube', 'tiktok', 'instagram', 'facebook'] as const).flatMap(p =>
+                                    (['regular', 'shorts'] as const).map(t => {
+                                      const d = platformMap.get(`${p}-${t}`);
+                                      if (!d) return null;
+                                      return (
+                                        <div key={`${p}-${t}`} className="rounded-lg border bg-background p-2.5 min-w-[140px]">
+                                          <div className="text-xs font-medium capitalize mb-1.5">
+                                            {p} <span className="text-muted-foreground">· {t}</span>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                                            <span className="text-muted-foreground">Views</span>
+                                            <span className="tabular-nums text-right">{formatNum(d.views)}</span>
+                                            <span className="text-muted-foreground">Likes</span>
+                                            <span className="tabular-nums text-right">{formatNum(d.likes)}</span>
+                                            <span className="text-muted-foreground">Retention</span>
+                                            <span className="tabular-nums text-right">{(d.retention_rate * 100).toFixed(1)}%</span>
+                                            <span className="text-muted-foreground">Watch</span>
+                                            <span className="tabular-nums text-right">{formatWatchTime(d.watch_time_seconds)}</span>
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })}
+                                      );
+                                    })
+                                  )}
                                 </div>
                               )}
                             </div>
