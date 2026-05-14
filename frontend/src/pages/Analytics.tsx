@@ -1,151 +1,160 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState } from 'react';
-import { apiFetch } from '../api';
-import { PageHeader } from '../components/page-header';
-import { Card, CardContent } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-} from '../components/ui/table';
-import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, ChevronDown, ChevronUp } from 'lucide-react';
-import { EmptyState } from '../components/empty-state';
-import { Skeleton } from '../components/ui/skeleton';
-import { cn } from '../lib/utils';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useRef, useState } from 'react'
+import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, AlertTriangle } from 'lucide-react'
+import { apiFetch } from '../api'
+import { PageHeader } from '../components/page-header'
+import { Button } from '../components/ui/button'
+import { Skeleton } from '../components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { EmptyState } from '../components/empty-state'
+import { StatCard } from '../components/analytics/stat-card'
+import { SegmentCompare } from '../components/analytics/segment-compare'
+import { PlatformBreakdown } from '../components/analytics/platform-breakdown'
+import { TopClipsTable, type ClipRow } from '../components/analytics/top-clips-table'
+import { formatNum, formatWatch } from '../lib/format'
 
-interface AnalyticsSummary {
-  total_views: number;
-  total_likes: number;
-  total_comments: number;
-  total_shares: number;
-  avg_retention_rate: number;
-  total_watch_time_seconds: number;
-  clip_count: number;
+interface Summary {
+  total_views: number
+  total_likes: number
+  total_comments: number
+  total_shares: number
+  avg_retention_rate: number
+  total_watch_time_seconds: number
+  clip_count: number
 }
 
-interface ClipPerformance {
-  clip_id: string;
-  title: string;
-  category: string;
-  views: number;
-  likes: number;
-  comments: number;
-  shares: number;
-  retention_rate: number;
-  watch_time_seconds: number;
+interface Delta {
+  views_pct: number
+  likes_pct: number
+  comments_pct: number
+  shares_pct: number
+  watch_time_pct: number
+  retention_pp: number
 }
 
-interface ClipAnalytics {
-  id: string; clip_id: string; platform: string; post_type: string;
-  views: number; likes: number; comments: number; shares: number;
-  watch_time_seconds: number; retention_rate: number; fetched_at: string;
+interface TrendPoint {
+  day: string
+  views: number
+  likes: number
+  comments: number
+  shares: number
+  watch_time_seconds: number
+  avg_retention_rate: number
+}
+
+interface SegmentTotals {
+  post_type: string
+  views: number
+  likes: number
+  comments: number
+  shares: number
+  watch_time_seconds: number
+  avg_retention_rate: number
+}
+
+interface PlatformTotals {
+  platform: string
+  views: number
+  likes: number
+  comments: number
+  shares: number
+  watch_time_seconds: number
 }
 
 interface SummaryResponse {
-  summary: AnalyticsSummary;
-  top_clips: ClipPerformance[] | null;
-  last_fetched_at: string | null;
+  summary: Summary
+  top_clips: ClipRow[] | null
+  by_post_type: SegmentTotals[] | null
+  by_platform: PlatformTotals[] | null
+  trend: TrendPoint[] | null
+  delta: Delta
+  range_days: number
+  last_fetched_at: string | null
 }
 
-function formatNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
+type Range = '7d' | '30d' | 'all'
 
-function formatWatchTime(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.round((seconds % 3600) / 60);
-  if (hrs > 0) return `${hrs}h ${mins}m`;
-  return `${mins}m`;
-}
-
-const KPI_CONFIG = [
-  { key: 'total_views' as const, label: 'Views', icon: Eye },
-  { key: 'total_likes' as const, label: 'Likes', icon: ThumbsUp },
-  { key: 'total_comments' as const, label: 'Comments', icon: MessageSquare },
-  { key: 'total_shares' as const, label: 'Shares', icon: Share2 },
-  { key: 'avg_retention_rate' as const, label: 'Avg Retention', icon: TrendingUp },
-  { key: 'total_watch_time_seconds' as const, label: 'Watch Time', icon: Clock },
-];
-
-function formatKpiValue(key: string, val: number): string {
-  if (key === 'avg_retention_rate') return `${(val * 100).toFixed(1)}%`;
-  if (key === 'total_watch_time_seconds') return formatWatchTime(val);
-  return formatNum(val);
+function StatusLine({ lastFetchedAt, clipCount }: { lastFetchedAt: string | null | undefined; clipCount: number | undefined }) {
+  if (!lastFetchedAt) {
+    return <div className="text-xs text-muted-foreground">No fetch yet</div>
+  }
+  const fetched = new Date(lastFetchedAt)
+  const stale = Date.now() - fetched.getTime() > 36 * 3600 * 1000
+  return (
+    <div className="text-xs text-muted-foreground flex items-center gap-2">
+      {clipCount !== undefined && <span>{clipCount} published clips</span>}
+      <span>· Last updated {fetched.toLocaleString('th-TH')}</span>
+      {stale && (
+        <span className="inline-flex items-center gap-1 text-amber-600">
+          <AlertTriangle className="size-3.5" aria-hidden />
+          data over 36h old
+        </span>
+      )}
+    </div>
+  )
 }
 
 export default function AnalyticsPage() {
-  const [expandedClipId, setExpandedClipId] = useState<string | null>(null);
-  const queryClient = useQueryClient();
+  const [range, setRange] = useState<Range>('30d')
+  const queryClient = useQueryClient()
 
-  const { data: summaryData, isLoading } = useQuery({
-    queryKey: ['analytics-summary'],
-    queryFn: () => apiFetch<SummaryResponse>('/api/v1/analytics/summary'),
-  });
+  const { data, isLoading } = useQuery({
+    queryKey: ['analytics-summary', range],
+    queryFn: () => apiFetch<SummaryResponse>(`/api/v1/analytics/summary?range=${range}`),
+  })
 
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerFetch = useMutation({
     mutationFn: () => apiFetch('/api/v1/analytics/fetch', { method: 'POST' }),
     onSuccess: () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current)
       refreshTimerRef.current = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['analytics-summary'] });
-      }, 15000);
+        queryClient.invalidateQueries({ queryKey: ['analytics-summary'] })
+      }, 15000)
     },
-  });
+  })
 
-  const { data: clipAnalytics, isLoading: detailLoading } = useQuery({
-    queryKey: ['clip-analytics', expandedClipId],
-    queryFn: () => apiFetch<ClipAnalytics[]>(`/api/v1/clips/${expandedClipId}/analytics`),
-    enabled: !!expandedClipId,
-  });
+  const summary = data?.summary
+  const trend = data?.trend ?? []
+  const delta = data?.delta
 
-  const summary = summaryData?.summary;
-  const topClips = summaryData?.top_clips ?? [];
-
-  const platformMap = useMemo(() => {
-    if (detailLoading) return new Map<string, ClipAnalytics>();
-    const map = new Map<string, ClipAnalytics>();
-    clipAnalytics?.forEach(a => map.set(`${a.platform}-${a.post_type}`, a));
-    return map;
-  }, [clipAnalytics, detailLoading]);
+  const trendSeries = useMemo(() => ({
+    views: trend.map(t => t.views),
+    likes: trend.map(t => t.likes),
+    comments: trend.map(t => t.comments),
+    shares: trend.map(t => t.shares),
+    watch: trend.map(t => t.watch_time_seconds),
+    retention: trend.map(t => t.avg_retention_rate * 100),
+  }), [trend])
 
   return (
     <div>
       <PageHeader title="Analytics" />
 
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
-          {(() => {
-            if (!summaryData?.last_fetched_at) return 'No fetch yet';
-            const fetched = new Date(summaryData.last_fetched_at);
-            const stale = Date.now() - fetched.getTime() > 36 * 3600 * 1000;
-            return (
-              <>
-                Last updated: {fetched.toLocaleString('th-TH')}
-                {stale && <span className="ml-2 text-amber-600">⚠ data over 36h old</span>}
-              </>
-            );
-          })()}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <StatusLine lastFetchedAt={data?.last_fetched_at} clipCount={summary?.clip_count} />
+        <div className="flex items-center gap-2">
+          <Tabs value={range} onValueChange={v => setRange(v as Range)}>
+            <TabsList>
+              <TabsTrigger value="7d">7d</TabsTrigger>
+              <TabsTrigger value="30d">30d</TabsTrigger>
+              <TabsTrigger value="all">All</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button size="sm" variant="outline" disabled={triggerFetch.isPending} onClick={() => triggerFetch.mutate()}>
+            {triggerFetch.isPending ? 'Fetching…' : 'Refresh now'}
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={triggerFetch.isPending}
-          onClick={() => triggerFetch.mutate()}
-        >
-          {triggerFetch.isPending ? 'Fetching…' : 'Refresh now'}
-        </Button>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-          {[1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="rounded-xl border p-4 space-y-2">
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-7 w-20" />
-            </div>
-          ))}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[1, 2].map(i => <Skeleton key={i} className="h-32" />)}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20" />)}
+          </div>
         </div>
       ) : !summary || summary.clip_count === 0 ? (
         <EmptyState
@@ -154,118 +163,48 @@ export default function AnalyticsPage() {
           description="Publish clips to YouTube first, then analytics data will appear here."
         />
       ) : (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-            {KPI_CONFIG.map(({ key, label, icon: Icon }) => (
-              <Card key={key}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon className="size-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground uppercase tracking-wide">{label}</span>
-                  </div>
-                  <div className="text-2xl font-bold tabular-nums">
-                    {formatKpiValue(key, summary[key])}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <StatCard
+              variant="hero"
+              label="Total Views"
+              value={formatNum(summary.total_views)}
+              icon={Eye}
+              delta={delta?.views_pct}
+              trend={trendSeries.views}
+            />
+            <StatCard
+              variant="hero"
+              label="Avg Retention"
+              value={`${(summary.avg_retention_rate * 100).toFixed(1)}%`}
+              icon={TrendingUp}
+              delta={delta?.retention_pp}
+              deltaUnit="pp"
+              trend={trendSeries.retention}
+            />
           </div>
 
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Top Clips</h2>
-            <span className="text-xs text-muted-foreground">{summary.clip_count} published clips</span>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Likes" value={formatNum(summary.total_likes)} icon={ThumbsUp} delta={delta?.likes_pct} />
+            <StatCard label="Comments" value={formatNum(summary.total_comments)} icon={MessageSquare} delta={delta?.comments_pct} />
+            <StatCard label="Shares" value={formatNum(summary.total_shares)} icon={Share2} delta={delta?.shares_pct} />
+            <StatCard label="Watch Time" value={formatWatch(summary.total_watch_time_seconds)} icon={Clock} delta={delta?.watch_time_pct} />
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="pl-4">Title</TableHead>
-                <TableHead className="hidden sm:table-cell">Category</TableHead>
-                <TableHead className="text-right">Views</TableHead>
-                <TableHead className="hidden md:table-cell text-right">Likes</TableHead>
-                <TableHead className="hidden md:table-cell text-right">Retention</TableHead>
-                <TableHead className="w-[40px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {topClips.map((clip, idx) => {
-                const isExpanded = expandedClipId === clip.clip_id;
-                return (
-                  <TableRow
-                    key={clip.clip_id}
-                    className={cn('cursor-pointer', isExpanded && 'bg-muted/30')}
-                    onClick={() => setExpandedClipId(isExpanded ? null : clip.clip_id)}
-                  >
-                    <TableCell className="pl-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground tabular-nums w-5">{idx + 1}</span>
-                        <div>
-                          <div className="text-sm font-medium line-clamp-1">{clip.title}</div>
-                          <div className="sm:hidden text-xs text-muted-foreground mt-0.5">{clip.category}</div>
-                          {isExpanded && (
-                            <div className="mt-3 space-y-2">
-                              {detailLoading ? (
-                                <div className="flex gap-3">
-                                  {[1, 2].map(i => <Skeleton key={i} className="h-16 w-40" />)}
-                                </div>
-                              ) : platformMap.size === 0 ? (
-                                <p className="text-xs text-muted-foreground">No platform data</p>
-                              ) : (
-                                <div className="flex flex-wrap gap-2">
-                                  {(['youtube', 'tiktok', 'instagram', 'facebook'] as const).flatMap(p =>
-                                    (['regular', 'shorts'] as const).map(t => {
-                                      const d = platformMap.get(`${p}-${t}`);
-                                      if (!d) return null;
-                                      return (
-                                        <div key={`${p}-${t}`} className="rounded-lg border bg-background p-2.5 min-w-[140px]">
-                                          <div className="text-xs font-medium capitalize mb-1.5">
-                                            {p} <span className="text-muted-foreground">· {t}</span>
-                                          </div>
-                                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                                            <span className="text-muted-foreground">Views</span>
-                                            <span className="tabular-nums text-right">{formatNum(d.views)}</span>
-                                            <span className="text-muted-foreground">Likes</span>
-                                            <span className="tabular-nums text-right">{formatNum(d.likes)}</span>
-                                            <span className="text-muted-foreground">Retention</span>
-                                            <span className="tabular-nums text-right">{(d.retention_rate * 100).toFixed(1)}%</span>
-                                            <span className="text-muted-foreground">Watch</span>
-                                            <span className="tabular-nums text-right">{formatWatchTime(d.watch_time_seconds)}</span>
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {clip.category}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-sm font-medium">
-                      {formatNum(clip.views)}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-right tabular-nums text-sm text-muted-foreground">
-                      {formatNum(clip.likes)}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-right tabular-nums text-sm text-muted-foreground">
-                      {(clip.retention_rate * 100).toFixed(1)}%
-                    </TableCell>
-                    <TableCell className="pr-3">
-                      <Button variant="ghost" size="icon" className="size-7">
-                        {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <SegmentCompare data={data?.by_post_type ?? []} />
+            <PlatformBreakdown data={data?.by_platform ?? []} />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Top Clips</h2>
+              <span className="text-xs text-muted-foreground">Click a row to expand platform breakdown</span>
+            </div>
+            <TopClipsTable clips={data?.top_clips ?? []} />
+          </div>
+        </div>
       )}
     </div>
-  );
+  )
 }
