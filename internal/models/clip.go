@@ -85,3 +85,41 @@ type ClipPerformance struct {
 	RetentionRate    float64 `json:"retention_rate"`
 	WatchTimeSeconds float64 `json:"watch_time_seconds"`
 }
+
+type SegmentedTotals struct {
+	PostType         string  `json:"post_type"`
+	Views            int     `json:"views"`
+	Likes            int     `json:"likes"`
+	Comments         int     `json:"comments"`
+	Shares           int     `json:"shares"`
+	WatchTimeSeconds float64 `json:"watch_time_seconds"`
+	AvgRetention     float64 `json:"avg_retention_rate"`
+}
+
+type PlatformTotals struct {
+	Platform         string  `json:"platform"`
+	Views            int     `json:"views"`
+	Likes            int     `json:"likes"`
+	Comments         int     `json:"comments"`
+	Shares           int     `json:"shares"`
+	WatchTimeSeconds float64 `json:"watch_time_seconds"`
+}
+
+type TrendPoint struct {
+	Day       time.Time `json:"day"`
+	Views     int       `json:"views"`
+	Likes     int       `json:"likes"`
+	Comments  int       `json:"comments"`
+	Shares    int       `json:"shares"`
+	WatchTime float64   `json:"watch_time_seconds"`
+	Retention float64   `json:"avg_retention_rate"`
+}
+
+type DeltaSummary struct {
+	Views          float64 `json:"views_pct"`
+	Likes          float64 `json:"likes_pct"`
+	Comments       float64 `json:"comments_pct"`
+	Shares         float64 `json:"shares_pct"`
+	WatchTime      float64 `json:"watch_time_pct"`
+	RetentionPoint float64 `json:"retention_pp"`
+}

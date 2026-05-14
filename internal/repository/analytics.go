@@ -110,6 +110,133 @@ func (r *AnalyticsRepo) LastFetchedAt(ctx context.Context) (*time.Time, error) {
 	return t, nil
 }
 
+func (r *AnalyticsRepo) SummaryByPostType(ctx context.Context) ([]models.SegmentedTotals, error) {
+	rows, err := r.pool.Query(ctx, latestAnalyticsCTE+`
+		SELECT l.post_type,
+		       COALESCE(SUM(l.views),0),
+		       COALESCE(SUM(l.likes),0),
+		       COALESCE(SUM(l.comments),0),
+		       COALESCE(SUM(l.shares),0),
+		       COALESCE(SUM(l.watch_time_seconds),0),
+		       COALESCE(AVG(NULLIF(l.retention_rate, 0)),0)
+		FROM latest l
+		GROUP BY l.post_type
+		ORDER BY l.post_type`)
+	if err != nil {
+		return nil, fmt.Errorf("query summary by post_type: %w", err)
+	}
+	defer rows.Close()
+	var out []models.SegmentedTotals
+	for rows.Next() {
+		var s models.SegmentedTotals
+		if err := rows.Scan(&s.PostType, &s.Views, &s.Likes, &s.Comments,
+			&s.Shares, &s.WatchTimeSeconds, &s.AvgRetention); err != nil {
+			return nil, fmt.Errorf("scan post_type row: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate post_type summary: %w", err)
+	}
+	return out, nil
+}
+
+func (r *AnalyticsRepo) SummaryByPlatform(ctx context.Context) ([]models.PlatformTotals, error) {
+	rows, err := r.pool.Query(ctx, latestAnalyticsCTE+`
+		SELECT l.platform,
+		       COALESCE(SUM(l.views),0),
+		       COALESCE(SUM(l.likes),0),
+		       COALESCE(SUM(l.comments),0),
+		       COALESCE(SUM(l.shares),0),
+		       COALESCE(SUM(l.watch_time_seconds),0)
+		FROM latest l
+		GROUP BY l.platform
+		ORDER BY SUM(l.views) DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("query summary by platform: %w", err)
+	}
+	defer rows.Close()
+	var out []models.PlatformTotals
+	for rows.Next() {
+		var p models.PlatformTotals
+		if err := rows.Scan(&p.Platform, &p.Views, &p.Likes, &p.Comments,
+			&p.Shares, &p.WatchTimeSeconds); err != nil {
+			return nil, fmt.Errorf("scan platform row: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate platform summary: %w", err)
+	}
+	return out, nil
+}
+
+func (r *AnalyticsRepo) Trend(ctx context.Context, days int) ([]models.TrendPoint, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH daily AS (
+			SELECT DISTINCT ON (clip_id, platform, post_type, DATE_TRUNC('day', fetched_at))
+				clip_id, platform, post_type,
+				DATE_TRUNC('day', fetched_at) AS day,
+				views, likes, comments, shares, watch_time_seconds, retention_rate
+			FROM clip_analytics
+			WHERE fetched_at >= NOW() - ($1::int || ' days')::interval
+			ORDER BY clip_id, platform, post_type, DATE_TRUNC('day', fetched_at), fetched_at DESC
+		)
+		SELECT day,
+		       COALESCE(SUM(views),0),
+		       COALESCE(SUM(likes),0),
+		       COALESCE(SUM(comments),0),
+		       COALESCE(SUM(shares),0),
+		       COALESCE(SUM(watch_time_seconds),0),
+		       COALESCE(AVG(NULLIF(retention_rate, 0)),0)
+		FROM daily
+		GROUP BY day
+		ORDER BY day ASC`, days)
+	if err != nil {
+		return nil, fmt.Errorf("query trend: %w", err)
+	}
+	defer rows.Close()
+	var out []models.TrendPoint
+	for rows.Next() {
+		var p models.TrendPoint
+		if err := rows.Scan(&p.Day, &p.Views, &p.Likes, &p.Comments,
+			&p.Shares, &p.WatchTime, &p.Retention); err != nil {
+			return nil, fmt.Errorf("scan trend row: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate trend: %w", err)
+	}
+	return out, nil
+}
+
+func (r *AnalyticsRepo) PreviousPeriodTotals(ctx context.Context, days int) (models.AnalyticsSummary, error) {
+	var s models.AnalyticsSummary
+	err := r.pool.QueryRow(ctx, `
+		WITH prev AS (
+			SELECT DISTINCT ON (clip_id, platform, post_type)
+				clip_id, platform, post_type,
+				views, likes, comments, shares, watch_time_seconds, retention_rate
+			FROM clip_analytics
+			WHERE fetched_at < NOW() - ($1::int || ' days')::interval
+			  AND fetched_at >= NOW() - (($1::int * 2) || ' days')::interval
+			ORDER BY clip_id, platform, post_type, fetched_at DESC
+		)
+		SELECT COALESCE(SUM(views),0), COALESCE(SUM(likes),0),
+		       COALESCE(SUM(comments),0), COALESCE(SUM(shares),0),
+		       COALESCE(AVG(NULLIF(retention_rate, 0)),0),
+		       COALESCE(SUM(watch_time_seconds),0),
+		       0
+		FROM prev`, days).Scan(
+		&s.TotalViews, &s.TotalLikes, &s.TotalComments, &s.TotalShares,
+		&s.AvgRetention, &s.TotalWatchTime, &s.ClipCount)
+	if err != nil {
+		return s, fmt.Errorf("query previous period: %w", err)
+	}
+	return s, nil
+}
+
 func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) error {
 	if a.PostType == "" {
 		a.PostType = "regular"
