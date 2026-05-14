@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+dist/
+
+# Logs
+logs/
+*.log
+
+# Package manager caches
+.pnpm-store/
+node_modules/
+
+# MCP / tool caches
+.playwright-mcp/
+
+# OS / editor
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Dev screenshots (root-level only)
+/*.png
