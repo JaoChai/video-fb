@@ -10,6 +10,10 @@ logs/
 .pnpm-store/
 node_modules/
 
+# Project uses npm — pnpm/yarn lock files would diverge from package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
 # MCP / tool caches
 .playwright-mcp/
 
