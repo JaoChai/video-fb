@@ -25,6 +25,8 @@ estimated_cost_per_month_usd: 2.00
 2026-05-15 17:52 ICT: history_retention_seconds 86400 -> 21600 (24h -> 6h)
 2026-05-15 17:53 ICT: endpoint ep-restless-sun-an7oh37c autoscaling 1-1 -> 0.25-1 CU
                        (suspend_timeout_seconds explicit at 300s)
+2026-05-15 18:00 ICT: verified Railway DATABASE_URL already uses -pooler host
+                       smoke test: 3 calls to /api/health 240-475ms HTTP 401, DB connected ok
 
 [VERIFICATION 2026-05-22]
 (append after 7 days)
