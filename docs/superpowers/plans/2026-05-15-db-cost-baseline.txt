@@ -21,7 +21,7 @@ db_size_mb: 33
 estimated_cost_per_month_usd: 2.00
 
 [CHANGES]
-(append below as changes are applied)
+2026-05-15: pg_stat_statements installed (extversion 1.11, collecting queries)
 
 [VERIFICATION 2026-05-22]
 (append after 7 days)
