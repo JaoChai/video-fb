@@ -21,7 +21,10 @@ db_size_mb: 33
 estimated_cost_per_month_usd: 2.00
 
 [CHANGES]
-2026-05-15: pg_stat_statements installed (extversion 1.11, collecting queries)
+2026-05-15 17:51 ICT: pg_stat_statements installed (v1.11)
+2026-05-15 17:52 ICT: history_retention_seconds 86400 -> 21600 (24h -> 6h)
+2026-05-15 17:53 ICT: endpoint ep-restless-sun-an7oh37c autoscaling 1-1 -> 0.25-1 CU
+                       (suspend_timeout_seconds explicit at 300s)
 
 [VERIFICATION 2026-05-22]
 (append after 7 days)
