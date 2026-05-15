@@ -1,0 +1,27 @@
+Date: 2026-05-15
+Project: snowy-grass-75448787 (adsvance-v2)
+Branch: br-quiet-feather-and3bal7
+Endpoint: ep-restless-sun-an7oh37c
+Region: aws-us-east-1
+PG version: 17
+
+[BASELINE]
+cpu_used_sec: 32378
+active_time_seconds: 32388
+days_since_creation: 19
+pace_sec_per_day: 1705
+compute_size: 1
+autoscaling_limit_min_cu: 1
+autoscaling_limit_max_cu: 1
+suspend_timeout_seconds: 0   # Neon: 0 = use default (~5 min)
+history_retention_seconds: 86400   # 24h
+pooler_enabled: false
+pg_stat_statements: not_installed
+db_size_mb: 33
+estimated_cost_per_month_usd: 2.00
+
+[CHANGES]
+(append below as changes are applied)
+
+[VERIFICATION 2026-05-22]
+(append after 7 days)
