@@ -49,6 +49,7 @@ export default function AgentsPage() {
     if (agents) {
       const initial: Record<string, Partial<Agent>> = {};
       agents.forEach((a) => {
+        // Note: insights is intentionally excluded — it is read-only (written by the weekly analyzer)
         initial[a.id] = {
           system_prompt: a.system_prompt,
           prompt_template: a.prompt_template ?? '',

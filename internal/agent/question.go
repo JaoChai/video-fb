@@ -158,6 +158,11 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 		}
 	}
 
+	// Cap to the requested count so unused questions don't pollute topic_history.
+	if len(accepted) > count {
+		accepted = accepted[:count]
+	}
+
 	// Store accepted questions with embeddings for future dedup checks.
 	for _, q := range accepted {
 		if emb, ok := allEmbeddings[q.Question]; ok {

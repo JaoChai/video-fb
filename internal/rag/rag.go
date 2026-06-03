@@ -174,7 +174,7 @@ func (e *Engine) SearchRecent(ctx context.Context, query string, topK, days int)
 	rows, err := e.pool.Query(ctx,
 		`SELECT content, COALESCE(url, ''), 1 - (embedding <=> $1::vector) AS similarity
 		 FROM knowledge_chunks
-		 WHERE crawled_at > NOW() - ($3 || ' days')::interval
+		 WHERE crawled_at > NOW() - ($3 * INTERVAL '1 day')
 		 ORDER BY embedding <=> $1::vector
 		 LIMIT $2`,
 		embStr, topK, days)
