@@ -22,11 +22,12 @@ interface Agent {
   temperature: number;
   enabled: boolean;
   skills: string;
+  insights: string;
 }
 
 const TEMPLATE_VARS: Record<string, string[]> = {
-  question: ['Count', 'Category', 'RAGContext', 'PreviousTopics', 'PreviousNames'],
-  script: ['Question', 'QuestionerName', 'Category', 'RAGContext'],
+  question: ['Count', 'Category', 'RAGContext', 'PreviousTopics', 'PreviousNames', 'FormatInstruction', 'AudiencePersona'],
+  script: ['Question', 'QuestionerName', 'Category', 'RAGContext', 'FormatInstruction', 'AudiencePersona'],
   image: ['ThemeDescription', 'QuestionerName', 'QuestionText', 'PrimaryColor', 'AccentColor'],
 };
 
@@ -217,6 +218,23 @@ export default function AgentsPage() {
                         }
                       />
                     </div>
+
+                    {agent.insights && (
+                      <div className="grid gap-2">
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Performance Insights
+                          </label>
+                          <Badge variant="secondary">ปรับอัตโนมัติโดย weekly analyzer</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          ระบบเรียนรู้จากยอดวิวแล้วเขียนคำแนะนำด้านสไตล์ให้เอง (แก้ไขไม่ได้ — จะถูกเขียนทับทุกสัปดาห์)
+                        </p>
+                        <div className="rounded-md border bg-muted/50 p-3 text-sm whitespace-pre-wrap">
+                          {agent.insights}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-3">
                       {isDirty(agent.id) && (
