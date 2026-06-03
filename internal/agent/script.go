@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/models"
@@ -20,12 +21,13 @@ type ScriptTemplateData struct {
 }
 
 type ScriptAgent struct {
-	llm *LLMClient
-	rag *rag.Engine
+	llm      *LLMClient
+	rag      *rag.Engine
+	research *ResearchAgent
 }
 
-func NewScriptAgent(llm *LLMClient, ragEngine *rag.Engine) *ScriptAgent {
-	return &ScriptAgent{llm: llm, rag: ragEngine}
+func NewScriptAgent(llm *LLMClient, ragEngine *rag.Engine, research *ResearchAgent) *ScriptAgent {
+	return &ScriptAgent{llm: llm, rag: ragEngine, research: research}
 }
 
 type GeneratedScene struct {
@@ -46,12 +48,25 @@ type GeneratedScript struct {
 }
 
 func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) (*GeneratedScript, error) {
+	var ragContext strings.Builder
+
+	if format.FormatName == "news" {
+		// News format: research the specific story for accurate, current facts
+		researchContext, err := a.research.Research(ctx, question)
+		if err != nil {
+			log.Printf("ScriptAgent: research failed, continuing with KB only: %v", err)
+		}
+		if researchContext != "" {
+			ragContext.WriteString(researchContext)
+			ragContext.WriteString("\n---\n")
+		}
+	}
+
+	// Business knowledge + brand context from the hand-written Thai KB (all formats)
 	ragResults, err := a.rag.Search(ctx, question, 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
 	}
-
-	var ragContext strings.Builder
 	for _, r := range ragResults {
 		ragContext.WriteString(r.Content)
 		ragContext.WriteString("\n---\n")

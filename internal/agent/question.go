@@ -22,14 +22,15 @@ type QuestionTemplateData struct {
 }
 
 type QuestionAgent struct {
-	llm     *LLMClient
-	rag     *rag.Engine
-	pool    *pgxpool.Pool
-	deduper *Deduper
+	llm      *LLMClient
+	rag      *rag.Engine
+	pool     *pgxpool.Pool
+	deduper  *Deduper
+	research *ResearchAgent
 }
 
-func NewQuestionAgent(llm *LLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool) *QuestionAgent {
-	return &QuestionAgent{llm: llm, rag: ragEngine, pool: pool, deduper: NewDeduper(pool, ragEngine)}
+func NewQuestionAgent(llm *LLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool, research *ResearchAgent) *QuestionAgent {
+	return &QuestionAgent{llm: llm, rag: ragEngine, pool: pool, deduper: NewDeduper(pool, ragEngine), research: research}
 }
 
 type GeneratedQuestion struct {
@@ -40,22 +41,29 @@ type GeneratedQuestion struct {
 }
 
 func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
-	var ragResults []rag.SearchResult
-	var err error
-	if format.FormatName == "news" {
-		// News format: only use chunks crawled in the last 7 days
-		ragResults, err = a.rag.SearchRecent(ctx, fmt.Sprintf("Facebook Ads Meta update news %s", category), 5, 7)
-	} else {
-		ragResults, err = a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s %s", category, format.FormatName), 5)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("RAG search: %w", err)
-	}
-
 	var ragContext strings.Builder
-	for _, r := range ragResults {
-		ragContext.WriteString(r.Content)
-		ragContext.WriteString("\n---\n")
+	if format.FormatName == "news" {
+		// News format: live web search for fresh, reliable updates
+		researchContext, err := a.research.Research(ctx,
+			fmt.Sprintf("ข่าว/อัปเดตล่าสุดของ Facebook Ads หรือ Meta ที่กระทบผู้ลงโฆษณาในไทย หมวด %s", category))
+		if err != nil {
+			log.Printf("QuestionAgent: research failed, falling back to KB: %v", err)
+		}
+		if researchContext != "" {
+			ragContext.WriteString(researchContext)
+			ragContext.WriteString("\n---\n")
+		}
+	}
+	if ragContext.Len() == 0 {
+		// Business knowledge from the hand-written Thai KB (all formats; news fallback)
+		ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s %s", category, format.FormatName), 5)
+		if err != nil {
+			return nil, fmt.Errorf("RAG search: %w", err)
+		}
+		for _, r := range ragResults {
+			ragContext.WriteString(r.Content)
+			ragContext.WriteString("\n---\n")
+		}
 	}
 
 	recentRows, err := a.pool.Query(ctx,
