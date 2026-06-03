@@ -304,9 +304,16 @@ func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccount
 		avgDurSum += dv.AverageViewDuration
 	}
 	watchTime = totalMinutes * 60
-	retention = (avgDurSum / float64(len(daily.DailyViews))) / 60.0
-	if retention > 1.0 {
-		retention = 1.0
+
+	// AverageViewDuration is in seconds. Retention = avg view duration / total clip duration.
+	var clipDuration float64
+	p.pool.QueryRow(ctx, `SELECT COALESCE(SUM(duration_seconds), 0) FROM scenes WHERE clip_id = $1`, clipID).Scan(&clipDuration)
+	if clipDuration > 0 {
+		avgViewDuration := avgDurSum / float64(len(daily.DailyViews))
+		retention = avgViewDuration / clipDuration
+		if retention > 1.0 {
+			retention = 1.0
+		}
 	}
 	return watchTime, retention
 }

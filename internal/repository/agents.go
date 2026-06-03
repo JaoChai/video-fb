@@ -119,6 +119,31 @@ func (r *AgentsRepo) SavePromptHistory(ctx context.Context, agentName, oldPrompt
 	return nil
 }
 
+// SaveInsightsWithHistory saves the new insights and logs the change in a single transaction.
+func (r *AgentsRepo) SaveInsightsWithHistory(ctx context.Context, agentName, oldInsights, newInsights, reason string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx for %s: %w", agentName, err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO agent_prompt_history (agent_name, old_prompt, new_prompt, reason) VALUES ($1, $2, $3, $4)`,
+		agentName, oldInsights, newInsights, reason)
+	if err != nil {
+		return fmt.Errorf("save history for %s: %w", agentName, err)
+	}
+
+	_, err = tx.Exec(ctx,
+		`UPDATE agent_configs SET insights = $2 WHERE agent_name = $1`,
+		agentName, newInsights)
+	if err != nil {
+		return fmt.Errorf("update insights for %s: %w", agentName, err)
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (r *AgentsRepo) ListPromptHistory(ctx context.Context, limit int) ([]PromptHistoryEntry, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, agent_name, old_prompt, new_prompt, reason, created_at

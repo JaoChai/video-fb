@@ -111,13 +111,8 @@ Return JSON only:
 			continue
 		}
 
-		if err := a.agentsRepo.SavePromptHistory(ctx, imp.AgentName, oldInsights, imp.NewInsights, historyPrefixInsights+imp.Reason); err != nil {
-			log.Printf("Analyzer: failed to save history for %s: %v", imp.AgentName, err)
-			continue
-		}
-
-		if err := a.agentsRepo.UpdateInsightsByName(ctx, imp.AgentName, imp.NewInsights); err != nil {
-			log.Printf("Analyzer: failed to update insights for %s: %v", imp.AgentName, err)
+		if err := a.agentsRepo.SaveInsightsWithHistory(ctx, imp.AgentName, oldInsights, imp.NewInsights, historyPrefixInsights+imp.Reason); err != nil {
+			log.Printf("Analyzer: failed to save insights for %s: %v", imp.AgentName, err)
 			continue
 		}
 
@@ -129,7 +124,7 @@ Return JSON only:
 
 func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
 	rows, err := a.pool.Query(ctx, `
-		SELECT c.id, c.title, c.category,
+		SELECT DISTINCT ON (c.id) c.id, c.title, c.category,
 		       cm.youtube_title,
 		       ca.views, ca.likes, ca.comments, ca.shares,
 		       ca.watch_time_seconds, ca.retention_rate
@@ -139,7 +134,7 @@ func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
 		WHERE c.status = 'published'
 		  AND ca.platform = 'youtube'
 		  AND ca.fetched_at >= NOW() - INTERVAL '14 days'
-		ORDER BY ca.fetched_at DESC
+		ORDER BY c.id, ca.fetched_at DESC
 		LIMIT 100`)
 	if err != nil {
 		return "", fmt.Errorf("query recent analytics: %w", err)
@@ -187,15 +182,14 @@ func (a *Analyzer) currentPrompts(ctx context.Context) string {
 		if ag.AgentName == "analytics" {
 			continue
 		}
-		section := fmt.Sprintf("### %s\n**System Prompt:**\n%s", ag.AgentName, ag.SystemPrompt)
+		section := fmt.Sprintf("### %s", ag.AgentName)
 		if ag.Skills != "" {
-			section += fmt.Sprintf("\n\n**Skills:**\n%s", ag.Skills)
+			section += fmt.Sprintf("\n**Skills:**\n%s", ag.Skills)
 		}
 		if ag.Insights != "" {
-			section += fmt.Sprintf("\n\n**Current Insights:**\n%s", ag.Insights)
-		}
-		if ag.PromptTemplate != "" {
-			section += fmt.Sprintf("\n\n**Prompt Template:**\n%s", ag.PromptTemplate)
+			section += fmt.Sprintf("\n**Current Insights:**\n%s", ag.Insights)
+		} else {
+			section += "\n**Current Insights:** (none yet)"
 		}
 		lines = append(lines, section)
 	}

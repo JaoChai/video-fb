@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../api'
 import { PageHeader } from '../components/page-header'
 import { Card, CardContent } from '../components/ui/card'
@@ -17,13 +18,48 @@ interface HistoryEntry {
   created_at: string
 }
 
+function LineDiff({ before, after }: { before: string; after: string }) {
+  const beforeSet = new Set(before.split('\n').map(l => l.trim()).filter(Boolean))
+  const afterLines = after.split('\n')
+
+  return (
+    <div className="text-xs font-mono bg-muted rounded-md p-3 max-h-48 overflow-y-auto">
+      {afterLines.map((line, i) => {
+        const trimmed = line.trim()
+        const isNew = trimmed !== '' && !beforeSet.has(trimmed)
+        return (
+          <div
+            key={i}
+            className={isNew ? 'bg-green-500/20 text-green-700 dark:text-green-400 rounded px-0.5' : ''}
+          >
+            {line || ' '}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function PromptHistoryPage() {
+  const [searchParams] = useSearchParams()
   const { data: entries, isLoading } = useQuery({
     queryKey: ['prompt-history'],
     queryFn: () => apiFetch<HistoryEntry[]>('/api/v1/agents/prompt-history'),
   })
 
+  const initialAgent = searchParams.get('agent') ?? 'all'
+  const [filterAgent, setFilterAgent] = useState<string>(initialAgent)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  const agentNames = useMemo(() => {
+    if (!entries) return []
+    return Array.from(new Set(entries.map(e => e.agent_name))).sort()
+  }, [entries])
+
+  const filtered = useMemo(() => {
+    if (!entries) return []
+    return filterAgent === 'all' ? entries : entries.filter(e => e.agent_name === filterAgent)
+  }, [entries, filterAgent])
 
   if (isLoading) {
     return (
@@ -60,8 +96,27 @@ export default function PromptHistoryPage() {
   return (
     <div>
       <PageHeader title="Prompt History" description="Auto-tune history from weekly analyzer" />
+
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-xs text-muted-foreground">Filter:</span>
+        {['all', ...agentNames].map(name => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => setFilterAgent(name)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+              filterAgent === name
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            }`}
+          >
+            {name === 'all' ? 'All' : name}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-3">
-        {entries.map(entry => {
+        {filtered.map(entry => {
           const isOpen = expanded[entry.id] ?? false
           return (
             <Card key={entry.id}>
@@ -75,7 +130,7 @@ export default function PromptHistoryPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground">
-                    {new Date(entry.created_at).toLocaleDateString('th-TH')}
+                    {new Date(entry.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
                   </span>
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
@@ -85,14 +140,12 @@ export default function PromptHistoryPage() {
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Before</p>
                     <pre className="text-xs bg-muted rounded-md p-3 whitespace-pre-wrap max-h-48 overflow-y-auto">
-                      {entry.old_prompt}
+                      {entry.old_prompt || '(empty)'}
                     </pre>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">After</p>
-                    <pre className="text-xs bg-muted rounded-md p-3 whitespace-pre-wrap max-h-48 overflow-y-auto">
-                      {entry.new_prompt}
-                    </pre>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">After — highlighted lines are new</p>
+                    <LineDiff before={entry.old_prompt} after={entry.new_prompt} />
                   </div>
                 </CardContent>
               )}

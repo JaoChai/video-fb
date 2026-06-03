@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 import { ChevronDown } from 'lucide-react';
+import { ROUTES } from '../lib/routes';
 import { PageHeader } from '../components/page-header';
 import { Card, CardHeader, CardContent } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
@@ -37,7 +39,9 @@ function getTemplateVars(agentName: string): string[] {
 
 export default function AgentsPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { success, error: showError } = useToast();
+  const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   const { data: agents, isLoading } = useQuery({
     queryKey: ['agents'],
     queryFn: () => apiFetch<Agent[]>('/api/v1/agents'),
@@ -81,6 +85,7 @@ export default function AgentsPage() {
     onSuccess: (_data, { id, agent }) => {
       qc.invalidateQueries({ queryKey: ['agents'] });
       resetDirty(id);
+      setLastSavedId(id);
       success(`บันทึก ${agent.agent_name} แล้ว`);
     },
     onError: (e) => showError(`บันทึกล้มเหลว: ${(e as Error).message}`),
@@ -123,11 +128,13 @@ export default function AgentsPage() {
                       <Badge variant="outline">{e.model ?? agent.model}</Badge>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Switch
-                        checked={e.enabled ?? agent.enabled}
-                        onCheckedChange={(checked) => handleEdit(agent.id, 'enabled', checked)}
-                        disabled={update.isPending}
-                      />
+                      <div onClick={(ev) => ev.stopPropagation()}>
+                        <Switch
+                          checked={e.enabled ?? agent.enabled}
+                          onCheckedChange={(checked) => handleEdit(agent.id, 'enabled', checked)}
+                          disabled={update.isPending}
+                        />
+                      </div>
                       <ChevronDown
                         className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
                           isExpanded(agent.id) ? 'rotate-180' : ''
@@ -222,11 +229,20 @@ export default function AgentsPage() {
 
                     {agent.insights && (
                       <div className="grid gap-2">
-                        <div className="flex items-center gap-2">
-                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Performance Insights
-                          </label>
-                          <Badge variant="secondary">ปรับอัตโนมัติโดย weekly analyzer</Badge>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Performance Insights
+                            </label>
+                            <Badge variant="secondary">ปรับอัตโนมัติโดย weekly analyzer</Badge>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                            onClick={() => navigate(`${ROUTES.PROMPT_HISTORY}?agent=${agent.agent_name}`)}
+                          >
+                            ดูประวัติ →
+                          </button>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           ระบบเรียนรู้จากยอดวิวแล้วเขียนคำแนะนำด้านสไตล์ให้เอง (แก้ไขไม่ได้ — จะถูกเขียนทับทุกสัปดาห์)
@@ -246,7 +262,7 @@ export default function AgentsPage() {
                           {update.isPending ? 'Saving...' : 'Save'}
                         </Button>
                       )}
-                      {update.isSuccess && !isDirty(agent.id) && (
+                      {lastSavedId === agent.id && !isDirty(agent.id) && (
                         <span className="text-xs text-green-500">Saved</span>
                       )}
                     </div>

@@ -17,9 +17,13 @@ var forbiddenPatterns = []string{
 	"หลีกเลี่ยงหมวด", "เลี่ยงหมวด",
 	"ห้ามสร้างคำถาม", "ห้ามทำหัวข้อ", "ห้ามหัวข้อ",
 	"งดหมวด", "ลดหมวด", "เพิ่มหมวด",
+	"ควรเน้น", "ข้ามหัวข้อ", "ข้ามหมวด", "ไม่ต้องทำหมวด",
+	"หัวข้อที่ควร", "หัวข้อที่ไม่ควร", "หลีกเลี่ยงหัวข้อ",
 	// English directives
 	"focus on", "focus only", "avoid", "exclude", "prioritize",
 	"more questions about", "fewer questions about",
+	"stay away", "concentrate on", "don't cover", "never cover",
+	"skip topics", "only cover", "don't create questions",
 }
 
 // ValidateInsights rejects insights text that tries to steer topic/category
