@@ -131,6 +131,9 @@ func (c *LLMClient) GenerateJSON(ctx context.Context, model, systemPrompt, userP
 		text, err := c.Generate(ctx, model, systemPrompt, userPrompt, temp)
 		if err != nil {
 			lastErr = err
+			if ctx.Err() != nil {
+				return err // context cancelled/expired — retrying can't succeed
+			}
 			log.Printf("LLM call failed (attempt %d/%d): %v", attempt, maxRetries, err)
 			continue
 		}

@@ -93,6 +93,30 @@ func TestRenderComposition(t *testing.T) {
 	}
 }
 
+func TestHighlightTitle_NoNestedSpans(t *testing.T) {
+	cases := []struct {
+		name  string
+		title string
+		words []string
+	}{
+		{"duplicate words", "ยอด Ads ซ้ำ Ads", []string{"Ads", "Ads"}},
+		{"substring overlap", "Facebook Ads แก้ยังไง", []string{"Facebook Ads", "Ads"}},
+		{"word matches markup token", "เปลี่ยน class ของ span", []string{"class", "span"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := string(highlightTitle(tc.title, tc.words))
+			if strings.Contains(out, `<span class="hl"><span`) {
+				t.Errorf("nested highlight span in %q", out)
+			}
+			// Sentinels must never leak into the output.
+			if strings.ContainsAny(out, "\x00\x01") {
+				t.Errorf("unconverted sentinel in %q", out)
+			}
+		})
+	}
+}
+
 func TestRenderComposition_ImageBackground(t *testing.T) {
 	p := sampleParams()
 	p.BackgroundMode = "image"

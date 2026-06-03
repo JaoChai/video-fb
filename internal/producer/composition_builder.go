@@ -114,14 +114,33 @@ func (b *CompositionBuilder) Build(params CompositionParams, clipID, projectDir,
 // everything else. Escaping the words too keeps the match consistent.
 func highlightTitle(title string, words []string) template.HTML {
 	escaped := html.EscapeString(title)
+	// Mark matches with sentinels first and convert to spans in one final pass, so
+	// a later word can never match the injected markup. Dedupe and skip a word that
+	// is contained in a longer highlight word — both would otherwise nest spans.
+	seen := map[string]bool{}
 	for _, w := range words {
-		if w == "" {
+		w = strings.TrimSpace(w)
+		if w == "" || seen[w] || containedInLonger(w, words) {
 			continue
 		}
+		seen[w] = true
 		ew := html.EscapeString(w)
-		escaped = strings.ReplaceAll(escaped, ew, `<span class="hl">`+ew+`</span>`)
+		escaped = strings.ReplaceAll(escaped, ew, "\x00"+ew+"\x01")
 	}
+	escaped = strings.ReplaceAll(escaped, "\x00", `<span class="hl">`)
+	escaped = strings.ReplaceAll(escaped, "\x01", `</span>`)
 	return template.HTML(escaped)
+}
+
+// containedInLonger reports whether w is a substring of a strictly longer word
+// in the list (so the shorter one is skipped to avoid wrapping inside the longer).
+func containedInLonger(w string, words []string) bool {
+	for _, o := range words {
+		if len(o) > len(w) && strings.Contains(o, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // outroBrandHTML renders the brand with its last word in an accent span
