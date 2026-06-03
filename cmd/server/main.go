@@ -16,7 +16,6 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/analyzer"
 	"github.com/jaochai/video-fb/internal/config"
-	"github.com/jaochai/video-fb/internal/crawler"
 	"github.com/jaochai/video-fb/internal/database"
 	"github.com/jaochai/video-fb/internal/handler"
 	"github.com/jaochai/video-fb/internal/orchestrator"
@@ -31,7 +30,6 @@ import (
 
 func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations")
-	crawlFlag := flag.Bool("crawl", false, "Run knowledge crawler")
 	embedFlag := flag.Bool("embed", false, "Rebuild embeddings for all knowledge sources")
 	embedTopicsFlag := flag.Bool("embed-topics", false, "Backfill embeddings for topic_history rows that lack them")
 	produceFlag := flag.Int("produce", 0, "Produce N clips")
@@ -59,14 +57,6 @@ func main() {
 	}
 
 	ragEngine := rag.NewEngine(pool)
-	crawl := crawler.NewCrawler(pool, ragEngine)
-
-	if *crawlFlag {
-		if err := crawl.CrawlAll(ctx); err != nil {
-			log.Fatalf("Crawl failed: %v", err)
-		}
-		return
-	}
 
 	if *embedFlag {
 		if err := rebuildAllEmbeddings(ctx, pool, ragEngine); err != nil {
@@ -83,8 +73,10 @@ func main() {
 	}
 
 	llm := agent.NewLLMClient(pool)
-	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool)
-	scriptAgent := agent.NewScriptAgent(llm, ragEngine)
+	agentsRepo := repository.NewAgentsRepo(pool)
+	researchAgent := agent.NewResearchAgent(llm, agentsRepo)
+	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool, researchAgent)
+	scriptAgent := agent.NewScriptAgent(llm, ragEngine, researchAgent)
 	imageAgent := agent.NewImageAgent(llm)
 
 	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
@@ -96,7 +88,6 @@ func main() {
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
 	themesRepo := repository.NewThemesRepo(pool)
-	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
@@ -130,7 +121,7 @@ func main() {
 
 	anlz := analyzer.New(pool, llm, agentsRepo)
 	schedRepo := repository.NewSchedulesRepo(pool)
-	sched := scheduler.New(pool, pub, anlz, orch, crawl, schedRepo, clipsRepo)
+	sched := scheduler.New(pool, pub, anlz, orch, schedRepo, clipsRepo)
 	if err := sched.Start(ctx); err != nil {
 		log.Printf("Warning: scheduler start failed: %v", err)
 	}

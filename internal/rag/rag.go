@@ -162,38 +162,6 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]SearchRe
 	return results, nil
 }
 
-// SearchRecent is like Search but only considers chunks crawled within the
-// last `days` days — used by the news content format to surface fresh updates.
-func (e *Engine) SearchRecent(ctx context.Context, query string, topK, days int) ([]SearchResult, error) {
-	embedding, err := e.GenerateEmbedding(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("embed query: %w", err)
-	}
-
-	embStr := FormatVector(embedding)
-	rows, err := e.pool.Query(ctx,
-		`SELECT content, COALESCE(url, ''), 1 - (embedding <=> $1::vector) AS similarity
-		 FROM knowledge_chunks
-		 WHERE crawled_at > NOW() - ($3 * INTERVAL '1 day')
-		 ORDER BY embedding <=> $1::vector
-		 LIMIT $2`,
-		embStr, topK, days)
-	if err != nil {
-		return nil, fmt.Errorf("search recent chunks: %w", err)
-	}
-	defer rows.Close()
-
-	var results []SearchResult
-	for rows.Next() {
-		var r SearchResult
-		if err := rows.Scan(&r.Content, &r.URL, &r.Similarity); err != nil {
-			return nil, fmt.Errorf("scan result: %w", err)
-		}
-		results = append(results, r)
-	}
-	return results, nil
-}
-
 // FormatVector renders a float slice as a pgvector literal, e.g. "[0.1,0.2]".
 func FormatVector(v []float64) string {
 	parts := make([]string, len(v))
