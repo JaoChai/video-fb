@@ -57,9 +57,13 @@ Current agent configurations:
 %s
 
 Analyze which STORYTELLING STYLES performed best (openings, hooks, pacing, tone, length).
+Each data line also has a "Design:" field in the form "layoutVariant|accentColor|animationSpeed"
+(may be "(none)" for older clips) — analyze which video DESIGNS correlate with better retention.
 
-YOUR SCOPE IS STRICTLY LIMITED TO STYLE:
+YOUR SCOPE IS STRICTLY LIMITED TO STYLE AND DESIGN:
 - You may suggest: how to open videos, hook techniques, pacing, tone of voice, energy level
+- For the "composition" agent you may additionally suggest: which layout fits best, animation speed,
+  color mood, and card density — based on the Design values of clips that performed well
 - You may NOT mention any category name (account, payment, campaign, pixel) in your suggestions
 - You may NOT tell agents which topics to focus on, avoid, prioritize, or exclude
 - Topic selection is handled by a separate system — it is NOT your job
@@ -71,7 +75,8 @@ Return JSON only:
   "agents": [
     {"agent_name": "question", "new_insights": "...", "reason": "..."},
     {"agent_name": "script", "new_insights": "...", "reason": "..."},
-    {"agent_name": "image", "new_insights": "...", "reason": "..."}
+    {"agent_name": "image", "new_insights": "...", "reason": "..."},
+    {"agent_name": "composition", "new_insights": "...", "reason": "..."}
   ]
 }`, data, a.currentPrompts(ctx))
 
@@ -126,6 +131,7 @@ func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
 	rows, err := a.pool.Query(ctx, `
 		SELECT DISTINCT ON (c.id) c.id, c.title, c.category,
 		       cm.youtube_title,
+		       c.composition_style,
 		       ca.views, ca.likes, ca.comments, ca.shares,
 		       ca.watch_time_seconds, ca.retention_rate
 		FROM clips c
@@ -145,11 +151,13 @@ func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
 	for rows.Next() {
 		var id, title, category string
 		var ytTitle *string
+		var compositionStyle *string
 		var views, likes, comments, shares int
 		var watchTime, retention float64
 
 		if err := rows.Scan(&id, &title, &category,
 			&ytTitle,
+			&compositionStyle,
 			&views, &likes, &comments, &shares,
 			&watchTime, &retention); err != nil {
 			return "", fmt.Errorf("scan: %w", err)
@@ -160,9 +168,14 @@ func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
 			yt = *ytTitle
 		}
 
+		design := "(none)"
+		if compositionStyle != nil && *compositionStyle != "" {
+			design = *compositionStyle
+		}
+
 		lines = append(lines, fmt.Sprintf(
-			"- Clip: %s | Title: %s | YT Title: %s | Category: %s | Views: %d | Likes: %d | Comments: %d | Shares: %d | Watch Time: %.0fs | Retention: %.1f%%",
-			id[:8], title, yt, category, views, likes, comments, shares, watchTime, retention*100))
+			"- Clip: %s | Title: %s | YT Title: %s | Category: %s | Design: %s | Views: %d | Likes: %d | Comments: %d | Shares: %d | Watch Time: %.0fs | Retention: %.1f%%",
+			id[:8], title, yt, category, design, views, likes, comments, shares, watchTime, retention*100))
 	}
 
 	if len(lines) < 3 {

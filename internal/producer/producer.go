@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/progress"
 	"golang.org/x/sync/errgroup"
 )
@@ -31,11 +32,27 @@ type Producer struct {
 	defaultVoice string
 	workDir      string
 	tracker      *progress.Tracker
+	hf           *hyperframesDeps // nil = disabled, use FFmpeg
+}
+
+// hyperframesDeps bundles everything the Hyperframes 9:16 render path needs.
+type hyperframesDeps struct {
+	compAgent   *agent.CompositionAgent
+	builder     *CompositionBuilder
+	renderer    *HyperframesRenderer
+	transcriber Transcriber
 }
 
 func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
 	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+}
+
+// EnableHyperframes turns on the Hyperframes 9:16 render path. When set, the
+// vertical video is generated with animation/captions; if it fails at runtime,
+// Produce falls back to the FFmpeg static-image render so a clip is never lost.
+func (p *Producer) EnableHyperframes(compAgent *agent.CompositionAgent, builder *CompositionBuilder, renderer *HyperframesRenderer, tr Transcriber) {
+	p.hf = &hyperframesDeps{compAgent: compAgent, builder: builder, renderer: renderer, transcriber: tr}
 }
 
 func (p *Producer) getVoice(ctx context.Context) string {
@@ -122,9 +139,19 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 	if !fileExists(video916) {
-		log.Printf("Assembling 9:16 video for %s", clipID)
-		if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
-			return nil, fmt.Errorf("assemble 9:16: %w", err)
+		if p.hf != nil {
+			log.Printf("Assembling 9:16 video for %s via Hyperframes", clipID)
+			if err := p.assembleHyperframes916(ctx, clipID, clipDir, scenes, voicePath, video916); err != nil {
+				log.Printf("Hyperframes 9:16 failed for %s, falling back to FFmpeg: %v", clipID, err)
+				if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
+					return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err)
+				}
+			}
+		} else {
+			log.Printf("Assembling 9:16 video for %s", clipID)
+			if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
+				return nil, fmt.Errorf("assemble 9:16: %w", err)
+			}
 		}
 	} else {
 		log.Printf("Skipping 9:16 assembly for %s (file exists)", clipID)
@@ -193,6 +220,147 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		Video916URL:  video916URL,
 		ThumbnailURL: thumbnailURL,
 	}, nil
+}
+
+// assembleHyperframes916 renders the vertical video with the composition agent +
+// Hyperframes (CSS background, captions, animated cards) instead of a static image.
+func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir string, scenes []agent.GeneratedScene, voicePath, outPath string) error {
+	if len(scenes) == 0 {
+		return fmt.Errorf("no scenes")
+	}
+	scene := scenes[0]
+
+	var category, questioner string
+	if err := p.pool.QueryRow(ctx,
+		`SELECT category, questioner_name FROM clips WHERE id = $1`, clipID).Scan(&category, &questioner); err != nil {
+		return fmt.Errorf("load clip metadata: %w", err)
+	}
+
+	// Captions are best-effort: if transcription fails the video still renders
+	// (cards + title), just without phrase captions.
+	segments, err := p.hf.transcriber.Transcribe(ctx, voicePath)
+	if err != nil {
+		log.Printf("Hyperframes: transcribe failed for %s (captions skipped): %v", clipID, err)
+		segments = nil
+	}
+	duration := scene.DurationSeconds
+	if n := len(segments); n > 0 && segments[n-1].End > duration {
+		duration = segments[n-1].End
+	}
+	if duration <= 0 {
+		duration = 60
+	}
+
+	var cfg models.AgentConfig
+	if err := p.pool.QueryRow(ctx,
+		`SELECT system_prompt, prompt_template, model, temperature, skills, insights
+		 FROM agent_configs WHERE agent_name = 'composition'`).
+		Scan(&cfg.SystemPrompt, &cfg.PromptTemplate, &cfg.Model, &cfg.Temperature, &cfg.Skills, &cfg.Insights); err != nil {
+		return fmt.Errorf("load composition agent config: %w", err)
+	}
+
+	decision, err := p.hf.compAgent.Decide(ctx, agent.CompositionTemplateData{
+		Question:        scene.TextContent,
+		VoiceText:       scene.VoiceText,
+		Category:        category,
+		QuestionerName:  questioner,
+		FormatName:      "qa",
+		DurationSeconds: duration,
+		SegmentsContext: segmentsContext(segments),
+	}, &cfg)
+	if err != nil {
+		return fmt.Errorf("composition decide: %w", err)
+	}
+
+	// Generate clean background art (NO text) for the GPT image to sit behind the
+	// Hyperframes-drawn text/captions. If it fails, fall back to the CSS background.
+	bgMode, bgImg, bgPath := "css", "", ""
+	bgFile := filepath.Join(clipDir, "bg-9x16.png")
+	if !fileExists(bgFile) {
+		if err := p.openRouter.GenerateImage(ctx, backgroundArtPrompt(category), "9:16", bgFile); err != nil {
+			log.Printf("Hyperframes: bg art gen failed for %s, using CSS bg: %v", clipID, err)
+		}
+	}
+	if fileExists(bgFile) {
+		bgMode, bgImg, bgPath = "image", "assets/bg-9x16.png", bgFile
+	}
+
+	cards := make([]CardSpec, len(decision.Cards))
+	for i, c := range decision.Cards {
+		cards[i] = CardSpec{
+			ID: fmt.Sprintf("card%d", i+1), Type: c.Type,
+			StartSec: c.StartSec, EndSec: c.EndSec,
+			Kicker: c.Kicker, Body: c.Body, StepNum: c.StepNum,
+		}
+	}
+	params := CompositionParams{
+		Title:           scene.TextContent,
+		HighlightWords:  decision.HighlightWords,
+		Kicker:          decision.Kicker,
+		BrandName:       "ADS VANCE",
+		CategoryLabel:   strings.ToUpper(category),
+		QuestionerName:  questioner,
+		LayoutVariant:   "dynamic_karaoke",
+		AccentColor:     decision.AccentColor,
+		SecondaryAccent: decision.SecondaryAccent,
+		AnimationSpeed:  decision.AnimationSpeed,
+		BackgroundMode:  bgMode,
+		BackgroundImage: bgImg,
+		VoiceSrc:        "assets/voice.wav",
+		DurationSeconds: duration,
+		Segments:        segments,
+		Cards:           cards,
+	}
+
+	projectDir := filepath.Join(clipDir, "composition-916")
+	os.RemoveAll(projectDir)
+	if _, err := p.hf.builder.Build(params, clipID, projectDir, voicePath, bgPath); err != nil {
+		return fmt.Errorf("build composition: %w", err)
+	}
+	if err := p.hf.renderer.Lint(ctx, projectDir); err != nil {
+		return fmt.Errorf("composition lint: %w", err)
+	}
+	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
+		return fmt.Errorf("composition render: %w", err)
+	}
+	if err := os.Rename(filepath.Join(projectDir, "output.mp4"), outPath); err != nil {
+		return fmt.Errorf("move rendered video: %w", err)
+	}
+
+	// Record the design used, for the analyzer's future style-vs-performance learning.
+	style := fmt.Sprintf("%s|%s|%s", params.LayoutVariant, decision.AccentColor, decision.AnimationSpeed)
+	if _, err := p.pool.Exec(ctx, `UPDATE clips SET composition_style = $2 WHERE id = $1`, clipID, style); err != nil {
+		log.Printf("Hyperframes: failed to record composition_style for %s: %v", clipID, err)
+	}
+	return nil
+}
+
+// backgroundArtPrompt builds an image prompt for a clean, text-free background.
+// The Hyperframes layer draws all text on top, so the art must have none —
+// just brand-colored abstract tech visuals with open negative space.
+func backgroundArtPrompt(category string) string {
+	motif := map[string]string{
+		"pixel":    "glowing data tracking nodes and conversion flow lines",
+		"payment":  "abstract billing dashboard glow and currency flow",
+		"account":  "secure account shield and network grid",
+		"campaign": "ascending performance charts and audience network",
+	}[category]
+	if motif == "" {
+		motif = "abstract digital marketing dashboard glow"
+	}
+	return "Clean abstract background art for a 9:16 vertical video. " +
+		"Dark navy gradient (#0a1428 to #16284a) with subtle orange (#ff6b2b) accents. " +
+		"Motif: " + motif + ". Modern flat tech, cinematic depth, soft glow. " +
+		"IMPORTANT: absolutely NO text, NO letters, NO numbers, NO words, NO UI labels, NO logos. " +
+		"Keep the upper-center area calm and uncluttered (negative space) for text overlay added later."
+}
+
+func segmentsContext(segs []TranscriptSegment) string {
+	var b strings.Builder
+	for _, s := range segs {
+		fmt.Fprintf(&b, "[%.1f-%.1f] %s\n", s.Start, s.End, s.Text)
+	}
+	return b.String()
 }
 
 func fileExists(path string) bool {

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -21,7 +22,9 @@ type LLMClient struct {
 }
 
 func NewLLMClient(pool *pgxpool.Pool) *LLMClient {
-	return &LLMClient{pool: pool, client: &http.Client{}}
+	// The produce flow runs on context.Background() (no deadline), so cap each
+	// request here — otherwise a hung OpenRouter connection blocks indefinitely.
+	return &LLMClient{pool: pool, client: &http.Client{Timeout: 2 * time.Minute}}
 }
 
 type chatRequest struct {
@@ -127,7 +130,12 @@ func (c *LLMClient) GenerateJSON(ctx context.Context, model, systemPrompt, userP
 
 		text, err := c.Generate(ctx, model, systemPrompt, userPrompt, temp)
 		if err != nil {
-			return err
+			lastErr = err
+			if ctx.Err() != nil {
+				return err // context cancelled/expired — retrying can't succeed
+			}
+			log.Printf("LLM call failed (attempt %d/%d): %v", attempt, maxRetries, err)
+			continue
 		}
 
 		cleaned := extractJSON(text)
