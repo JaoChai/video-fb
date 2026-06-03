@@ -33,6 +33,7 @@ func main() {
 	migrateFlag := flag.Bool("migrate", false, "Run database migrations")
 	crawlFlag := flag.Bool("crawl", false, "Run knowledge crawler")
 	embedFlag := flag.Bool("embed", false, "Rebuild embeddings for all knowledge sources")
+	embedTopicsFlag := flag.Bool("embed-topics", false, "Backfill embeddings for topic_history rows that lack them")
 	produceFlag := flag.Int("produce", 0, "Produce N clips")
 	publishFlag := flag.Bool("publish", false, "Publish ready clips")
 	analyticsFlag := flag.Bool("analytics", false, "Fetch analytics for published clips")
@@ -70,6 +71,13 @@ func main() {
 	if *embedFlag {
 		if err := rebuildAllEmbeddings(ctx, pool, ragEngine); err != nil {
 			log.Fatalf("Embed failed: %v", err)
+		}
+		return
+	}
+
+	if *embedTopicsFlag {
+		if err := backfillTopicEmbeddings(ctx, pool, ragEngine); err != nil {
+			log.Fatalf("Embed topics failed: %v", err)
 		}
 		return
 	}
@@ -153,6 +161,45 @@ func main() {
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// backfillTopicEmbeddings generates embeddings for topic_history rows that lack
+// them so semantic dedup can compare new questions against old topics too.
+func backfillTopicEmbeddings(ctx context.Context, pool *pgxpool.Pool, engine *rag.Engine) error {
+	rows, err := pool.Query(ctx, `SELECT id, title FROM topic_history WHERE embedding IS NULL ORDER BY created_at`)
+	if err != nil {
+		return fmt.Errorf("query topics: %w", err)
+	}
+	defer rows.Close()
+
+	type topic struct{ ID, Title string }
+	var topics []topic
+	for rows.Next() {
+		var t topic
+		if err := rows.Scan(&t.ID, &t.Title); err != nil {
+			return fmt.Errorf("scan topic: %w", err)
+		}
+		topics = append(topics, t)
+	}
+
+	log.Printf("Backfilling embeddings for %d topics...", len(topics))
+	done := 0
+	for i, t := range topics {
+		embedding, err := engine.GenerateEmbedding(ctx, t.Title)
+		if err != nil {
+			log.Printf("[%d/%d] ERROR embedding %q: %v", i+1, len(topics), t.Title, err)
+			continue
+		}
+		if _, err := pool.Exec(ctx,
+			`UPDATE topic_history SET embedding = $2::vector WHERE id = $1`,
+			t.ID, rag.FormatVector(embedding)); err != nil {
+			log.Printf("[%d/%d] ERROR updating %q: %v", i+1, len(topics), t.Title, err)
+			continue
+		}
+		done++
+	}
+	log.Printf("Topic embeddings complete: %d/%d", done, len(topics))
+	return nil
 }
 
 func rebuildAllEmbeddings(ctx context.Context, pool *pgxpool.Pool, engine *rag.Engine) error {
