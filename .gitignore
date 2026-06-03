@@ -1,6 +1,8 @@
 # Build artifacts
 bin/
 dist/
+# Locally compiled hfslice CLI binary (source lives in cmd/hfslice)
+/hfslice
 
 # Logs
 logs/

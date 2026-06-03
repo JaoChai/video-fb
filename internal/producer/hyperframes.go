@@ -25,14 +25,24 @@ func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...strin
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
 
-	full := append([]string{"--yes", "hyperframes@" + hyperframesVersion}, args...)
-	cmd := exec.CommandContext(ctx, "npx", full...)
+	cmd := hyperframesCmd(ctx, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
 	}
 	return nil
+}
+
+// hyperframesCmd prefers the globally-installed CLI (the Docker image installs
+// the pinned version) so a render never hits the npm registry. It falls back to
+// `npx hyperframes@<version>` for local dev where the CLI isn't installed globally.
+func hyperframesCmd(ctx context.Context, args ...string) *exec.Cmd {
+	if bin, err := exec.LookPath("hyperframes"); err == nil {
+		return exec.CommandContext(ctx, bin, args...)
+	}
+	full := append([]string{"--yes", "hyperframes@" + hyperframesVersion}, args...)
+	return exec.CommandContext(ctx, "npx", full...)
 }
 
 // Lint runs lint+validate+inspect; use it as a guardrail before Render so a

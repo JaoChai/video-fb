@@ -67,7 +67,9 @@ type templateData struct {
 
 // Build writes a complete project into projectDir and returns the dir path.
 // voicePath/bgPath are absolute source files copied into the project's assets.
-func (b *CompositionBuilder) Build(params CompositionParams, projectDir, voicePath, bgPath string) (string, error) {
+// clipID identifies the project in meta.json (the projectDir basename is a fixed
+// "composition-916", so it can't be used as a per-clip id).
+func (b *CompositionBuilder) Build(params CompositionParams, clipID, projectDir, voicePath, bgPath string) (string, error) {
 	assetsDir := filepath.Join(projectDir, "assets")
 	fontsDst := filepath.Join(assetsDir, "fonts")
 	if err := os.MkdirAll(fontsDst, 0o755); err != nil {
@@ -94,7 +96,6 @@ func (b *CompositionBuilder) Build(params CompositionParams, projectDir, voicePa
 		return "", fmt.Errorf("write index.html: %w", err)
 	}
 
-	clipID := filepath.Base(projectDir)
 	metaJSON := fmt.Sprintf(`{"id": %q, "name": %q}`, clipID, clipID)
 	for name, content := range map[string]string{
 		"package.json":     projectPackageJSON,

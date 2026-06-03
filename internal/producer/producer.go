@@ -314,7 +314,7 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 
 	projectDir := filepath.Join(clipDir, "composition-916")
 	os.RemoveAll(projectDir)
-	if _, err := p.hf.builder.Build(params, projectDir, voicePath, bgPath); err != nil {
+	if _, err := p.hf.builder.Build(params, clipID, projectDir, voicePath, bgPath); err != nil {
 		return fmt.Errorf("build composition: %w", err)
 	}
 	if err := p.hf.renderer.Lint(ctx, projectDir); err != nil {

@@ -184,7 +184,7 @@ func main() {
 	}
 
 	builder := producer.NewCompositionBuilder(filepath.Join(pocAssets, "fonts"))
-	if _, err := builder.Build(params, projectDir, filepath.Join(pocAssets, "voice.wav"), bgFile); err != nil {
+	if _, err := builder.Build(params, filepath.Base(projectDir), projectDir, filepath.Join(pocAssets, "voice.wav"), bgFile); err != nil {
 		log.Fatalf("build composition: %v", err)
 	}
 	log.Printf("built project: %s", projectDir)
