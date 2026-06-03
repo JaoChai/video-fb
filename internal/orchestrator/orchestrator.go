@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -117,6 +118,16 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	}
 
 	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, qaCfg)
+	if errors.Is(err, agent.ErrNoFreshNews) {
+		// No reliable news found — never fabricate news; produce a Q&A clip instead.
+		log.Println("No fresh news available, falling back to Q&A format")
+		format, err = o.formatsRepo.GetByName(ctx, "qa")
+		if err != nil {
+			o.tracker.FailStep("question", err)
+			return fmt.Errorf("fallback to qa format: %w", err)
+		}
+		questions, err = o.questionAgent.Generate(ctx, count, category, format, persona, qaCfg)
+	}
 	if err != nil {
 		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)

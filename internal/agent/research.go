@@ -12,8 +12,8 @@ import (
 )
 
 // ResearchAgent finds fresh, reliable information via live web search.
-// It appends ":online" to the model name so OpenRouter runs a web search
-// and feeds the results to the model — no crawler or embedding pipeline needed.
+// Its configured model must have native web search (e.g. perplexity/sonar) —
+// no crawler or embedding pipeline needed.
 type ResearchAgent struct {
 	llm        *LLMClient
 	agentsRepo *repository.AgentsRepo
@@ -63,11 +63,7 @@ func (a *ResearchAgent) Research(ctx context.Context, topic string) (string, err
 สำคัญมาก: ถ้าหาข้อมูลที่เชื่อถือได้ไม่เจอ ให้ตอบ summary เป็นสตริงว่าง ห้ามแต่งข้อมูลขึ้นเองเด็ดขาด`, topic)
 
 	var result researchResult
-	model := cfg.Model
-	if !strings.HasSuffix(model, ":online") {
-		model += ":online"
-	}
-	if err := a.llm.GenerateJSON(ctx, model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &result); err != nil {
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &result); err != nil {
 		return "", fmt.Errorf("research search: %w", err)
 	}
 
