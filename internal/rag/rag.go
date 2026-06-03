@@ -184,12 +184,13 @@ func ChunkText(text string, maxChunkSize int, overlap int) []string {
 		if end > len(words) {
 			end = len(words)
 		}
-		chunk := strings.Join(words[start:end], " ")
-		chunks = append(chunks, chunk)
-		start = end - overlap
-		if start >= end || start < 1 {
+		chunks = append(chunks, strings.Join(words[start:end], " "))
+		if end == len(words) {
+			// Reached the end of the text — stop. (Without this, the final
+			// partial chunk never advances `start` and the loop runs forever.)
 			break
 		}
+		start = end - overlap
 	}
 	return chunks
 }
