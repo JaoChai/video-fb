@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,6 +11,11 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/rag"
 )
+
+// ErrNoFreshNews is returned when the news format finds no reliable fresh
+// information — callers must switch to another format rather than let the
+// LLM fabricate news from stale knowledge.
+var ErrNoFreshNews = errors.New("no fresh news found from research")
 
 type QuestionTemplateData struct {
 	Count             int
@@ -43,19 +49,20 @@ type GeneratedQuestion struct {
 func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
 	var ragContext strings.Builder
 	if format.FormatName == "news" {
-		// News format: live web search for fresh, reliable updates
+		// News format: live web search for fresh, reliable updates.
+		// Never fall back to stale KB here — that produces fabricated news.
 		researchContext, err := a.research.Research(ctx,
 			fmt.Sprintf("ข่าว/อัปเดตล่าสุดของ Facebook Ads หรือ Meta ที่กระทบผู้ลงโฆษณาในไทย หมวด %s", category))
 		if err != nil {
-			log.Printf("QuestionAgent: research failed, falling back to KB: %v", err)
+			log.Printf("QuestionAgent: research failed: %v", err)
 		}
-		if researchContext != "" {
-			ragContext.WriteString(researchContext)
-			ragContext.WriteString("\n---\n")
+		if researchContext == "" {
+			return nil, ErrNoFreshNews
 		}
-	}
-	if ragContext.Len() == 0 {
-		// Business knowledge from the hand-written Thai KB (all formats; news fallback)
+		ragContext.WriteString(researchContext)
+		ragContext.WriteString("\n---\n")
+	} else {
+		// Business knowledge from the hand-written Thai KB
 		ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s %s", category, format.FormatName), 5)
 		if err != nil {
 			return nil, fmt.Errorf("RAG search: %w", err)
