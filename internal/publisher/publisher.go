@@ -307,7 +307,12 @@ func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccount
 
 	// AverageViewDuration is in seconds. Retention = avg view duration / total clip duration.
 	var clipDuration float64
-	p.pool.QueryRow(ctx, `SELECT COALESCE(SUM(duration_seconds), 0) FROM scenes WHERE clip_id = $1`, clipID).Scan(&clipDuration)
+	if err := p.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(duration_seconds), 0) FROM scenes WHERE clip_id = $1`, clipID,
+	).Scan(&clipDuration); err != nil {
+		log.Printf("FetchAnalytics RETENTION_FAIL clip=%s: query clip duration: %v", clipID, err)
+		return watchTime, 0
+	}
 	if clipDuration > 0 {
 		avgViewDuration := avgDurSum / float64(len(daily.DailyViews))
 		retention = avgViewDuration / clipDuration

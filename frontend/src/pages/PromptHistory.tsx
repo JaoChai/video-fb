@@ -115,6 +115,15 @@ export default function PromptHistoryPage() {
         ))}
       </div>
 
+      {filtered.length === 0 && (
+        <p className="text-sm text-muted-foreground py-8 text-center">
+          ยังไม่มีประวัติการปรับแต่งสำหรับ "{filterAgent}" —{' '}
+          <button type="button" className="underline" onClick={() => setFilterAgent('all')}>
+            ดูทั้งหมด
+          </button>
+        </p>
+      )}
+
       <div className="space-y-3">
         {filtered.map(entry => {
           const isOpen = expanded[entry.id] ?? false
