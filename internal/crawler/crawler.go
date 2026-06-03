@@ -67,6 +67,10 @@ func (c *Crawler) CrawlAll(ctx context.Context) error {
 	return nil
 }
 
+// maxCrawlBytes caps how much of a page we read. Unbounded reads OOM-killed
+// the container (16 GB spike) when a source streamed an endless response.
+const maxCrawlBytes = 2 << 20 // 2 MB
+
 // crawlURLSource fetches a URL via Jina Reader and replaces the source's chunks.
 func (c *Crawler) crawlURLSource(ctx context.Context, sourceID, url string) error {
 	readerURL := "https://r.jina.ai/" + url
@@ -82,9 +86,12 @@ func (c *Crawler) crawlURLSource(ctx context.Context, sourceID, url string) erro
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCrawlBytes))
 	if err != nil {
 		return fmt.Errorf("read body: %w", err)
+	}
+	if len(body) == maxCrawlBytes {
+		log.Printf("Crawl %s: content truncated at %d bytes", url, maxCrawlBytes)
 	}
 
 	text := cleanText(string(body))
