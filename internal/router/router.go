@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher) *chi.Mux {
+func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher, scheduleReload func()) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -63,7 +63,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Patch("/{id}", agents.Update)
 	})
 
-	schedules := handler.NewSchedulesHandler(repository.NewSchedulesRepo(pool))
+	schedules := handler.NewSchedulesHandler(repository.NewSchedulesRepo(pool), scheduleReload)
 	r.Route("/api/v1/schedules", func(r chi.Router) {
 		r.Get("/", schedules.List)
 		r.Patch("/{id}", schedules.Update)

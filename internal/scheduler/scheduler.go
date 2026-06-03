@@ -103,6 +103,19 @@ func (s *Scheduler) Stop() {
 	log.Println("Scheduler stopped")
 }
 
+// Reload stops the current cron and re-registers all enabled schedules from DB.
+// Called when schedules are changed via the API so changes apply without restart.
+func (s *Scheduler) Reload(ctx context.Context) error {
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
+
+	loc := s.cron.Location()
+	s.cron = cron.New(cron.WithLocation(loc))
+
+	log.Println("Scheduler: reloading schedules from DB")
+	return s.Start(ctx)
+}
+
 func (s *Scheduler) produceAndPublish(ctx context.Context) error {
 	check := preflight.Run(ctx, s.pool)
 	if !check.OK {

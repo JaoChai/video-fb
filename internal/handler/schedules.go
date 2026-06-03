@@ -10,11 +10,12 @@ import (
 )
 
 type SchedulesHandler struct {
-	repo *repository.SchedulesRepo
+	repo   *repository.SchedulesRepo
+	reload func()
 }
 
-func NewSchedulesHandler(repo *repository.SchedulesRepo) *SchedulesHandler {
-	return &SchedulesHandler{repo: repo}
+func NewSchedulesHandler(repo *repository.SchedulesRepo, reload func()) *SchedulesHandler {
+	return &SchedulesHandler{repo: repo, reload: reload}
 }
 
 func (h *SchedulesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +41,10 @@ func (h *SchedulesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo.Update(r.Context(), id, req.CronExpression, req.Action, req.Enabled); err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
+	}
+	// Apply changes to the running cron without requiring a server restart.
+	if h.reload != nil {
+		go h.reload()
 	}
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "updated"})
 }
