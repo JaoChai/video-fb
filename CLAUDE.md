@@ -1,82 +1,65 @@
-# video-fb
+# CLAUDE.md
 
-Automated video content pipeline for Ads Vance — Go backend + React dashboard.
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
-## Stack
-- **Backend:** Go 1.25, chi router, pgx/v5 (Neon PostgreSQL), robfig/cron (scheduler)
-- **Frontend:** React 19, Vite 8, TanStack Query, React Router
-- **External:** OpenRouter (LLM), Kie AI (video), OpenRouter/Gemini TTS (voice), Jina AI (scraping), Zernio (publishing + analytics)
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-## Commands
+## 1. Think Before Coding
 
-```bash
-# Backend
-make run              # Start server on :8080
-make build            # Build binary to bin/server
-make test             # Run all Go tests
-make migrate          # Run DB migrations
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
-# CLI modes (alternative to server)
-go run cmd/server/main.go -migrate         # Run database migrations
-go run cmd/server/main.go -crawl           # Crawl knowledge sources
-go run cmd/server/main.go -produce 7       # Produce N clips
-go run cmd/server/main.go -publish         # Publish ready clips
-go run cmd/server/main.go -analytics       # Fetch analytics from Zernio
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-# Frontend
-cd frontend && npm install
-cd frontend && npm run dev                 # Vite dev server
-cd frontend && npm run build               # TypeScript check + Vite build
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
 ```
 
-## Architecture
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-```
-cmd/server/main.go          # Entry point — server or CLI mode via flags
-internal/
-  config/                   # Env var loading (.env via godotenv)
-  database/                 # pgxpool connection + migration runner
-  models/                   # Shared domain types (Clip, Scene, ClipAnalytics, etc.)
-  router/                   # chi routes — all under /api/v1/* (see router.go for full list)
-  handler/                  # HTTP handlers + API key middleware
-  repository/               # DB queries (clips, scenes, themes, agents, analytics, etc.)
-  agent/                    # LLM agents via OpenRouter (question, script, image)
-  analyzer/                 # Analytics-driven agent self-improvement (weekly)
-  rag/                      # RAG engine for knowledge retrieval
-  crawler/                  # Knowledge source crawler
-  orchestrator/             # Pipeline: question → script → image → produce
-  producer/                 # Video production (Kie AI + TTS + FFmpeg assembly)
-  publisher/                # Zernio publishing + analytics fetching
-  scheduler/                # Cron-based scheduler (robfig/cron, DB config, Asia/Bangkok)
-frontend/src/
-  App.tsx                   # Main layout with sidebar (QueryClient: staleTime 30s)
-  pages/                    # Content, Schedules, Agents, Knowledge, Analytics, PromptHistory, Settings
-  api.ts                    # API client for backend endpoints
-migrations/                 # SQL migration files (001-012)
-.github/workflows/          # GitHub Actions — auto-deploy to Railway on push to master
-```
+---
 
-## Environment Variables
-
-See `.env.example`. Required: `DATABASE_URL`, `API_KEY`.
-Optional: `PORT` (8080), `FFMPEG_PATH` (ffmpeg).
-API keys for OpenRouter, Kie, and Zernio are managed via the Settings page (DB `settings` table), not env vars.
-
-## Pipeline Flow
-
-QuestionAgent → ScriptAgent → ImageAgent → Producer (Kie + FFmpeg) → Publisher (Zernio)
-Weekly: `fetch_analytics` pulls YouTube stats via Zernio → Analyzer sends to LLM → auto-tunes agent prompts
-
-## Deployment
-- **Auto-deploy:** Push to `master` → GitHub Actions → Railway (`adsvance-v2` + `adsvance-frontend`)
-- **Manual:** `railway up --service adsvance-v2` / `railway up --service adsvance-frontend`
-- **Region:** `asia-southeast1-eqsg3a` (Singapore)
-
-## Gotchas
-- Server and CLI modes are mutually exclusive — flags like `-produce` exit after completion
-- Frontend has no lint script — only `tsc && vite build` for type checking
-- Scheduler reads cron config from `schedules` table — changing via API requires server restart
-- ImageAgent must NOT generate logo/mascot/watermark — enforced in code + DB agent config
-- Analyzer requires at least 3 published clips with analytics before running — skips silently
-- Knowledge list endpoint returns summaries only (no content field) — use GET `/{id}` for full content
-- Migrations can delete/recreate schedules — always verify `fetch_analytics` exists after new migrations
+**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

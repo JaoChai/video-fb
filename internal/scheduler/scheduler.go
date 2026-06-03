@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,7 @@ const (
 )
 
 type Scheduler struct {
+	mu            sync.Mutex
 	cron          *cron.Cron
 	pool          *pgxpool.Pool
 	publisher     *publisher.Publisher
@@ -101,6 +103,23 @@ func (s *Scheduler) Stop() {
 	ctx := s.cron.Stop()
 	<-ctx.Done()
 	log.Println("Scheduler stopped")
+}
+
+// Reload stops the current cron and re-registers all enabled schedules from DB.
+// Called when schedules are changed via the API so changes apply without restart.
+// Serialized with a mutex so concurrent API calls can't orphan a cron instance.
+func (s *Scheduler) Reload(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
+
+	loc := s.cron.Location()
+	s.cron = cron.New(cron.WithLocation(loc))
+
+	log.Println("Scheduler: reloading schedules from DB")
+	return s.Start(ctx)
 }
 
 func (s *Scheduler) produceAndPublish(ctx context.Context) error {

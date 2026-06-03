@@ -11,12 +11,17 @@ type AgentConfig struct {
 	Temperature    float64         `json:"temperature"`
 	Enabled        bool            `json:"enabled"`
 	Skills         string          `json:"skills"`
+	Insights       string          `json:"insights"`
 	Config         json.RawMessage `json:"config"`
 }
 
 func (c *AgentConfig) BuildSystemPrompt() string {
-	if c.Skills == "" {
-		return c.SystemPrompt
+	prompt := c.SystemPrompt
+	if c.Skills != "" {
+		prompt += "\n\n## Skills & Guidelines\n" + c.Skills
 	}
-	return c.SystemPrompt + "\n\n## Skills & Guidelines\n" + c.Skills
+	if c.Insights != "" {
+		prompt += "\n\n## Performance Insights\n" + c.Insights
+	}
+	return prompt
 }

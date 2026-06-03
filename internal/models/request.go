@@ -8,6 +8,7 @@ type CreateClipRequest struct {
 	QuestionerName string  `json:"questioner_name"`
 	Category       string  `json:"category"`
 	PublishDate    *string `json:"publish_date"`
+	ContentFormat  string  `json:"content_format"`
 }
 
 type UpdateClipRequest struct {

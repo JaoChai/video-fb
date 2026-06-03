@@ -62,10 +62,10 @@ func (r *ClipsRepo) GetByID(ctx context.Context, id string) (*models.Clip, error
 
 func (r *ClipsRepo) Create(ctx context.Context, req models.CreateClipRequest) (*models.Clip, error) {
 	c, err := scanClip(r.pool.QueryRow(ctx,
-		`INSERT INTO clips (title, question, questioner_name, category, publish_date)
-		 VALUES ($1, $2, $3, $4, $5::date)
+		`INSERT INTO clips (title, question, questioner_name, category, publish_date, content_format)
+		 VALUES ($1, $2, $3, $4, $5::date, COALESCE(NULLIF($6, ''), 'qa'))
 		 RETURNING `+clipColumns,
-		req.Title, req.Question, req.QuestionerName, req.Category, req.PublishDate,
+		req.Title, req.Question, req.QuestionerName, req.Category, req.PublishDate, req.ContentFormat,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("create clip: %w", err)

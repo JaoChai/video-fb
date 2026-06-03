@@ -28,7 +28,7 @@ func NewAgentsRepo(pool *pgxpool.Pool) *AgentsRepo {
 
 func (r *AgentsRepo) List(ctx context.Context) ([]models.AgentConfig, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, agent_name, system_prompt, prompt_template, model, temperature, enabled, skills, config
+		`SELECT id, agent_name, system_prompt, prompt_template, model, temperature, enabled, skills, insights, config
 		 FROM agent_configs ORDER BY agent_name`)
 	if err != nil {
 		return nil, fmt.Errorf("query agents: %w", err)
@@ -39,7 +39,7 @@ func (r *AgentsRepo) List(ctx context.Context) ([]models.AgentConfig, error) {
 	for rows.Next() {
 		var a models.AgentConfig
 		if err := rows.Scan(&a.ID, &a.AgentName, &a.SystemPrompt, &a.PromptTemplate, &a.Model,
-			&a.Temperature, &a.Enabled, &a.Skills, &a.Config); err != nil {
+			&a.Temperature, &a.Enabled, &a.Skills, &a.Insights, &a.Config); err != nil {
 			return nil, fmt.Errorf("scan agent: %w", err)
 		}
 		agents = append(agents, a)
@@ -50,9 +50,9 @@ func (r *AgentsRepo) List(ctx context.Context) ([]models.AgentConfig, error) {
 func (r *AgentsRepo) GetByName(ctx context.Context, name string) (*models.AgentConfig, error) {
 	var a models.AgentConfig
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, agent_name, system_prompt, prompt_template, model, temperature, enabled, skills, config
+		`SELECT id, agent_name, system_prompt, prompt_template, model, temperature, enabled, skills, insights, config
 		 FROM agent_configs WHERE agent_name = $1`, name,
-	).Scan(&a.ID, &a.AgentName, &a.SystemPrompt, &a.PromptTemplate, &a.Model, &a.Temperature, &a.Enabled, &a.Skills, &a.Config)
+	).Scan(&a.ID, &a.AgentName, &a.SystemPrompt, &a.PromptTemplate, &a.Model, &a.Temperature, &a.Enabled, &a.Skills, &a.Insights, &a.Config)
 	if err != nil {
 		return nil, fmt.Errorf("get agent %s: %w", name, err)
 	}
@@ -94,6 +94,16 @@ func (r *AgentsRepo) UpdateSkillsByName(ctx context.Context, agentName, newSkill
 		agentName, newSkills)
 	if err != nil {
 		return fmt.Errorf("update skills for agent %s: %w", agentName, err)
+	}
+	return nil
+}
+
+func (r *AgentsRepo) UpdateInsightsByName(ctx context.Context, agentName, newInsights string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE agent_configs SET insights = $2 WHERE agent_name = $1`,
+		agentName, newInsights)
+	if err != nil {
+		return fmt.Errorf("update insights for agent %s: %w", agentName, err)
 	}
 	return nil
 }

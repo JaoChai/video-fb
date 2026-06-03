@@ -42,6 +42,7 @@ func sanitizeVoiceText(s string, brandAliases map[string]string) string {
 
 type Orchestrator struct {
 	settingsRepo  *repository.SettingsRepo
+	formatsRepo   *repository.FormatsRepo
 	questionAgent *agent.QuestionAgent
 	scriptAgent   *agent.ScriptAgent
 	imageAgent    *agent.ImageAgent
@@ -63,10 +64,11 @@ func New(
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
 	settings *repository.SettingsRepo,
+	formats *repository.FormatsRepo,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
-		settingsRepo: settings, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
+		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
@@ -89,7 +91,18 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("read brand aliases: %w", err)
 	}
 
-	log.Printf("Producing %d clips for category: %s", count, category)
+	format, err := o.formatsRepo.PickNext(ctx)
+	if err != nil {
+		return fmt.Errorf("pick content format: %w", err)
+	}
+
+	persona, err := o.settingsRepo.Get(ctx, "audience_persona")
+	if err != nil {
+		log.Printf("Warning: audience_persona not set, using empty: %v", err)
+		persona = ""
+	}
+
+	log.Printf("Producing %d clips — category: %s, format: %s", count, category, format.DisplayName)
 
 	defer o.tracker.FinishProduction()
 
@@ -103,7 +116,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, qaCfg)
+	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, qaCfg)
 	if err != nil {
 		o.tracker.FailStep("question", err)
 		return fmt.Errorf("generate questions: %w", err)
@@ -137,7 +150,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -150,7 +163,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
 		Title:          q.Question,
@@ -158,6 +171,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		QuestionerName: q.QuestionerName,
 		Category:       q.Category,
 		PublishDate:    &today,
+		ContentFormat:  format.FormatName,
 	})
 	if err != nil {
 		return fmt.Errorf("create clip: %w", err)
@@ -166,7 +180,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
 func validateScript(script *agent.GeneratedScript) {
@@ -185,9 +199,9 @@ func validateScript(script *agent.GeneratedScript) {
 	script.YoutubeTitle = string(titleRunes) + suffix
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, scriptCfg)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -303,7 +317,13 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 		if err != nil {
 			return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
 		}
-		return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases)
+		// Retried clips re-narrate with the standard Q&A format.
+		format, err := o.formatsRepo.GetByName(ctx, "qa")
+		if err != nil {
+			format = &models.ContentFormat{FormatName: "qa", DisplayName: "Q&A"}
+		}
+		persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
+		return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
 	}
 
 	if scenes[0].ImagePrompt == "" {

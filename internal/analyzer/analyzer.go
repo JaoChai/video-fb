@@ -11,7 +11,7 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
-const historyPrefixSkills = "[skills] "
+const historyPrefixInsights = "[insights] "
 
 type Analyzer struct {
 	pool       *pgxpool.Pool
@@ -28,9 +28,9 @@ type improvementResult struct {
 }
 
 type agentImprovement struct {
-	AgentName string `json:"agent_name"`
-	NewSkills string `json:"new_skills"`
-	Reason    string `json:"reason"`
+	AgentName   string `json:"agent_name"`
+	NewInsights string `json:"new_insights"`
+	Reason      string `json:"reason"`
 }
 
 func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
@@ -53,29 +53,25 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 
 %s
 
-Current agent configurations (system_prompt + skills + prompt_template):
+Current agent configurations:
 %s
 
-Based on this data, analyze which videos performed best and worst.
-Then improve each agent's "skills" field to produce more engaging content.
+Analyze which STORYTELLING STYLES performed best (openings, hooks, pacing, tone, length).
 
-CRITICAL RULES — you MUST preserve these in every new skills text:
-- Script: "ห้ามมีอักขระ @ และห้ามมี URL ใดๆ ใน voice_text" must remain
-- Script: "เรียกแบรนด์ว่า แอดส์แวนซ์ ใน voice_text" must remain
-- Script: JSON output format rules (scenes array, youtube_title, etc.) must remain
-- Image: "ห้ามใส่ logo, mascot, ชื่อแบรนด์" must remain
-- Question: "ห้ามสร้างคำถามที่แนะนำการทำผิดนโยบาย" must remain
-- All agents: JSON output format instructions must remain
+YOUR SCOPE IS STRICTLY LIMITED TO STYLE:
+- You may suggest: how to open videos, hook techniques, pacing, tone of voice, energy level
+- You may NOT mention any category name (account, payment, campaign, pixel) in your suggestions
+- You may NOT tell agents which topics to focus on, avoid, prioritize, or exclude
+- Topic selection is handled by a separate system — it is NOT your job
 
-You may ONLY change the "skills" field. Do NOT change system_prompt or prompt_template.
-Focus on: content quality, engagement hooks, audience targeting, variety.
+Each insight must be under 1000 characters, written in Thai.
 
 Return JSON only:
 {
   "agents": [
-    {"agent_name": "question", "new_skills": "...", "reason": "..."},
-    {"agent_name": "script", "new_skills": "...", "reason": "..."},
-    {"agent_name": "image", "new_skills": "...", "reason": "..."}
+    {"agent_name": "question", "new_insights": "...", "reason": "..."},
+    {"agent_name": "script", "new_insights": "...", "reason": "..."},
+    {"agent_name": "image", "new_insights": "...", "reason": "..."}
   ]
 }`, data, a.currentPrompts(ctx))
 
@@ -96,31 +92,36 @@ Return JSON only:
 	}
 	agentMap := make(map[string]string, len(agents))
 	for _, ag := range agents {
-		agentMap[ag.AgentName] = ag.Skills
+		agentMap[ag.AgentName] = ag.Insights
 	}
 
 	for _, imp := range result.Agents {
-		if imp.AgentName == "analytics" || imp.NewSkills == "" {
+		if imp.AgentName == "analytics" || imp.NewInsights == "" {
 			continue
 		}
 
-		oldSkills, exists := agentMap[imp.AgentName]
+		oldInsights, exists := agentMap[imp.AgentName]
 		if !exists {
 			log.Printf("Analyzer: skip unknown agent %s", imp.AgentName)
 			continue
 		}
 
-		if err := a.agentsRepo.SavePromptHistory(ctx, imp.AgentName, oldSkills, imp.NewSkills, historyPrefixSkills+imp.Reason); err != nil {
+		if err := ValidateInsights(imp.NewInsights); err != nil {
+			log.Printf("Analyzer: REJECTED insights for %s: %v", imp.AgentName, err)
+			continue
+		}
+
+		if err := a.agentsRepo.SavePromptHistory(ctx, imp.AgentName, oldInsights, imp.NewInsights, historyPrefixInsights+imp.Reason); err != nil {
 			log.Printf("Analyzer: failed to save history for %s: %v", imp.AgentName, err)
 			continue
 		}
 
-		if err := a.agentsRepo.UpdateSkillsByName(ctx, imp.AgentName, imp.NewSkills); err != nil {
-			log.Printf("Analyzer: failed to update skills for %s: %v", imp.AgentName, err)
+		if err := a.agentsRepo.UpdateInsightsByName(ctx, imp.AgentName, imp.NewInsights); err != nil {
+			log.Printf("Analyzer: failed to update insights for %s: %v", imp.AgentName, err)
 			continue
 		}
 
-		log.Printf("Analyzer: updated %s skills — reason: %s", imp.AgentName, imp.Reason)
+		log.Printf("Analyzer: updated %s insights — reason: %s", imp.AgentName, imp.Reason)
 	}
 
 	return nil
@@ -189,6 +190,9 @@ func (a *Analyzer) currentPrompts(ctx context.Context) string {
 		section := fmt.Sprintf("### %s\n**System Prompt:**\n%s", ag.AgentName, ag.SystemPrompt)
 		if ag.Skills != "" {
 			section += fmt.Sprintf("\n\n**Skills:**\n%s", ag.Skills)
+		}
+		if ag.Insights != "" {
+			section += fmt.Sprintf("\n\n**Current Insights:**\n%s", ag.Insights)
 		}
 		if ag.PromptTemplate != "" {
 			section += fmt.Sprintf("\n\n**Prompt Template:**\n%s", ag.PromptTemplate)

@@ -91,9 +91,10 @@ func main() {
 	agentsRepo := repository.NewAgentsRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
+	formatsRepo := repository.NewFormatsRepo(pool)
 
 	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, prod,
-		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, tracker)
+		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, formatsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
@@ -126,7 +127,11 @@ func main() {
 		log.Printf("Warning: scheduler start failed: %v", err)
 	}
 
-	r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub)
+	r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub, func() {
+		if err := sched.Reload(ctx); err != nil {
+			log.Printf("Scheduler reload failed: %v", err)
+		}
+	})
 	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
 	router.SetOrchestrator(r, orchHandler)
 
