@@ -5,52 +5,27 @@ import (
 	"testing"
 )
 
-func TestBuildResearchContext(t *testing.T) {
+func TestIsSubstantialResearch(t *testing.T) {
+	realNews := strings.Repeat("Meta บังคับยืนยันตัวตนผู้ลงโฆษณาในไทย มีผลตั้งแต่เดือนกันยายน ", 10)
+
 	tests := []struct {
-		name     string
-		result   researchResult
-		wantEmpty bool
-		contains []string
+		name string
+		text string
+		want bool
 	}{
-		{
-			name: "full result",
-			result: researchResult{
-				Summary:  "Meta ประกาศบังคับ verify ตัวตน มีผล 1 พ.ย. 2026",
-				KeyFacts: []string{"deadline 7 วัน", "กระทบโฆษณาที่ยิงถึงคนไทย"},
-				Sources:  []string{"https://ppc.land/example"},
-			},
-			contains: []string{"Meta ประกาศ", "ข้อเท็จจริงสำคัญ", "deadline 7 วัน", "แหล่งอ้างอิง", "ppc.land"},
-		},
-		{
-			name:      "empty summary means no reliable info",
-			result:    researchResult{Summary: "", KeyFacts: []string{"fact"}},
-			wantEmpty: true,
-		},
-		{
-			name:      "whitespace summary treated as empty",
-			result:    researchResult{Summary: "   "},
-			wantEmpty: true,
-		},
-		{
-			name:     "summary only",
-			result:   researchResult{Summary: "ข่าวสั้น"},
-			contains: []string{"ข่าวสั้น"},
-		},
+		{"real news summary", realNews, true},
+		{"empty response", "", false},
+		{"whitespace only", "   \n  ", false},
+		{"short refusal", "ไม่พบข่าวที่เกี่ยวข้องในขณะนี้", false},
+		{"sentinel marker", "NO_NEWS_FOUND", false},
+		{"sentinel inside long text", realNews + " NO_NEWS_FOUND", false},
+		{"short but real-looking", "Meta ออกกฎใหม่", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildResearchContext(tt.result)
-			if tt.wantEmpty {
-				if got != "" {
-					t.Errorf("expected empty context, got %q", got)
-				}
-				return
-			}
-			for _, want := range tt.contains {
-				if !strings.Contains(got, want) {
-					t.Errorf("context missing %q\ngot: %s", want, got)
-				}
+			if got := isSubstantialResearch(tt.text); got != tt.want {
+				t.Errorf("isSubstantialResearch(%q) = %v, want %v", tt.text[:min(len(tt.text), 50)], got, tt.want)
 			}
 		})
 	}

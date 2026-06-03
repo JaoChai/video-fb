@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jaochai/video-fb/internal/repository"
@@ -14,6 +15,10 @@ import (
 // ResearchAgent finds fresh, reliable information via live web search.
 // Its configured model must have native web search (e.g. perplexity/sonar) —
 // no crawler or embedding pipeline needed.
+//
+// Design note: the prompt is deliberately simple. Strict source whitelists or
+// explicit "answer empty if unsure" escape hatches make search models bail out
+// and return nothing (verified against perplexity/sonar in production).
 type ResearchAgent struct {
 	llm        *LLMClient
 	agentsRepo *repository.AgentsRepo
@@ -23,15 +28,9 @@ func NewResearchAgent(llm *LLMClient, agentsRepo *repository.AgentsRepo) *Resear
 	return &ResearchAgent{llm: llm, agentsRepo: agentsRepo}
 }
 
-type researchResult struct {
-	Summary  string   `json:"summary"`
-	KeyFacts []string `json:"key_facts"`
-	Sources  []string `json:"sources"`
-}
-
 // Research searches the web for recent, reliable information about the topic.
 // Returns a Thai-language context block for content generation, or "" when no
-// trustworthy information was found (callers should fall back to the KB).
+// substantial information was found (callers decide the fallback).
 func (a *ResearchAgent) Research(ctx context.Context, topic string) (string, error) {
 	cfg, err := a.agentsRepo.GetByName(ctx, "research")
 	if err != nil {
@@ -46,51 +45,36 @@ func (a *ResearchAgent) Research(ctx context.Context, topic string) (string, err
 		return "", nil
 	}
 
-	userPrompt := fmt.Sprintf(`ค้นหาข้อมูลล่าสุดที่เชื่อถือได้เกี่ยวกับ: %s
+	userPrompt := fmt.Sprintf(`ค้นหาข่าวล่าสุดเกี่ยวกับ: %s
 
-กฎการคัดกรองแหล่งข้อมูล:
-- เชื่อถือได้: ประกาศจาก Meta โดยตรง (Meta Newsroom, Meta for Business), สื่อวงการโฆษณา (Search Engine Land, ppc.land), ประกาศหน่วยงานราชการไทย (ETDA, กสทช.)
-- ห้ามใช้: บล็อกของ agency ที่ขายบริการกู้บัญชี/ปลดแบน, โพสต์ Reddit/forum, ข้อมูลที่เก่ากว่า 6 เดือน
-- ถ้าข้อมูลจากหลายแหล่งขัดแย้งกัน ให้เชื่อแหล่งทางการของ Meta
+สรุป 3 ข่าวล่าสุด แต่ละข่าวบอก: เกิดอะไรขึ้น / มีผลเมื่อไหร่ / กระทบคนยิงแอดยังไง / URL แหล่งที่มา
+ตอบเป็นภาษาไทย อย่าใช้ข้อมูลจากเว็บที่ขายบริการกู้บัญชี ปลดแบน หรือขาย/เช่าบัญชีโฆษณา`, topic)
 
-ตอบเป็น JSON object:
-{
-  "summary": "สรุปข้อมูลภาษาไทย พร้อมระบุวันที่ของข้อมูล",
-  "key_facts": ["ข้อเท็จจริงสำคัญพร้อมตัวเลข/วันที่", "..."],
-  "sources": ["URL ของแหล่งที่ใช้อ้างอิง"]
-}
-
-สำคัญมาก: ถ้าหาข้อมูลที่เชื่อถือได้ไม่เจอ ให้ตอบ summary เป็นสตริงว่าง ห้ามแต่งข้อมูลขึ้นเองเด็ดขาด`, topic)
-
-	var result researchResult
-	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &result); err != nil {
+	text, err := a.llm.Generate(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature)
+	if err != nil {
 		return "", fmt.Errorf("research search: %w", err)
 	}
 
-	context := buildResearchContext(result)
-	if context == "" {
-		log.Printf("ResearchAgent: no reliable information found for %q", topic)
+	if !isSubstantialResearch(text) {
+		log.Printf("ResearchAgent: no substantial information found for %q", topic)
+		return "", nil
 	}
-	return context, nil
+	return strings.TrimSpace(text), nil
 }
 
-// buildResearchContext formats a research result into a prompt context block.
-// Pure function — testable without network/DB.
-func buildResearchContext(result researchResult) string {
-	if strings.TrimSpace(result.Summary) == "" {
-		return ""
-	}
+// minResearchLength: real news summaries run far longer than refusals or
+// "nothing found" style responses.
+const minResearchLength = 200
 
-	var sb strings.Builder
-	sb.WriteString(result.Summary)
-	if len(result.KeyFacts) > 0 {
-		sb.WriteString("\n\nข้อเท็จจริงสำคัญ:\n")
-		for _, f := range result.KeyFacts {
-			sb.WriteString("- " + f + "\n")
-		}
+// isSubstantialResearch reports whether a research response contains real
+// findings rather than a refusal/empty answer. Pure function — testable.
+func isSubstantialResearch(text string) bool {
+	t := strings.TrimSpace(text)
+	if utf8.RuneCountInString(t) < minResearchLength {
+		return false
 	}
-	if len(result.Sources) > 0 {
-		sb.WriteString("\nแหล่งอ้างอิง: " + strings.Join(result.Sources, ", "))
+	if strings.Contains(t, "NO_NEWS_FOUND") {
+		return false
 	}
-	return sb.String()
+	return true
 }

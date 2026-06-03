@@ -51,8 +51,7 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	if format.FormatName == "news" {
 		// News format: live web search for fresh, reliable updates.
 		// Never fall back to stale KB here — that produces fabricated news.
-		researchContext, err := a.research.Research(ctx,
-			fmt.Sprintf("ข่าว/อัปเดตล่าสุดของ Facebook Ads หรือ Meta ที่กระทบผู้ลงโฆษณาในไทย หมวด %s", category))
+		researchContext, err := a.research.Research(ctx, "Facebook Ads หรือ Meta ที่กระทบผู้ลงโฆษณาในไทย")
 		if err != nil {
 			log.Printf("QuestionAgent: research failed: %v", err)
 		}
