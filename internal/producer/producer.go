@@ -272,6 +272,19 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 		return fmt.Errorf("composition decide: %w", err)
 	}
 
+	// Generate clean background art (NO text) for the GPT image to sit behind the
+	// Hyperframes-drawn text/captions. If it fails, fall back to the CSS background.
+	bgMode, bgImg, bgPath := "css", "", ""
+	bgFile := filepath.Join(clipDir, "bg-9x16.png")
+	if !fileExists(bgFile) {
+		if err := p.openRouter.GenerateImage(ctx, backgroundArtPrompt(category), "9:16", bgFile); err != nil {
+			log.Printf("Hyperframes: bg art gen failed for %s, using CSS bg: %v", clipID, err)
+		}
+	}
+	if fileExists(bgFile) {
+		bgMode, bgImg, bgPath = "image", "assets/bg-9x16.png", bgFile
+	}
+
 	cards := make([]CardSpec, len(decision.Cards))
 	for i, c := range decision.Cards {
 		cards[i] = CardSpec{
@@ -291,7 +304,8 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 		AccentColor:     decision.AccentColor,
 		SecondaryAccent: decision.SecondaryAccent,
 		AnimationSpeed:  decision.AnimationSpeed,
-		BackgroundMode:  "css",
+		BackgroundMode:  bgMode,
+		BackgroundImage: bgImg,
 		VoiceSrc:        "assets/voice.wav",
 		DurationSeconds: duration,
 		Segments:        segments,
@@ -300,7 +314,7 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 
 	projectDir := filepath.Join(clipDir, "composition-916")
 	os.RemoveAll(projectDir)
-	if _, err := p.hf.builder.Build(params, projectDir, voicePath, ""); err != nil {
+	if _, err := p.hf.builder.Build(params, projectDir, voicePath, bgPath); err != nil {
 		return fmt.Errorf("build composition: %w", err)
 	}
 	if err := p.hf.renderer.Lint(ctx, projectDir); err != nil {
@@ -319,6 +333,26 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 		log.Printf("Hyperframes: failed to record composition_style for %s: %v", clipID, err)
 	}
 	return nil
+}
+
+// backgroundArtPrompt builds an image prompt for a clean, text-free background.
+// The Hyperframes layer draws all text on top, so the art must have none —
+// just brand-colored abstract tech visuals with open negative space.
+func backgroundArtPrompt(category string) string {
+	motif := map[string]string{
+		"pixel":    "glowing data tracking nodes and conversion flow lines",
+		"payment":  "abstract billing dashboard glow and currency flow",
+		"account":  "secure account shield and network grid",
+		"campaign": "ascending performance charts and audience network",
+	}[category]
+	if motif == "" {
+		motif = "abstract digital marketing dashboard glow"
+	}
+	return "Clean abstract background art for a 9:16 vertical video. " +
+		"Dark navy gradient (#0a1428 to #16284a) with subtle orange (#ff6b2b) accents. " +
+		"Motif: " + motif + ". Modern flat tech, cinematic depth, soft glow. " +
+		"IMPORTANT: absolutely NO text, NO letters, NO numbers, NO words, NO UI labels, NO logos. " +
+		"Keep the upper-center area calm and uncluttered (negative space) for text overlay added later."
 }
 
 func segmentsContext(segs []TranscriptSegment) string {
