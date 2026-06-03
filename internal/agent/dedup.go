@@ -11,7 +11,9 @@ import (
 
 // similarityThreshold: questions with >= this cosine similarity to any past
 // topic are considered semantic duplicates and rejected.
-const similarityThreshold = 0.85
+// Calibrated against real data: known duplicate pairs in production scored
+// 0.81-0.82, while genuinely different angles scored 0.69-0.75.
+const similarityThreshold = 0.78
 
 type SimilarityMatch struct {
 	Similarity   float64
