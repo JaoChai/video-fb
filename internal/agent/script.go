@@ -11,10 +11,12 @@ import (
 )
 
 type ScriptTemplateData struct {
-	Question       string
-	QuestionerName string
-	Category       string
-	RAGContext     string
+	Question          string
+	QuestionerName    string
+	Category          string
+	RAGContext        string
+	FormatInstruction string
+	AudiencePersona   string
 }
 
 type ScriptAgent struct {
@@ -43,7 +45,7 @@ type GeneratedScript struct {
 	YoutubeTags        []string         `json:"youtube_tags"`
 }
 
-func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, cfg *models.AgentConfig) (*GeneratedScript, error) {
+func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) (*GeneratedScript, error) {
 	ragResults, err := a.rag.Search(ctx, question, 5)
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
@@ -56,10 +58,12 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 	}
 
 	userPrompt, err := renderTemplate(cfg.PromptTemplate, ScriptTemplateData{
-		Question:       question,
-		QuestionerName: questionerName,
-		Category:       category,
-		RAGContext:     ragContext.String(),
+		Question:          question,
+		QuestionerName:    questionerName,
+		Category:          category,
+		RAGContext:        ragContext.String(),
+		FormatInstruction: format.ScriptInstruction,
+		AudiencePersona:   persona,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render script template: %w", err)

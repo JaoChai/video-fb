@@ -12,11 +12,13 @@ import (
 )
 
 type QuestionTemplateData struct {
-	Count          int
-	Category       string
-	RAGContext     string
-	PreviousTopics string
-	PreviousNames  string
+	Count             int
+	Category          string
+	RAGContext        string
+	PreviousTopics    string
+	PreviousNames     string
+	FormatInstruction string
+	AudiencePersona   string
 }
 
 type QuestionAgent struct {
@@ -37,8 +39,15 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
-	ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s problems common issues", category), 5)
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
+	var ragResults []rag.SearchResult
+	var err error
+	if format.FormatName == "news" {
+		// News format: only use chunks crawled in the last 7 days
+		ragResults, err = a.rag.SearchRecent(ctx, fmt.Sprintf("Facebook Ads Meta update news %s", category), 5, 7)
+	} else {
+		ragResults, err = a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s %s", category, format.FormatName), 5)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("RAG search: %w", err)
 	}
@@ -88,11 +97,13 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	}
 
 	userPrompt, err := renderTemplate(cfg.PromptTemplate, QuestionTemplateData{
-		Count:          count,
-		Category:       category,
-		RAGContext:     ragContext.String(),
-		PreviousTopics: previousList,
-		PreviousNames:  previousNames,
+		Count:             count,
+		Category:          category,
+		RAGContext:        ragContext.String(),
+		PreviousTopics:    previousList,
+		PreviousNames:     previousNames,
+		FormatInstruction: format.QuestionInstruction,
+		AudiencePersona:   persona,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render question template: %w", err)
