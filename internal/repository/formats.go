@@ -52,6 +52,19 @@ func (r *FormatsRepo) PickNext(ctx context.Context) (*models.ContentFormat, erro
 	return &picked, nil
 }
 
+// GetByName returns a single content format by its format_name.
+func (r *FormatsRepo) GetByName(ctx context.Context, name string) (*models.ContentFormat, error) {
+	var f models.ContentFormat
+	err := r.pool.QueryRow(ctx,
+		`SELECT id, format_name, display_name, question_instruction, script_instruction, enabled, weight
+		 FROM content_formats WHERE format_name = $1`, name,
+	).Scan(&f.ID, &f.FormatName, &f.DisplayName, &f.QuestionInstruction, &f.ScriptInstruction, &f.Enabled, &f.Weight)
+	if err != nil {
+		return nil, fmt.Errorf("get format %s: %w", name, err)
+	}
+	return &f, nil
+}
+
 // pickLeastUsed selects the format with the lowest used/weight ratio.
 // Pure function — testable without DB. Falls back to a plain Q&A format.
 func pickLeastUsed(usages []models.FormatUsage) models.ContentFormat {
