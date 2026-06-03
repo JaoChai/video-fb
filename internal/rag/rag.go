@@ -116,7 +116,7 @@ func (e *Engine) GenerateEmbedding(ctx context.Context, text string) ([]float64,
 }
 
 func (e *Engine) StoreChunk(ctx context.Context, sourceID, content, url string, embedding []float64) error {
-	embStr := formatVector(embedding)
+	embStr := FormatVector(embedding)
 	_, err := e.pool.Exec(ctx,
 		`INSERT INTO knowledge_chunks (source_id, content, url, embedding)
 		 VALUES ($1, $2, $3, $4::vector)`,
@@ -139,7 +139,7 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]SearchRe
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	embStr := formatVector(embedding)
+	embStr := FormatVector(embedding)
 	rows, err := e.pool.Query(ctx,
 		`SELECT content, COALESCE(url, ''), 1 - (embedding <=> $1::vector) AS similarity
 		 FROM knowledge_chunks
@@ -162,7 +162,8 @@ func (e *Engine) Search(ctx context.Context, query string, topK int) ([]SearchRe
 	return results, nil
 }
 
-func formatVector(v []float64) string {
+// FormatVector renders a float slice as a pgvector literal, e.g. "[0.1,0.2]".
+func FormatVector(v []float64) string {
 	parts := make([]string, len(v))
 	for i, f := range v {
 		parts[i] = fmt.Sprintf("%f", f)
