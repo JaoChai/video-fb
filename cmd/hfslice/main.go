@@ -64,9 +64,22 @@ const compPromptTemplate = `หัวข้อ: {{.Question}}
   ]
 }`
 
+// backgroundArtPrompt mirrors producer.backgroundArtPrompt (unexported) — clean,
+// text-free abstract art that the Hyperframes text layer sits on top of.
+const backgroundArtPrompt = "Clean abstract background art for a 9:16 vertical video. " +
+	"Dark navy gradient (#0a1428 to #16284a) with subtle orange (#ff6b2b) accents. " +
+	"Motif: glowing data tracking nodes and conversion flow lines. " +
+	"Modern flat tech, cinematic depth, soft glow. " +
+	"IMPORTANT: absolutely NO text, NO letters, NO numbers, NO words, NO UI labels, NO logos. " +
+	"Keep the upper-center area calm and uncluttered (negative space) for text overlay added later."
+
 func main() {
 	clipID := flag.String("clip", "9d318572-fc10-4dae-9245-72ab1e2e34ff", "clip UUID to render")
+	bgMode := flag.String("bg", "css", `background mode: "css" or "image"`)
 	flag.Parse()
+	if *bgMode != "css" && *bgMode != "image" {
+		log.Fatalf("-bg must be \"css\" or \"image\", got %q", *bgMode)
+	}
 
 	cfg := config.Load()
 	ctx := context.Background()
@@ -139,7 +152,7 @@ func main() {
 		AccentColor:     decision.AccentColor,
 		SecondaryAccent: decision.SecondaryAccent,
 		AnimationSpeed:  decision.AnimationSpeed,
-		BackgroundMode:  "css",
+		BackgroundMode:  *bgMode,
 		VoiceSrc:        "assets/voice.wav",
 		DurationSeconds: duration,
 		Segments:        segments,
@@ -152,8 +165,26 @@ func main() {
 		log.Fatalf("abs path: %v", err)
 	}
 	_ = os.RemoveAll(projectDir)
+
+	// In image mode, generate clean GPT background art (no text) for the
+	// Hyperframes text/captions to sit on top of. Done after RemoveAll so the
+	// generated file (which lives under projectDir) survives into the build.
+	bgFile := ""
+	if *bgMode == "image" {
+		bgFile = filepath.Join(projectDir, "bg-9x16.png")
+		if err := os.MkdirAll(projectDir, 0o755); err != nil {
+			log.Fatalf("mkdir projectDir: %v", err)
+		}
+		log.Printf("generating GPT background art → %s", bgFile)
+		if err := producer.NewOpenRouterClient(pool).GenerateImage(ctx, backgroundArtPrompt, "9:16", bgFile); err != nil {
+			log.Fatalf("generate bg art: %v", err)
+		}
+		params.BackgroundImage = "assets/bg-9x16.png"
+		log.Printf("bg art ready")
+	}
+
 	builder := producer.NewCompositionBuilder(filepath.Join(pocAssets, "fonts"))
-	if _, err := builder.Build(params, projectDir, filepath.Join(pocAssets, "voice.wav"), ""); err != nil {
+	if _, err := builder.Build(params, projectDir, filepath.Join(pocAssets, "voice.wav"), bgFile); err != nil {
 		log.Fatalf("build composition: %v", err)
 	}
 	log.Printf("built project: %s", projectDir)
