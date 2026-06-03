@@ -84,6 +84,15 @@ func main() {
 	tracker := progress.NewTracker()
 	orClient := producer.NewOpenRouterClient(pool)
 	prod := producer.NewProducer(pool, kie, orClient, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
+	if cfg.HyperframesEnabled {
+		prod.EnableHyperframes(
+			agent.NewCompositionAgent(llm),
+			producer.NewCompositionBuilder(cfg.HyperframesFontsDir),
+			producer.NewHyperframesRenderer(),
+			producer.NewOpenAITranscriber(pool),
+		)
+		log.Println("Hyperframes 9:16 render path ENABLED")
+	}
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)

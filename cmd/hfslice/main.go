@@ -152,7 +152,7 @@ func main() {
 		log.Fatalf("abs path: %v", err)
 	}
 	_ = os.RemoveAll(projectDir)
-	builder := producer.NewCompositionBuilder("internal/producer/templates", filepath.Join(pocAssets, "fonts"))
+	builder := producer.NewCompositionBuilder(filepath.Join(pocAssets, "fonts"))
 	if _, err := builder.Build(params, projectDir, filepath.Join(pocAssets, "voice.wav"), ""); err != nil {
 		log.Fatalf("build composition: %v", err)
 	}

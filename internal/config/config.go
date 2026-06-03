@@ -15,6 +15,10 @@ type Config struct {
 	ElevenLabsVoice string
 	FFmpegPath      string
 	ZernioAPIKey    string
+
+	// Hyperframes video pipeline (off by default — falls back to FFmpeg).
+	HyperframesEnabled  bool
+	HyperframesFontsDir string
 }
 
 func Load() *Config {
@@ -32,6 +36,11 @@ func Load() *Config {
 
 	voice := os.Getenv("ELEVENLABS_VOICE")
 
+	fontsDir := os.Getenv("HYPERFRAMES_FONTS_DIR")
+	if fontsDir == "" {
+		fontsDir = "/app/assets/fonts"
+	}
+
 	return &Config{
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		Port:            port,
@@ -41,5 +50,8 @@ func Load() *Config {
 		ElevenLabsVoice: voice,
 		FFmpegPath:      ffmpeg,
 		ZernioAPIKey:    os.Getenv("ZERNIO_API_KEY"),
+
+		HyperframesEnabled:  os.Getenv("HYPERFRAMES_ENABLED") == "true",
+		HyperframesFontsDir: fontsDir,
 	}
 }

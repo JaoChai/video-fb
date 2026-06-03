@@ -1,7 +1,6 @@
 package producer
 
 import (
-	"encoding/json"
 	"fmt"
 	"html"
 	"html/template"
@@ -31,14 +30,14 @@ const projectHyperframesJSON = `{
 `
 
 // CompositionBuilder assembles a renderable Hyperframes project directory from
-// CompositionParams + a chosen Go template.
+// CompositionParams. The layout template is embedded (see RenderComposition), so
+// a built binary needs no template files on disk — only the Sarabun fonts.
 type CompositionBuilder struct {
-	templatesDir string // dir holding layout_*.html.tmpl
-	fontsDir     string // source Sarabun .ttf files to copy into each project
+	fontsDir string // source Sarabun .ttf files to copy into each project
 }
 
-func NewCompositionBuilder(templatesDir, fontsDir string) *CompositionBuilder {
-	return &CompositionBuilder{templatesDir: templatesDir, fontsDir: fontsDir}
+func NewCompositionBuilder(fontsDir string) *CompositionBuilder {
+	return &CompositionBuilder{fontsDir: fontsDir}
 }
 
 // outroLeadSeconds is how long before the clip end the outro fades in.
@@ -87,52 +86,12 @@ func (b *CompositionBuilder) Build(params CompositionParams, projectDir, voicePa
 		return "", fmt.Errorf("copy fonts: %w", err)
 	}
 
-	cardsJSON, err := json.Marshal(params.Cards)
+	htmlBytes, err := RenderComposition(params)
 	if err != nil {
-		return "", fmt.Errorf("marshal cards: %w", err)
+		return "", fmt.Errorf("render composition: %w", err)
 	}
-	segsJSON, err := json.Marshal(params.Segments)
-	if err != nil {
-		return "", fmt.Errorf("marshal segments: %w", err)
-	}
-
-	outroStart := params.DurationSeconds - outroLeadSeconds
-	if outroStart < 0 {
-		outroStart = 0
-	}
-
-	data := templateData{
-		AccentColor:     sanitizeHexColor(params.AccentColor, "#ff6b2b"),
-		SecondaryAccent: sanitizeHexColor(params.SecondaryAccent, "#2fd17a"),
-		BrandName:       params.BrandName,
-		CategoryLabel:   params.CategoryLabel,
-		QuestionerName:  params.QuestionerName,
-		Kicker:          params.Kicker,
-		TitleHTML:       highlightTitle(params.Title, params.HighlightWords),
-		OutroBrandHTML:  outroBrandHTML(params.BrandName),
-		BackgroundMode:  backgroundMode(params.BackgroundMode),
-		BackgroundImage: params.BackgroundImage,
-		VoiceSrc:        params.VoiceSrc,
-		AnimationSpeed:  animationSpeed(params.AnimationSpeed),
-		DurationSeconds: params.DurationSeconds,
-		OutroStart:      outroStart,
-		OutroDuration:   params.DurationSeconds - outroStart,
-		CardsJSON:       template.JS(cardsJSON),
-		SegmentsJSON:    template.JS(segsJSON),
-	}
-
-	tmplPath := filepath.Join(b.templatesDir, "layout_"+params.LayoutVariant+".html.tmpl")
-	tmpl, err := template.ParseFiles(tmplPath)
-	if err != nil {
-		return "", fmt.Errorf("parse template %s: %w", tmplPath, err)
-	}
-	out, err := os.Create(filepath.Join(projectDir, "index.html"))
-	if err != nil {
-		return "", fmt.Errorf("create index.html: %w", err)
-	}
-	defer out.Close()
-	if err := tmpl.Execute(out, data); err != nil {
-		return "", fmt.Errorf("execute template: %w", err)
+	if err := os.WriteFile(filepath.Join(projectDir, "index.html"), htmlBytes, 0o644); err != nil {
+		return "", fmt.Errorf("write index.html: %w", err)
 	}
 
 	clipID := filepath.Base(projectDir)
