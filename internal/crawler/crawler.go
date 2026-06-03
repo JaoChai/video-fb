@@ -29,38 +29,46 @@ func NewCrawler(pool *pgxpool.Pool, engine *rag.Engine) *Crawler {
 
 func (c *Crawler) CrawlAll(ctx context.Context) error {
 	rows, err := c.pool.Query(ctx,
-		`SELECT id, name, url, source_type FROM knowledge_sources WHERE enabled = TRUE`)
+		`SELECT id, name, COALESCE(url, ''), content FROM knowledge_sources WHERE enabled = TRUE`)
 	if err != nil {
 		return fmt.Errorf("query sources: %w", err)
 	}
 	defer rows.Close()
 
 	type source struct {
-		ID, Name, URL, Type string
+		ID, Name, URL, Content string
 	}
 	var sources []source
 	for rows.Next() {
 		var s source
-		if err := rows.Scan(&s.ID, &s.Name, &s.URL, &s.Type); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.URL, &s.Content); err != nil {
 			return fmt.Errorf("scan source: %w", err)
 		}
 		sources = append(sources, s)
 	}
 
 	for _, s := range sources {
-		log.Printf("Crawling: %s (%s)", s.Name, s.URL)
-		if err := c.crawlSource(ctx, s.ID, s.URL); err != nil {
-			log.Printf("Failed to crawl %s: %v", s.Name, err)
+		var err error
+		if s.URL != "" {
+			// URL source: fetch fresh content, replace chunks
+			log.Printf("Crawling URL source: %s (%s)", s.Name, s.URL)
+			err = c.crawlURLSource(ctx, s.ID, s.URL)
+		} else {
+			// Text source: ensure chunks exist (embed once if missing)
+			err = c.ensureTextSourceEmbedded(ctx, s.ID, s.Name, s.Content)
+		}
+		if err != nil {
+			log.Printf("Failed to process %s: %v", s.Name, err)
 			continue
 		}
 		c.pool.Exec(ctx,
 			`UPDATE knowledge_sources SET last_crawled_at = NOW() WHERE id = $1`, s.ID)
-		log.Printf("Crawled: %s", s.Name)
 	}
 	return nil
 }
 
-func (c *Crawler) crawlSource(ctx context.Context, sourceID, url string) error {
+// crawlURLSource fetches a URL via Jina Reader and replaces the source's chunks.
+func (c *Crawler) crawlURLSource(ctx context.Context, sourceID, url string) error {
 	readerURL := "https://r.jina.ai/" + url
 	req, err := http.NewRequestWithContext(ctx, "GET", readerURL, nil)
 	if err != nil {
@@ -79,17 +87,42 @@ func (c *Crawler) crawlSource(ctx context.Context, sourceID, url string) error {
 		return fmt.Errorf("read body: %w", err)
 	}
 
-	text := string(body)
-	text = cleanText(text)
-
+	text := cleanText(string(body))
 	if len(strings.Fields(text)) < 50 {
 		return fmt.Errorf("content too short from %s", url)
 	}
 
-	chunks := rag.ChunkText(text, 300, 50)
+	// Replace old chunks so stale content doesn't accumulate.
+	if _, err := c.pool.Exec(ctx, `DELETE FROM knowledge_chunks WHERE source_id = $1`, sourceID); err != nil {
+		return fmt.Errorf("delete old chunks: %w", err)
+	}
+
+	return c.embedAndStore(ctx, sourceID, text, url, 300, 50, 20)
+}
+
+// ensureTextSourceEmbedded embeds a text source's content only if it has no chunks yet.
+func (c *Crawler) ensureTextSourceEmbedded(ctx context.Context, sourceID, name, content string) error {
+	var count int
+	if err := c.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM knowledge_chunks WHERE source_id = $1`, sourceID).Scan(&count); err != nil {
+		return fmt.Errorf("count chunks: %w", err)
+	}
+	if count > 0 {
+		return nil // already embedded
+	}
+	if strings.TrimSpace(content) == "" {
+		return nil // nothing to embed
+	}
+	log.Printf("Embedding text source: %s", name)
+	return c.embedAndStore(ctx, sourceID, content, "", 200, 30, 10)
+}
+
+// embedAndStore chunks text, generates embeddings, and stores them.
+func (c *Crawler) embedAndStore(ctx context.Context, sourceID, text, url string, chunkSize, overlap, minWords int) error {
+	chunks := rag.ChunkText(text, chunkSize, overlap)
 	stored := 0
 	for _, chunk := range chunks {
-		if len(strings.Fields(chunk)) < 20 {
+		if len(strings.Fields(chunk)) < minWords {
 			continue
 		}
 		embedding, err := c.engine.GenerateEmbedding(ctx, chunk)
@@ -103,7 +136,7 @@ func (c *Crawler) crawlSource(ctx context.Context, sourceID, url string) error {
 		}
 		stored++
 	}
-	log.Printf("Stored %d/%d chunks from %s", stored, len(chunks), url)
+	log.Printf("Stored %d/%d chunks for source %s", stored, len(chunks), sourceID)
 	return nil
 }
 
