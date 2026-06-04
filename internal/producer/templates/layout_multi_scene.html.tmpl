@@ -454,6 +454,30 @@
       .cap-phrase.active {
         border-color: var(--orange-bright);
       }
+      /* Kinetic typography: per-word reveal units inside a phrase. */
+      .cap-word {
+        display: inline-block;
+        white-space: pre;
+        will-change: transform, opacity;
+      }
+      /* The one emphasized key word per phrase pops with the scene accent. */
+      .cap-word.key {
+        color: var(--scene-accent);
+        font-weight: 800;
+      }
+
+      /* ── Branded scene transition overlay (accent wipe / shape reveal) ── */
+      /* One per scene; sits above the scene's own content, clipped to frame so
+         mid-transition states can never push pixels off-frame (inspect-safe). */
+      .scene-wipe {
+        position: absolute;
+        inset: 0;
+        z-index: 6;
+        pointer-events: none;
+        background: var(--scene-accent);
+        opacity: 0;
+        will-change: clip-path, opacity, transform;
+      }
     </style>
   </head>
   <body>
@@ -489,6 +513,9 @@
         <div class="scene-dots" id="scene-dots-{{$s.SceneNumber}}" data-layout-allow-overflow></div>
         <div class="scene-vignette"></div>
         {{end}}
+
+        <!-- Branded transition overlay (accent wipe/reveal at scene entrance) -->
+        <div class="scene-wipe" id="scene-wipe-{{$s.SceneNumber}}" data-layout-allow-overflow></div>
 
         <div class="scene-content" data-layout="{{$s.LayoutVariant}}">
           {{range $s.Slots}}
@@ -612,6 +639,72 @@
         }
       }
 
+      /* ──────────  KINETIC TYPOGRAPHY HELPERS (Thai-safe)  ────────── */
+      // Split a phrase into WORDS by whitespace, keeping the trailing space with
+      // each word so re-joining is visually identical. Whitespace is collapsed
+      // into the preceding word's tail (display:inline-block + white-space:pre).
+      function splitWords(text) {
+        const out = [];
+        // capture runs of non-space, each followed by any trailing spaces
+        const re = /\S+\s*/g;
+        let m;
+        while ((m = re.exec(text)) !== null) out.push(m[0]);
+        if (out.length === 0 && text.length) out.push(text);
+        return out;
+      }
+
+      // Grapheme-cluster iterator. Uses Intl.Segmenter so Thai base characters
+      // are never split from their combining vowels/tone marks; falls back to a
+      // plain code-point split when Segmenter is unavailable.
+      const _segmenter =
+        typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+          ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+          : null;
+      function graphemes(text) {
+        if (_segmenter) {
+          const out = [];
+          for (const seg of _segmenter.segment(text)) out.push(seg.segment);
+          return out;
+        }
+        // Fallback: Array.from splits by code point (keeps surrogate pairs whole).
+        // Not combining-mark aware, but never crashes; word-level reveal still safe.
+        return Array.from(text);
+      }
+
+      // Choose the index of the "key" word to emphasize: the longest word by
+      // grapheme count (ties → earliest). Deterministic so every frame agrees.
+      function keyWordIndex(words) {
+        let best = 0,
+          bestLen = -1;
+        for (let i = 0; i < words.length; i++) {
+          const len = graphemes(words[i].trim()).length;
+          if (len > bestLen) {
+            bestLen = len;
+            best = i;
+          }
+        }
+        return best;
+      }
+
+      // Build word spans into a caption element (mutates el). Returns the array
+      // of word spans for staggered animation. The full phrase text is preserved
+      // verbatim (we only wrap, never alter, the ground-truth caption text).
+      function buildCaptionWords(el) {
+        const text = el.textContent || "";
+        const words = splitWords(text);
+        const key = keyWordIndex(words);
+        el.textContent = "";
+        const spans = [];
+        words.forEach(function (w, i) {
+          const span = document.createElement("span");
+          span.className = "cap-word" + (i === key ? " key" : "");
+          span.textContent = w;
+          el.appendChild(span);
+          spans.push(span);
+        });
+        return spans;
+      }
+
       /* ──────────  PER-SCENE LAYOUT SIZING (fit text in flow)  ────────── */
       // base font sizes per role, scaled per layout variant. Done before animation
       // so the hero-frame layout is correct and inspect sees no overflow.
@@ -679,13 +772,80 @@
         // Decorative bg cross-fade in
         tl.fromTo(sceneEl, { opacity: 0 }, { opacity: 1, duration: idx === 0 ? 0.5 : 0.6, ease: "power2.out" }, inAt);
 
-        // Ken Burns / drift on the bg
+        // ── Branded scene transition (rotates 2→3 styles per boundary) ──
+        // All transitions are CLIP-PATH / opacity based and stay inside the
+        // frame, so inspect's mid-transition frame samples never see overflow.
+        // Skip on the very first scene (nothing to transition from).
+        const span = Math.max(0.1, outAt - inAt);
+        const dir = idx % 2 === 0 ? 1 : -1;
+        const wipe = document.getElementById("scene-wipe-" + sc.scene);
+        if (wipe && idx > 0) {
+          const kind = (idx - 1) % 3; // 0:diagonal accent swipe, 1:bar sweep, 2:shape iris
+          const tDur = 0.55;
+          // Each transition uses exactly ONE clipPath tween (the accent shape
+          // sweeping in to cover the new scene) then fades the slab out via
+          // opacity — so there is never a clipPath-on-clipPath overlap, and the
+          // accent shape never sits outside the frame at a sampled inspect frame.
+          if (kind === 0) {
+            // Diagonal accent swipe in from the left.
+            tl.fromTo(
+              wipe,
+              { opacity: 1, clipPath: "polygon(0 0, 0 0, -30% 100%, 0 100%)" },
+              { clipPath: "polygon(0 0, 130% 0, 100% 100%, 0 100%)", duration: tDur, ease: "var(--ease-out)", overwrite: "auto" },
+              inAt
+            );
+          } else if (kind === 1) {
+            // Horizontal bar sweep up from the bottom (spring).
+            tl.fromTo(
+              wipe,
+              { opacity: 1, clipPath: "inset(100% 0 0 0)" },
+              { clipPath: "inset(0% 0 0 0)", duration: tDur, ease: "var(--ease-spring)", overwrite: "auto" },
+              inAt
+            );
+          } else {
+            // Shape iris: accent circle expands to cover.
+            tl.fromTo(
+              wipe,
+              { opacity: 1, clipPath: "circle(0% at 50% 50%)" },
+              { clipPath: "circle(75% at 50% 50%)", duration: tDur, ease: "var(--ease-out)", overwrite: "auto" },
+              inAt
+            );
+          }
+          // Reveal the new scene by fading the accent slab out (opacity only).
+          tl.to(wipe, { opacity: 0, duration: 0.4, ease: "var(--ease-out)" }, inAt + tDur);
+        }
+        // Hard-clear the wipe at scene end (non-linear seek safety). Opacity-only
+        // so there is a single clipPath operation per wipe (lint-clean).
+        if (wipe) tl.set(wipe, { opacity: 0 }, outAt);
+
+        // Punch-in zoom: subtle scale pop on the content layer at scene entrance
+        // (1.0→1.03→1.0) gives a visible beat without pushing elements off-frame.
+        if (contentEl) {
+          const punchAt = sc.start + Math.min(2.2, span * 0.5);
+          tl.fromTo(contentEl, { scale: 0.985 }, { scale: 1.0, duration: ENTER + 0.2, ease: "var(--ease-out)", overwrite: "auto" }, sc.start);
+          tl.to(contentEl, { scale: 1.03, duration: 0.3, ease: "var(--ease-spring)", overwrite: "auto" }, punchAt);
+          tl.to(contentEl, { scale: 1.0, duration: 0.5, ease: "var(--ease-out)", overwrite: "auto" }, punchAt + 0.3);
+        }
+
+        // Parallax depth: the bg layer drifts faster than the foreground content
+        // so stills read 2.5D. Direction alternates per scene to avoid monotony.
         const img = sceneEl.querySelector(".scene-img-wrap img");
         if (img) {
-          tl.fromTo(img, { scale: 1.0 }, { scale: 1.12, duration: Math.max(0.1, outAt - inAt), ease: "none" }, inAt);
+          // Ken Burns scale (over-cover so drift never reveals an edge) + slow pan.
+          tl.fromTo(
+            img,
+            { scale: 1.06, xPercent: 0, yPercent: 0 },
+            { scale: 1.16, xPercent: 2.2 * dir, yPercent: -1.6, duration: span, ease: "none" },
+            inAt
+          );
         } else {
           const dots = sceneEl.querySelector(".scene-dots");
-          if (dots) tl.fromTo(dots, { x: 0, y: 0 }, { x: 46, y: 46, duration: Math.max(0.1, outAt - inAt), ease: "none" }, inAt);
+          if (dots) tl.fromTo(dots, { x: 0, y: 0 }, { x: 46 * dir, y: 46, duration: span, ease: "none" }, inAt);
+        }
+        // Foreground content drifts gently in the OPPOSITE-ish (slower) direction.
+        // Tiny amplitude (≤10px) so inspect never sees clipping at sampled frames.
+        if (contentEl) {
+          tl.fromTo(contentEl, { y: 6 * dir }, { y: -6 * dir, duration: span, ease: "none" }, inAt);
         }
 
         // Content slide/fade in (slightly after bg) — vary ease per slot
@@ -714,7 +874,11 @@
         }
       });
 
-      /* ──────────  KARAOKE CAPTIONS (continuous)  ────────── */
+      /* ──────────  KARAOKE CAPTIONS (continuous, kinetic)  ────────── */
+      // The phrase container fades in once and stays fully readable for its whole
+      // window; WITHIN it each word reveals staggered, and one key word pops with
+      // the scene accent. Word splitting is whitespace-based; any sub-word work
+      // uses Intl.Segmenter graphemes so Thai marks never separate.
       const capStage = document.getElementById("capStage");
       SEGMENTS.forEach(function (seg, i) {
         const el = document.createElement("div");
@@ -722,16 +886,34 @@
         el.textContent = seg.text;
         capStage.appendChild(el);
 
+        // Fit on the plain phrase first, then wrap into per-word spans.
         fitEl(el, { maxWidth: CAP_MAXW, base: CAP_BASE, min: CAP_MIN, fontWeight: 700 });
+        const words = buildCaptionWords(el);
 
         const inAt = seg.start;
         const outAt = i < SEGMENTS.length - 1 ? SEGMENTS[i + 1].start : seg.end;
+        const win = Math.max(0.4, outAt - inAt);
 
-        tl.fromTo(el, { opacity: 0, scale: 0.92, y: 24 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.32, ease: "power2.out" }, inAt);
+        // Phrase band fades/scales in as a whole (readability anchor).
+        tl.fromTo(el, { opacity: 0, scale: 0.94, y: 22 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
         tl.call(function () { el.classList.add("active"); }, null, inAt);
-        tl.to(el, { scale: 1.05, duration: 0.22, ease: "power1.out" }, inAt + 0.04);
-        tl.to(el, { scale: 1.0, duration: 0.5, ease: "power2.out" }, inAt + 0.3);
-        tl.to(el, { opacity: 0, y: -18, duration: 0.26, ease: "power2.in" }, Math.max(inAt + 0.4, outAt - 0.22));
+
+        // Word-by-word reveal, staggered across the first ~40% of the window
+        // (capped) so the full phrase is legible well before it leaves.
+        const revealSpan = Math.min(win * 0.4, 0.9);
+        const stepGap = words.length > 1 ? revealSpan / words.length : 0;
+        words.forEach(function (w, wi) {
+          const at = inAt + 0.06 + wi * stepGap;
+          tl.fromTo(w, { opacity: 0, yPercent: 38 }, { opacity: 1, yPercent: 0, duration: 0.34, ease: "var(--ease-out)" }, at);
+          if (w.classList.contains("key")) {
+            // Key word beat: a contained scale pop (transform-only, no reflow).
+            tl.fromTo(w, { scale: 0.8 }, { scale: 1.14, duration: 0.26, ease: "var(--ease-spring)" }, at + 0.02);
+            tl.to(w, { scale: 1.0, duration: 0.4, ease: "var(--ease-out)" }, at + 0.28);
+          }
+        });
+
+        // Phrase out before the next phrase starts.
+        tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
         tl.call(function () { el.classList.remove("active"); }, null, outAt);
         tl.set(el, { opacity: 0 }, outAt);
       });
