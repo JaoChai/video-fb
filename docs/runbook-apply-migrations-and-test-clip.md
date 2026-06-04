@@ -34,7 +34,7 @@ HYPERFRAMES_MULTI_SCENE=true
 แทน `<URL>` ด้วย Railway domain และ `<API_KEY>` ด้วยค่าจริง:
 ```bash
 curl -X POST "https://<URL>/api/v1/orchestrator/produce" \
-  -H "API_KEY: <API_KEY>" \
+  -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"count":1}'
 ```
