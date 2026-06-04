@@ -18,7 +18,9 @@ type HyperframesRenderer struct {
 }
 
 func NewHyperframesRenderer() *HyperframesRenderer {
-	return &HyperframesRenderer{timeout: 6 * time.Minute}
+	// 10m headroom: multi-scene / landscape renders are heavier than the original
+	// single-scene 9:16 (a 16:9 render with a CSS background timed out at 6m).
+	return &HyperframesRenderer{timeout: 10 * time.Minute}
 }
 
 func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...string) error {

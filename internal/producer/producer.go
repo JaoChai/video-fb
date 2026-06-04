@@ -497,9 +497,18 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 					bgResults[i].path = bgFile
 					return nil
 				}
-				if genErr := p.openRouter.GenerateImage(egCtx, d.BgArtPrompt, aspect, bgFile); genErr != nil {
-					log.Printf("assembleMultiScene: bg gen failed for scene %d (%s): %v", d.SceneNumber, clipID, genErr)
-					return nil // non-fatal
+				// Retry transient image-API failures (e.g. "no images in response"):
+				// a missing bg forces the scene onto the CSS background, which renders
+				// much slower and previously pushed the 16:9 render past its timeout.
+				var genErr error
+				for attempt := 1; attempt <= 3; attempt++ {
+					if genErr = p.openRouter.GenerateImage(egCtx, d.BgArtPrompt, aspect, bgFile); genErr == nil {
+						break
+					}
+					log.Printf("assembleMultiScene: bg gen attempt %d/3 failed for scene %d (%s): %v", attempt, d.SceneNumber, clipID, genErr)
+				}
+				if genErr != nil {
+					return nil // non-fatal — scene downgrades to CSS background
 				}
 				if fileExists(bgFile) {
 					bgResults[i].path = bgFile
