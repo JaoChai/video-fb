@@ -35,6 +35,7 @@ type GeneratedScene struct {
 	SceneType       string          `json:"scene_type"`
 	TextContent     string          `json:"text_content"`
 	VoiceText       string          `json:"voice_text"`
+	BgHint          string          `json:"bg_hint"`
 	DurationSeconds float64         `json:"duration_seconds"`
 	TextOverlays    json.RawMessage `json:"text_overlays"`
 }
@@ -89,4 +90,38 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 		return nil, fmt.Errorf("generate script: %w", err)
 	}
 	return &script, nil
+}
+
+// Scene types the composition agent maps to layout variants downstream.
+const (
+	SceneHook    = "hook"
+	SceneProblem = "problem"
+	SceneStep    = "step"
+	SceneWin     = "win"
+	SceneCTA     = "cta"
+)
+
+const (
+	minScenes = 1
+	maxScenes = 6
+)
+
+var validSceneTypes = map[string]bool{
+	SceneHook: true, SceneProblem: true, SceneStep: true, SceneWin: true, SceneCTA: true,
+}
+
+// Normalize keeps an LLM-produced script safe for the pipeline: caps the scene
+// count, renumbers scenes 1..N in arrival order, and defaults any unrecognized
+// scene_type to SceneStep. It does not fabricate scenes (0-scene is the caller's
+// error to handle).
+func (s *GeneratedScript) Normalize() {
+	if len(s.Scenes) > maxScenes {
+		s.Scenes = s.Scenes[:maxScenes]
+	}
+	for i := range s.Scenes {
+		s.Scenes[i].SceneNumber = i + 1
+		if !validSceneTypes[s.Scenes[i].SceneType] {
+			s.Scenes[i].SceneType = SceneStep
+		}
+	}
 }
