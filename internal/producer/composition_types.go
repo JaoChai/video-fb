@@ -1,5 +1,7 @@
 package producer
 
+import "html/template"
+
 // CompositionParams is the full input the composition builder needs to render a
 // Hyperframes video. The composition agent (LLM) chooses the design fields
 // (layout, colors, cards, highlights); the transcript comes from Whisper; the
@@ -47,4 +49,37 @@ type TranscriptSegment struct {
 	Text  string  `json:"text"`
 	Start float64 `json:"start"`
 	End   float64 `json:"end"`
+}
+
+// SceneSpec is one fully-resolved scene the multi-scene template renders.
+type SceneSpec struct {
+	SceneNumber     int
+	LayoutVariant   string  // hook_big|list_steps|stat_reveal|quote_cta
+	AccentColor     string  // sanitized hex
+	AnimationSpeed  string  // fast|normal|slow
+	StartSec        float64 // scene window on the continuous timeline
+	EndSec          float64
+	BackgroundMode  string // "css" | "image"
+	BackgroundImage string // relative assets path when image
+	Slots           []SlotSpec
+}
+
+// SlotSpec is one semantic content slot rendered in scene flow layout.
+type SlotSpec struct {
+	Role    string        // headline|body|badge|step
+	HTML    template.HTML // pre-escaped (emphasis applied)
+	StepNum int
+}
+
+// ScenesParams is the full input for the multi-scene template.
+type ScenesParams struct {
+	AspectRatio     string // "9:16" | "16:9"
+	BrandName       string
+	CategoryLabel   string
+	QuestionerName  string
+	Kicker          string
+	VoiceSrc        string
+	DurationSeconds float64
+	Scenes          []SceneSpec
+	Segments        []TranscriptSegment
 }

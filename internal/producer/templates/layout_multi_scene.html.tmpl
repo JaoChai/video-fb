@@ -1,0 +1,21 @@
+{{define "layout_multi_scene.html.tmpl"}}<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{.BrandName}}</title>
+</head>
+<body>
+<div id="root" data-width="{{.Width}}" data-height="{{.Height}}" data-duration="{{.DurationSeconds}}">
+  {{range .Scenes}}
+  <div class="scene" data-scene="{{.SceneNumber}}" data-layout="{{.LayoutVariant}}" data-start="{{.StartSec}}" data-end="{{.EndSec}}">
+    {{range .Slots}}
+    <div class="slot" data-role="{{.Role}}">{{.HTML}}</div>
+    {{end}}
+  </div>
+  {{end}}
+  <audio src="{{.VoiceSrc}}"></audio>
+</div>
+<script>const SEGMENTS = {{.SegmentsJSON}};</script>
+<script>const SCENES = {{.ScenesJSON}};</script>
+</body>
+</html>{{end}}
