@@ -46,17 +46,10 @@
       }
 
       /* ─────────────────────────  THEME  ───────────────────────── */
-      #root {
-        --navy-deep: #0a1428;
-        --navy: #0f1d35;
-        --navy-hi: #16284a;
-        --orange-soft: #ff8a52;
-        --orange-bright: #ff9457;
-        --ink: #f4f7fb;
-        --muted: #aebdd4;
-        --green: #2fd17a;
-        --red: #ff5a52;
+      /* Brand color + motion + type tokens — single source of truth (Brand.CSSVars). */
+      {{ .BrandCSS }}
 
+      #root {
         /* Aspect-aware spacing scale (portrait packs tighter horizontal margins) */
         --pad-x: {{if eq .Width 1080}}90px{{else}}160px{{end}};
         --pad-y: {{if eq .Width 1080}}160px{{else}}120px{{end}};
@@ -250,6 +243,133 @@
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
       }
 
+      /* ── Data callout (highlighted fact pill / arrow-tagged) ── */
+      .slot-callout {
+        align-self: center;
+        display: inline-flex;
+        align-items: center;
+        gap: 16px;
+        max-width: 100%;
+        font-weight: 800;
+        line-height: 1.18;
+        color: #fff;
+        background: rgba(15, 29, 53, 0.86);
+        border: 2px solid var(--scene-accent);
+        border-left-width: 10px;
+        border-radius: 18px;
+        padding: {{if eq .Width 1080}}22px 30px{{else}}20px 34px{{end}};
+        box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42);
+      }
+      .slot-callout::before {
+        content: "▸";
+        flex: 0 0 auto;
+        color: var(--scene-accent);
+        font-weight: 800;
+        font-size: 1.1em;
+      }
+      .slot-callout .acc { color: var(--scene-accent); }
+
+      /* ─────────────────  PER-VARIANT LAYOUTS  ───────────────── */
+      /* hook_big: big centered headline (default centered column). */
+
+      /* hook_punch: punchiest opener — tighter, high-contrast accent slab. */
+      .scene-content[data-layout="hook_punch"] {
+        justify-content: center;
+        gap: calc(var(--gap) * 0.6);
+      }
+      .scene-content[data-layout="hook_punch"] .slot-headline {
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.02;
+      }
+      /* Accent slab behind the highlighted key word. */
+      .scene-content[data-layout="hook_punch"] .slot-headline .acc {
+        color: #fff;
+        background: var(--scene-accent);
+        padding: 0.02em 0.16em;
+        border-radius: 10px;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
+        box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+      }
+      .scene-content[data-layout="hook_punch"] .slot-badge {
+        letter-spacing: 0.22em;
+        border-width: 2px;
+        background: var(--scene-accent);
+        color: #fff;
+        border-color: var(--scene-accent);
+      }
+
+      /* list_steps: left-aligned stack of numbered cards. */
+      .scene-content[data-layout="list_steps"] {
+        justify-content: center;
+        align-items: stretch;
+        gap: {{if eq .Width 1080}}26px{{else}}22px{{end}};
+      }
+      .scene-content[data-layout="list_steps"] .slot-headline {
+        align-self: center;
+        margin-bottom: {{if eq .Width 1080}}8px{{else}}6px{{end}};
+      }
+
+      /* stat_reveal: giant stat is the hero, supporting body beneath. */
+      .scene-content[data-layout="stat_reveal"] {
+        justify-content: center;
+        gap: calc(var(--gap) * 0.7);
+      }
+      .scene-content[data-layout="stat_reveal"] .slot-stat {
+        order: -1;
+      }
+
+      /* compare_two: two-side split — accent side vs muted side. */
+      .scene-content[data-layout="compare_two"] {
+        flex-direction: {{if eq .Width 1080}}column{{else}}row{{end}};
+        justify-content: center;
+        align-items: stretch;
+        gap: {{if eq .Width 1080}}28px{{else}}36px{{end}};
+      }
+      .scene-content[data-layout="compare_two"] .slot-headline {
+        flex: 0 0 auto;
+        align-self: center;
+        width: 100%;
+      }
+      /* The two comparison sides are step/body/callout slots; style as panels. */
+      .scene-content[data-layout="compare_two"] .slot-step,
+      .scene-content[data-layout="compare_two"] .slot-body,
+      .scene-content[data-layout="compare_two"] .slot-callout {
+        flex: 1 1 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        border-radius: 24px;
+        padding: {{if eq .Width 1080}}32px 30px{{else}}40px 36px{{end}};
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+      }
+      /* First side = accent ("win"/"after"); later side = muted ("lose"/"before"). */
+      .scene-content[data-layout="compare_two"] .slot-step:first-of-type,
+      .scene-content[data-layout="compare_two"] .slot-body:first-of-type,
+      .scene-content[data-layout="compare_two"] .slot-callout:first-of-type {
+        background: rgba(15, 29, 53, 0.86);
+        border: 2px solid var(--scene-accent);
+        color: #fff;
+      }
+      .scene-content[data-layout="compare_two"] .slot-step:last-of-type,
+      .scene-content[data-layout="compare_two"] .slot-body:last-of-type,
+      .scene-content[data-layout="compare_two"] .slot-callout:last-of-type {
+        background: rgba(15, 29, 53, 0.55);
+        border: 2px solid rgba(174, 189, 212, 0.4);
+        color: var(--muted);
+      }
+      .scene-content[data-layout="compare_two"] .slot-callout::before {
+        content: none;
+      }
+
+      /* quote_cta: centered quote + CTA button (default centered column). */
+      .scene-content[data-layout="quote_cta"] {
+        justify-content: center;
+        gap: calc(var(--gap) * 1.1);
+      }
+
       /* ── Progress bar ── */
       .progress-track {
         position: absolute;
@@ -385,6 +505,8 @@
           </div>
           {{else if eq .Role "stat"}}
           <div class="slot-stat">{{.HTML}}</div>
+          {{else if eq .Role "callout"}}
+          <div class="slot-callout">{{.HTML}}</div>
           {{else if eq .Role "quote"}}
           <div class="slot-quote">{{.HTML}}</div>
           {{else if eq .Role "cta"}}
@@ -502,12 +624,20 @@
 
         sceneEl.querySelectorAll(".slot-headline").forEach(function (el) {
           const big = variant === "hook_big";
+          const punch = variant === "hook_punch";
           fitEl(el, {
             maxWidth: CONTENT_MAXW,
-            base: big ? (PORTRAIT ? 110 : 132) : PORTRAIT ? 84 : 100,
+            base: punch
+              ? (PORTRAIT ? 124 : 150)
+              : big
+              ? (PORTRAIT ? 110 : 132)
+              : PORTRAIT ? 84 : 100,
             min: 48,
             fontWeight: 800,
           });
+        });
+        sceneEl.querySelectorAll(".slot-callout").forEach(function (el) {
+          fitEl(el, { maxWidth: PORTRAIT ? 820 : 1200, base: PORTRAIT ? 44 : 50, min: 26, fontWeight: 800 });
         });
         sceneEl.querySelectorAll(".slot-quote").forEach(function (el) {
           fitEl(el, { maxWidth: CONTENT_MAXW, base: PORTRAIT ? 76 : 92, min: 44, fontWeight: 800 });
