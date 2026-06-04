@@ -3,7 +3,9 @@
 -- the agent derive bg_art_prompt from the scene's actual spoken content (voice_text)
 -- so the background image illustrates what is *literally being said* in that scene.
 --
--- Additive UPDATE — no schema change, no new rows.  Reversible by re-running 023.
+-- Additive UPDATE — no schema change, no new rows.
+-- Rollback: execute 023's UPDATE SQL directly against the DB (the runner will not
+-- re-apply 023 automatically).
 -- Does NOT touch the 'composition' (single-scene) agent row.
 
 UPDATE agent_configs
@@ -29,7 +31,7 @@ bg_art_prompt: ดู voice_text ของฉากนั้น → นึกว
 ตอบ JSON:
 {
   "scenes": [
-    {"scene_number":1,"layout_variant":"hook_big","accent_color":"#ff6b2b","animation_speed":"normal","bg_art_prompt":"subject/ฉากที่สื่อเนื้อหาที่พูดในฉากนั้น...","slots":[{"role":"headline","text":"...","emphasis":["คำ"]}]}
+    {"scene_number":1,"layout_variant":"hook_big","accent_color":"#ff6b2b","animation_speed":"normal","bg_art_prompt":"หน้าจอ Facebook Ads Manager ที่บัญชีถูกระงับ มีแถบแจ้งเตือนสีแดง","slots":[{"role":"headline","text":"...","emphasis":["คำ"]}]}
   ],
   "kicker":"ป้ายหมวดสั้น ตัวพิมพ์ใหญ่",
   "highlight_words":["คำ1"]
