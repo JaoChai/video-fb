@@ -60,4 +60,7 @@ func TestRenderCompositionScenes_RejectsEmpty(t *testing.T) {
 	if _, err := RenderCompositionScenes(ScenesParams{AspectRatio: "9:16", DurationSeconds: 0}); err == nil {
 		t.Error("expected error for DurationSeconds<=0")
 	}
+	if _, err := RenderCompositionScenes(ScenesParams{AspectRatio: "9:16", DurationSeconds: 10}); err == nil {
+		t.Error("expected error for empty Scenes")
+	}
 }
