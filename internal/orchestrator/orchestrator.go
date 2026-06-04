@@ -229,7 +229,6 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		if overlays == nil {
 			overlays = []byte("[]")
 		}
-		// TODO(phase-4): persist scene.BgHint (no bg_hint column yet; carried in-memory for now).
 		o.scenesRepo.Create(ctx, models.CreateSceneRequest{
 			ClipID:          clipID,
 			SceneNumber:     scene.SceneNumber,
@@ -238,6 +237,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			VoiceText:       scene.VoiceText,
 			DurationSeconds: scene.DurationSeconds,
 			TextOverlays:    overlays,
+			BgHint:          scene.BgHint,
 		})
 	}
 
@@ -424,7 +424,6 @@ func (o *Orchestrator) saveImagePrompts(ctx context.Context, clipID string, prom
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 	gen := make([]agent.GeneratedScene, len(scenes))
 	for i, s := range scenes {
-		// TODO(phase-4): BgHint not restored here (not persisted yet) — retry path loses it.
 		gen[i] = agent.GeneratedScene{
 			SceneNumber:     s.SceneNumber,
 			SceneType:       s.SceneType,
@@ -432,6 +431,7 @@ func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 			VoiceText:       s.VoiceText,
 			DurationSeconds: s.DurationSeconds,
 			TextOverlays:    s.TextOverlays,
+			BgHint:          s.BgHint,
 		}
 	}
 	return gen

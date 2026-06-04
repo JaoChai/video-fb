@@ -19,7 +19,7 @@ func NewScenesRepo(pool *pgxpool.Pool) *ScenesRepo {
 func (r *ScenesRepo) ListByClip(ctx context.Context, clipID string) ([]models.Scene, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, clip_id, scene_number, scene_type, text_content, image_prompt,
-		        image_16_9_url, image_9_16_url, voice_text, duration_seconds, text_overlays
+		        image_16_9_url, image_9_16_url, voice_text, duration_seconds, text_overlays, bg_hint
 		 FROM scenes WHERE clip_id = $1 ORDER BY scene_number`, clipID)
 	if err != nil {
 		return nil, fmt.Errorf("query scenes: %w", err)
@@ -31,7 +31,7 @@ func (r *ScenesRepo) ListByClip(ctx context.Context, clipID string) ([]models.Sc
 		var s models.Scene
 		if err := rows.Scan(&s.ID, &s.ClipID, &s.SceneNumber, &s.SceneType,
 			&s.TextContent, &s.ImagePrompt, &s.Image169URL, &s.Image916URL,
-			&s.VoiceText, &s.DurationSeconds, &s.TextOverlays); err != nil {
+			&s.VoiceText, &s.DurationSeconds, &s.TextOverlays, &s.BgHint); err != nil {
 			return nil, fmt.Errorf("scan scene: %w", err)
 		}
 		scenes = append(scenes, s)
@@ -42,15 +42,15 @@ func (r *ScenesRepo) ListByClip(ctx context.Context, clipID string) ([]models.Sc
 func (r *ScenesRepo) Create(ctx context.Context, req models.CreateSceneRequest) (*models.Scene, error) {
 	var s models.Scene
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO scenes (clip_id, scene_number, scene_type, text_content, image_prompt, voice_text, duration_seconds, text_overlays)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO scenes (clip_id, scene_number, scene_type, text_content, image_prompt, voice_text, duration_seconds, text_overlays, bg_hint)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING id, clip_id, scene_number, scene_type, text_content, image_prompt,
-		           image_16_9_url, image_9_16_url, voice_text, duration_seconds, text_overlays`,
+		           image_16_9_url, image_9_16_url, voice_text, duration_seconds, text_overlays, bg_hint`,
 		req.ClipID, req.SceneNumber, req.SceneType, req.TextContent,
-		req.ImagePrompt, req.VoiceText, req.DurationSeconds, req.TextOverlays,
+		req.ImagePrompt, req.VoiceText, req.DurationSeconds, req.TextOverlays, req.BgHint,
 	).Scan(&s.ID, &s.ClipID, &s.SceneNumber, &s.SceneType,
 		&s.TextContent, &s.ImagePrompt, &s.Image169URL, &s.Image916URL,
-		&s.VoiceText, &s.DurationSeconds, &s.TextOverlays)
+		&s.VoiceText, &s.DurationSeconds, &s.TextOverlays, &s.BgHint)
 	if err != nil {
 		return nil, fmt.Errorf("create scene: %w", err)
 	}

@@ -36,6 +36,7 @@ type Scene struct {
 	VoiceText       string          `json:"voice_text"`
 	DurationSeconds float64         `json:"duration_seconds"`
 	TextOverlays    json.RawMessage `json:"text_overlays"`
+	BgHint          string          `json:"bg_hint"`
 }
 
 type ClipMetadata struct {
