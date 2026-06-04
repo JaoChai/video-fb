@@ -421,12 +421,10 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		return fmt.Errorf("load clip metadata: %w", err)
 	}
 
-	// Transcription is best-effort: captions are nice but not required.
-	segments, err := p.hf.transcriber.Transcribe(ctx, voicePath)
-	if err != nil {
-		log.Printf("assembleMultiScene: transcribe failed for %s (captions skipped): %v", clipID, err)
-		segments = nil
-	}
+	// Captions come straight from the GROUND-TRUTH scene VoiceText (the exact text
+	// we sent to TTS), timed to each scene's audio window — NOT from re-transcribing
+	// the audio with ASR, which mangled Thai vowels (สระ) and words. No Whisper round-trip.
+	segments := captionSegmentsFromScenes(scenes, bounds)
 
 	// Build the ScenesJSON that feeds the agent prompt. Include the fields the
 	// composition_scenes agent needs: scene number, type, headline, voice text,
