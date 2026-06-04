@@ -51,6 +51,13 @@ func (h *HyperframesRenderer) Lint(ctx context.Context, dir string) error {
 	return h.run(ctx, dir, "lint")
 }
 
+// Inspect runs Hyperframes' collision/overflow auditor (canvas_overflow,
+// container_overflow, clipped_text) in headless Chrome. Use it as a gate after
+// Lint so a layout with overlapping or clipped elements is caught before render.
+func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
+	return h.run(ctx, dir, "inspect")
+}
+
 // Render produces an MP4 at outputPath from the composition in dir.
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) error {
 	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "high", "--fps", "30")
