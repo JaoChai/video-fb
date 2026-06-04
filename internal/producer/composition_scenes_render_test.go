@@ -93,14 +93,20 @@ func TestManualRenderMultiScene(t *testing.T) {
 		}
 	}
 
-	// fonts
-	fontSrc := "/Users/jaochai/Code/video-fb/hyperframes-poc/poc-video/assets/fonts"
+	// fonts — repo-relative default (tests run from internal/producer/), overridable.
+	fontSrc := os.Getenv("HF_FONT_SRC")
+	if fontSrc == "" {
+		fontSrc = "../../hyperframes-poc/poc-video/assets/fonts"
+	}
 	if err := copyDir(fontSrc, fontsDst); err != nil {
 		t.Fatalf("copy fonts: %v", err)
 	}
 	// voice (reuse poc voice; CSS bg mode means no image needed)
-	if err := copyFile("/Users/jaochai/Code/video-fb/hyperframes-poc/poc-video/assets/voice.wav",
-		filepath.Join(assets, "voice.wav")); err != nil {
+	voiceSrc := os.Getenv("HF_VOICE_SRC")
+	if voiceSrc == "" {
+		voiceSrc = "../../hyperframes-poc/poc-video/assets/voice.wav"
+	}
+	if err := copyFile(voiceSrc, filepath.Join(assets, "voice.wav")); err != nil {
 		t.Fatalf("copy voice: %v", err)
 	}
 

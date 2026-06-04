@@ -108,6 +108,14 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshal segments: %w", err)
 	}
 
+	// Sanitize each scene's LLM-chosen accent color before it reaches the
+	// template's inline CSS (copy first — don't mutate the caller's slice).
+	sanitizedScenes := make([]SceneSpec, len(p.Scenes))
+	copy(sanitizedScenes, p.Scenes)
+	for i := range sanitizedScenes {
+		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, "#ff6b2b")
+	}
+
 	// lightweight timing slice for the GSAP driver
 	type sceneTiming struct {
 		SceneNumber int     `json:"scene"`
@@ -140,7 +148,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Kicker:          p.Kicker,
 		VoiceSrc:        p.VoiceSrc,
 		DurationSeconds: p.DurationSeconds,
-		Scenes:          p.Scenes,
+		Scenes:          sanitizedScenes,
 		SegmentsJSON:    template.JS(segsJSON),
 		ScenesJSON:      template.JS(scenesJSON),
 	}
