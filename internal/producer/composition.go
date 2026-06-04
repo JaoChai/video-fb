@@ -113,10 +113,18 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		SceneNumber int     `json:"scene"`
 		StartSec    float64 `json:"start"`
 		EndSec      float64 `json:"end"`
+		Speed       string  `json:"speed"`
+		Variant     string  `json:"variant"`
 	}
 	timings := make([]sceneTiming, len(p.Scenes))
 	for i, s := range p.Scenes {
-		timings[i] = sceneTiming{SceneNumber: s.SceneNumber, StartSec: s.StartSec, EndSec: s.EndSec}
+		timings[i] = sceneTiming{
+			SceneNumber: s.SceneNumber,
+			StartSec:    s.StartSec,
+			EndSec:      s.EndSec,
+			Speed:       animationSpeed(s.AnimationSpeed),
+			Variant:     s.LayoutVariant,
+		}
 	}
 	scenesJSON, err := json.Marshal(timings)
 	if err != nil {
@@ -138,7 +146,17 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	}
 
 	const name = "layout_multi_scene.html.tmpl"
-	tmpl, err := template.New(name).ParseFS(templateFS, "templates/"+name)
+	funcs := template.FuncMap{
+		"durSec": func(start, end float64) float64 {
+			d := end - start
+			if d < 0.1 {
+				d = 0.1
+			}
+			return d
+		},
+		"addInt": func(a, b int) int { return a + b },
+	}
+	tmpl, err := template.New(name).Funcs(funcs).ParseFS(templateFS, "templates/"+name)
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", name, err)
 	}

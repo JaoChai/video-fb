@@ -1,21 +1,615 @@
-{{define "layout_multi_scene.html.tmpl"}}<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>{{.BrandName}}</title>
-</head>
-<body>
-<div id="root" data-width="{{.Width}}" data-height="{{.Height}}" data-duration="{{.DurationSeconds}}">
-  {{range .Scenes}}
-  <div class="scene" data-scene="{{.SceneNumber}}" data-layout="{{.LayoutVariant}}" data-start="{{.StartSec}}" data-end="{{.EndSec}}">
-    {{range .Slots}}
-    <div class="slot" data-role="{{.Role}}">{{.HTML}}</div>
-    {{end}}
-  </div>
-  {{end}}
-  <audio src="{{.VoiceSrc}}"></audio>
-</div>
-<script>const SEGMENTS = {{.SegmentsJSON}};</script>
-<script>const SCENES = {{.ScenesJSON}};</script>
-</body>
+{{define "layout_multi_scene.html.tmpl"}}<!doctype html>
+<html lang="th" data-resolution="{{if eq .Width 1080}}portrait{{else}}landscape{{end}}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width={{.Width}}, height={{.Height}}" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* ── Local Thai font (no Google Fonts: external requests fail in sandboxed render) ── */
+      @font-face {
+        font-family: "Sarabun";
+        src: url("assets/fonts/Sarabun-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Sarabun";
+        src: url("assets/fonts/Sarabun-SemiBold.ttf") format("truetype");
+        font-weight: 600;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Sarabun";
+        src: url("assets/fonts/Sarabun-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-display: block;
+      }
+      @font-face {
+        font-family: "Sarabun";
+        src: url("assets/fonts/Sarabun-ExtraBold.ttf") format("truetype");
+        font-weight: 800;
+        font-display: block;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: {{.Width}}px;
+        height: {{.Height}}px;
+        overflow: hidden;
+        background: #0a1428;
+      }
+
+      /* ─────────────────────────  THEME  ───────────────────────── */
+      #root {
+        --navy-deep: #0a1428;
+        --navy: #0f1d35;
+        --navy-hi: #16284a;
+        --orange-soft: #ff8a52;
+        --orange-bright: #ff9457;
+        --ink: #f4f7fb;
+        --muted: #aebdd4;
+        --green: #2fd17a;
+        --red: #ff5a52;
+
+        /* Aspect-aware spacing scale (portrait packs tighter horizontal margins) */
+        --pad-x: {{if eq .Width 1080}}90px{{else}}160px{{end}};
+        --pad-y: {{if eq .Width 1080}}160px{{else}}120px{{end}};
+        --gap: {{if eq .Width 1080}}40px{{else}}32px{{end}};
+        --cap-bottom: {{if eq .Width 1080}}640px{{else}}96px{{end}};
+        --cap-width: {{if eq .Width 1080}}900px{{else}}1400px{{end}};
+
+        width: {{.Width}}px;
+        height: {{.Height}}px;
+        position: relative;
+        overflow: hidden;
+        font-family: "Sarabun", sans-serif;
+        color: var(--ink);
+        background: var(--navy-deep);
+      }
+
+      /* ── Scene layer (decorative full-frame background) ── */
+      .scene {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        overflow: hidden;
+      }
+      .scene-bg-base {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          120% 80% at 50% 0%,
+          var(--navy-hi) 0%,
+          var(--navy) 45%,
+          var(--navy-deep) 100%
+        );
+      }
+      .scene-glow {
+        position: absolute;
+        inset: -10%;
+      }
+      .scene-dots {
+        position: absolute;
+        inset: -120px;
+        background-image: radial-gradient(
+          rgba(255, 255, 255, 0.07) 2px,
+          transparent 2px
+        );
+        background-size: 46px 46px;
+        will-change: transform;
+      }
+      .scene-vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          120% 100% at 50% 50%,
+          rgba(10, 20, 40, 0) 50%,
+          rgba(8, 16, 32, 0.55) 100%
+        );
+      }
+      .scene-img-wrap {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      .scene-img-wrap img {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: {{.Width}}px;
+        height: {{.Height}}px;
+        object-fit: cover;
+        transform: translate(-50%, -50%);
+        transform-origin: center center;
+        will-change: transform;
+      }
+      .scene-scrim {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(10, 20, 40, 0.72) 0%,
+          rgba(10, 20, 40, 0.34) 30%,
+          rgba(10, 20, 40, 0.34) 60%,
+          rgba(10, 20, 40, 0.8) 100%
+        );
+      }
+
+      /* ── Scene content: FLOW container (flex column, padding, gap — never absolute) ── */
+      .scene-content {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        gap: var(--gap);
+        padding: var(--pad-y) var(--pad-x);
+        /* leave room for the caption band at the bottom */
+        padding-bottom: calc(var(--cap-bottom) + 60px);
+        box-sizing: border-box;
+      }
+
+      /* slot primitives */
+      .slot-headline {
+        font-weight: 800;
+        line-height: 1.12;
+        letter-spacing: -0.01em;
+        color: #fff;
+        text-shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
+        max-width: 100%;
+      }
+      .slot-headline .acc { color: var(--scene-accent); }
+      .slot-body {
+        font-weight: 600;
+        line-height: 1.32;
+        color: var(--muted);
+        max-width: 100%;
+      }
+      .slot-badge {
+        align-self: center;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        color: var(--scene-accent);
+        border: 2px solid var(--scene-accent);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 12px 26px;
+        border-radius: 999px;
+      }
+
+      /* step rows */
+      .slot-step {
+        display: flex;
+        align-items: center;
+        gap: {{if eq .Width 1080}}28px{{else}}32px{{end}};
+        width: 100%;
+        max-width: {{if eq .Width 1080}}880px{{else}}1320px{{end}};
+        text-align: left;
+        background: rgba(15, 29, 53, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        padding: {{if eq .Width 1080}}28px 34px{{else}}26px 36px{{end}};
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.4);
+      }
+      .step-num {
+        flex: 0 0 auto;
+        width: {{if eq .Width 1080}}88px{{else}}80px{{end}};
+        height: {{if eq .Width 1080}}88px{{else}}80px{{end}};
+        border-radius: 22px;
+        background: linear-gradient(135deg, var(--scene-accent), var(--orange-soft));
+        color: #fff;
+        font-weight: 800;
+        font-size: {{if eq .Width 1080}}46px{{else}}42px{{end}};
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+      }
+      .step-text {
+        font-weight: 700;
+        line-height: 1.26;
+        color: #fff;
+        flex: 1 1 auto;
+      }
+
+      /* stat reveal */
+      .slot-stat {
+        font-weight: 800;
+        line-height: 1.0;
+        letter-spacing: -0.02em;
+        color: var(--scene-accent);
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      /* quote / cta */
+      .slot-quote {
+        font-weight: 800;
+        line-height: 1.2;
+        color: #fff;
+        text-shadow: 0 6px 30px rgba(0, 0, 0, 0.55);
+        max-width: 100%;
+      }
+      .slot-cta {
+        align-self: center;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        color: #fff;
+        background: linear-gradient(135deg, var(--scene-accent), var(--orange-soft));
+        padding: {{if eq .Width 1080}}22px 48px{{else}}20px 52px{{end}};
+        border-radius: 999px;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+
+      /* ── Progress bar ── */
+      .progress-track {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: {{.Width}}px;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        z-index: 30;
+      }
+      .progress-fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 0px;
+        height: 8px;
+        background: linear-gradient(90deg, var(--orange-bright), var(--orange-soft));
+        box-shadow: 0 0 18px rgba(255, 107, 43, 0.6);
+      }
+
+      /* ── Brand badge intro ── */
+      .badge-row {
+        position: absolute;
+        top: {{if eq .Width 1080}}96px{{else}}72px{{end}};
+        left: var(--pad-x);
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        z-index: 25;
+        opacity: 0;
+      }
+      .badge-brand {
+        font-weight: 800;
+        font-size: 30px;
+        letter-spacing: 0.14em;
+        color: #fff;
+        background: var(--orange-bright);
+        padding: 14px 26px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(255, 107, 43, 0.35);
+      }
+      .badge-cat {
+        font-weight: 700;
+        font-size: 24px;
+        letter-spacing: 0.22em;
+        color: var(--orange-bright);
+        border: 2px solid rgba(255, 107, 43, 0.55);
+        padding: 12px 22px;
+        border-radius: 12px;
+        background: rgba(255, 107, 43, 0.08);
+      }
+
+      /* ── Karaoke caption band (reserved zone, full-width centered) ── */
+      .cap-stage {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: var(--cap-bottom);
+        display: flex;
+        justify-content: center;
+        overflow: visible;
+        pointer-events: none;
+        z-index: 28;
+      }
+      .cap-phrase {
+        position: absolute;
+        bottom: 0;
+        width: var(--cap-width);
+        text-align: center;
+        font-family: "Sarabun", sans-serif;
+        font-weight: 700;
+        line-height: 1.34;
+        color: #ffffff;
+        background: rgba(10, 20, 40, 0.82);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        padding: 26px 40px;
+        opacity: 0;
+        overflow: visible;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+      }
+      .cap-phrase.active {
+        border-color: var(--orange-bright);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="{{.DurationSeconds}}"
+      data-width="{{.Width}}"
+      data-height="{{.Height}}"
+    >
+      <!-- ── Scenes (each: decorative bg layer + flow content) ── -->
+      {{range $i, $s := .Scenes}}
+      <div
+        id="scene-{{$s.SceneNumber}}"
+        class="scene clip"
+        style="--scene-accent: {{$s.AccentColor}};"
+        data-start="{{$s.StartSec}}"
+        data-duration="{{durSec $s.StartSec $s.EndSec}}"
+        data-track-index="{{addInt 10 $i}}"
+        data-layout-allow-overflow
+      >
+        {{if eq $s.BackgroundMode "image"}}
+        <div class="scene-img-wrap">
+          <img id="scene-img-{{$s.SceneNumber}}" src="{{$s.BackgroundImage}}" alt="" data-layout-allow-overflow />
+        </div>
+        <div class="scene-scrim"></div>
+        {{else}}
+        <div class="scene-bg-base"></div>
+        <div class="scene-glow" style="background:
+          radial-gradient(42% 30% at 24% 18%, {{$s.AccentColor}}28 0%, transparent 60%),
+          radial-gradient(46% 34% at 80% 78%, rgba(47,132,209,0.16) 0%, transparent 62%);"></div>
+        <div class="scene-dots" id="scene-dots-{{$s.SceneNumber}}" data-layout-allow-overflow></div>
+        <div class="scene-vignette"></div>
+        {{end}}
+
+        <div class="scene-content" data-layout="{{$s.LayoutVariant}}">
+          {{range $s.Slots}}
+          {{if eq .Role "headline"}}
+          <div class="slot-headline">{{.HTML}}</div>
+          {{else if eq .Role "body"}}
+          <div class="slot-body">{{.HTML}}</div>
+          {{else if eq .Role "badge"}}
+          <div class="slot-badge">{{.HTML}}</div>
+          {{else if eq .Role "step"}}
+          <div class="slot-step">
+            <div class="step-num">{{.StepNum}}</div>
+            <div class="step-text">{{.HTML}}</div>
+          </div>
+          {{else if eq .Role "stat"}}
+          <div class="slot-stat">{{.HTML}}</div>
+          {{else if eq .Role "quote"}}
+          <div class="slot-quote">{{.HTML}}</div>
+          {{else if eq .Role "cta"}}
+          <div class="slot-cta">{{.HTML}}</div>
+          {{else}}
+          <div class="slot-body">{{.HTML}}</div>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+      {{end}}
+
+      <!-- ── Progress bar — track 7 ── -->
+      <div
+        id="progress"
+        class="clip progress-track"
+        data-start="0"
+        data-duration="{{.DurationSeconds}}"
+        data-track-index="7"
+      >
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+
+      <!-- ── Brand badge intro — track 2 ── -->
+      <div
+        id="badges"
+        class="clip badge-row"
+        data-start="0.3"
+        data-duration="{{.DurationSeconds}}"
+        data-track-index="2"
+      >
+        <div class="badge-brand">{{.BrandName}}</div>
+        <div class="badge-cat">{{.CategoryLabel}}</div>
+      </div>
+
+      <!-- ── Karaoke caption stage (phrases injected by script) — track 9 ── -->
+      <div
+        id="capStage"
+        class="clip cap-stage"
+        data-start="0"
+        data-duration="{{.DurationSeconds}}"
+        data-track-index="9"
+        data-layout-allow-overflow
+      ></div>
+
+      <!-- ── Voice-over audio — track 5 (no class="clip") ── -->
+      <audio
+        id="vo"
+        data-start="0"
+        data-duration="{{.DurationSeconds}}"
+        data-track-index="5"
+        src="{{.VoiceSrc}}"
+        data-volume="1"
+      ></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ── Data injected by Go (template.JS — raw JSON, not escaped) ──
+      const SCENES = {{.ScenesJSON}};
+      const SEGMENTS = {{.SegmentsJSON}};
+      const TOTAL = {{.DurationSeconds}};
+      const ROOT = document.getElementById("root");
+      const W = ROOT ? ROOT.offsetWidth : {{.Width}};
+      const PORTRAIT = W <= 1200;
+
+      // fit-text geometry (caption band)
+      const CAP_MAXW = PORTRAIT ? 820 : 1320; // band width minus padding
+      const CAP_BASE = PORTRAIT ? 46 : 52;
+      const CAP_MIN = 30;
+
+      // headline / content fit geometry (content area minus horizontal padding)
+      const CONTENT_MAXW = PORTRAIT ? 900 : 1600;
+
+      function speedEnter(speed) {
+        return speed === "fast" ? 0.4 : speed === "slow" ? 0.8 : 0.6;
+      }
+
+      const hasFit =
+        typeof window.__hyperframes !== "undefined" &&
+        typeof window.__hyperframes.fitTextFontSize === "function";
+
+      // Fit an in-flow text element to a target width using fitTextFontSize,
+      // with a string-length fallback when the helper is unavailable.
+      function fitEl(el, opts) {
+        const text = el.textContent || "";
+        if (hasFit) {
+          const r = window.__hyperframes.fitTextFontSize(text, {
+            fontFamily: "Sarabun",
+            fontWeight: opts.fontWeight || 800,
+            maxWidth: opts.maxWidth,
+            baseFontSize: opts.base,
+            minFontSize: opts.min,
+            step: 2,
+          });
+          el.style.fontSize = r.fontSize + "px";
+        } else {
+          const len = text.length;
+          const ratio = len > 60 ? 0.5 : len > 40 ? 0.66 : len > 24 ? 0.82 : 1.0;
+          el.style.fontSize = Math.max(opts.min, Math.round(opts.base * ratio)) + "px";
+        }
+      }
+
+      /* ──────────  PER-SCENE LAYOUT SIZING (fit text in flow)  ────────── */
+      // base font sizes per role, scaled per layout variant. Done before animation
+      // so the hero-frame layout is correct and inspect sees no overflow.
+      SCENES.forEach(function (sc) {
+        const sceneEl = document.getElementById("scene-" + sc.scene);
+        if (!sceneEl) return;
+        const variant = (sceneEl.querySelector(".scene-content") || {}).dataset
+          ? sceneEl.querySelector(".scene-content").dataset.layout
+          : "";
+
+        sceneEl.querySelectorAll(".slot-headline").forEach(function (el) {
+          const big = variant === "hook_big";
+          fitEl(el, {
+            maxWidth: CONTENT_MAXW,
+            base: big ? (PORTRAIT ? 110 : 132) : PORTRAIT ? 84 : 100,
+            min: 48,
+            fontWeight: 800,
+          });
+        });
+        sceneEl.querySelectorAll(".slot-quote").forEach(function (el) {
+          fitEl(el, { maxWidth: CONTENT_MAXW, base: PORTRAIT ? 76 : 92, min: 44, fontWeight: 800 });
+        });
+        sceneEl.querySelectorAll(".slot-stat").forEach(function (el) {
+          fitEl(el, { maxWidth: CONTENT_MAXW, base: PORTRAIT ? 200 : 240, min: 90, fontWeight: 800 });
+        });
+        sceneEl.querySelectorAll(".slot-body").forEach(function (el) {
+          fitEl(el, { maxWidth: CONTENT_MAXW, base: PORTRAIT ? 40 : 44, min: 24, fontWeight: 600 });
+        });
+        sceneEl.querySelectorAll(".slot-step .step-text").forEach(function (el) {
+          const w = PORTRAIT ? 660 : 1100; // row width minus num + padding
+          fitEl(el, { maxWidth: w, base: PORTRAIT ? 42 : 46, min: 24, fontWeight: 700 });
+        });
+        sceneEl.querySelectorAll(".slot-badge, .slot-cta").forEach(function (el) {
+          el.style.fontSize = (PORTRAIT ? 28 : 30) + "px";
+        });
+      });
+
+      /* ──────────  CONTINUOUS OVERLAYS  ────────── */
+      // Progress bar across full clip
+      tl.fromTo("#progressFill", { width: 0 }, { width: W, duration: TOTAL, ease: "none" }, 0);
+      // Brand badge intro: in early, fade out before scene 1 likely changes
+      tl.fromTo("#badges", { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 0.7, ease: "power3.out", overwrite: "auto" }, 0.3);
+      tl.to("#badges", { opacity: 0, y: -24, duration: 0.6, ease: "power2.in", overwrite: "auto" }, Math.min(6, TOTAL * 0.18));
+
+      /* ──────────  SCENE CROSS-FADES + CONTENT ENTER  ────────── */
+      const OVERLAP = 0.4; // bg cross-fade overlap with previous scene
+      SCENES.forEach(function (sc, idx) {
+        const sceneEl = document.getElementById("scene-" + sc.scene);
+        if (!sceneEl) return;
+        const contentEl = sceneEl.querySelector(".scene-content");
+        const variant = sc.variant || (contentEl ? contentEl.dataset.layout : "");
+        const ENTER = speedEnter(sc.speed || "normal");
+
+        const inAt = idx === 0 ? 0.0 : Math.max(0, sc.start - OVERLAP);
+        const outAt = sc.end;
+
+        // Decorative bg cross-fade in
+        tl.fromTo(sceneEl, { opacity: 0 }, { opacity: 1, duration: idx === 0 ? 0.5 : 0.6, ease: "power2.out" }, inAt);
+
+        // Ken Burns / drift on the bg
+        const img = sceneEl.querySelector(".scene-img-wrap img");
+        if (img) {
+          tl.fromTo(img, { scale: 1.0 }, { scale: 1.12, duration: Math.max(0.1, outAt - inAt), ease: "none" }, inAt);
+        } else {
+          const dots = sceneEl.querySelector(".scene-dots");
+          if (dots) tl.fromTo(dots, { x: 0, y: 0 }, { x: 46, y: 46, duration: Math.max(0.1, outAt - inAt), ease: "none" }, inAt);
+        }
+
+        // Content slide/fade in (slightly after bg) — vary ease per slot
+        if (contentEl) {
+          const slots = contentEl.children;
+          const eases = ["power3.out", "back.out(1.3)", "power2.out", "expo.out"];
+          for (let j = 0; j < slots.length; j++) {
+            const el = slots[j];
+            const at = sc.start + 0.12 + j * 0.12;
+            const ease = eases[j % eases.length];
+            if (variant === "stat_reveal" && el.classList.contains("slot-stat")) {
+              tl.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: ENTER + 0.2, ease: "back.out(1.5)" }, at);
+            } else {
+              tl.fromTo(el, { opacity: 0, y: 50, scale: 0.98 }, { opacity: 1, y: 0, scale: 1, duration: ENTER, ease: ease }, at);
+            }
+          }
+        }
+
+        // Hard kills at scene end so non-linear seeking never leaves stale content
+        tl.set(sceneEl, { opacity: 0 }, outAt);
+        if (contentEl) {
+          const slots = contentEl.children;
+          for (let j = 0; j < slots.length; j++) {
+            tl.set(slots[j], { opacity: 0 }, outAt);
+          }
+        }
+      });
+
+      /* ──────────  KARAOKE CAPTIONS (continuous)  ────────── */
+      const capStage = document.getElementById("capStage");
+      SEGMENTS.forEach(function (seg, i) {
+        const el = document.createElement("div");
+        el.className = "cap-phrase";
+        el.textContent = seg.text;
+        capStage.appendChild(el);
+
+        fitEl(el, { maxWidth: CAP_MAXW, base: CAP_BASE, min: CAP_MIN, fontWeight: 700 });
+
+        const inAt = seg.start;
+        const outAt = i < SEGMENTS.length - 1 ? SEGMENTS[i + 1].start : seg.end;
+
+        tl.fromTo(el, { opacity: 0, scale: 0.92, y: 24 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.32, ease: "power2.out" }, inAt);
+        tl.call(function () { el.classList.add("active"); }, null, inAt);
+        tl.to(el, { scale: 1.05, duration: 0.22, ease: "power1.out" }, inAt + 0.04);
+        tl.to(el, { scale: 1.0, duration: 0.5, ease: "power2.out" }, inAt + 0.3);
+        tl.to(el, { opacity: 0, y: -18, duration: 0.26, ease: "power2.in" }, Math.max(inAt + 0.4, outAt - 0.22));
+        tl.call(function () { el.classList.remove("active"); }, null, outAt);
+        tl.set(el, { opacity: 0 }, outAt);
+      });
+
+      // Lock the composition to exactly the clip duration
+      tl.set({}, {}, TOTAL);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
 </html>{{end}}
