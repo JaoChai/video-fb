@@ -62,7 +62,14 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
 
 // Render produces an MP4 at outputPath from the composition in dir.
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) error {
-	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "high", "--fps", "30")
+	return h.RenderOpts(ctx, dir, outputPath, "high", "30")
+}
+
+// RenderOpts renders with an explicit quality/fps so heavier layouts (e.g. the
+// 16:9 multi-scene render, which was much slower than 9:16 and hit the timeout)
+// can trade some quality for render time.
+func (h *HyperframesRenderer) RenderOpts(ctx context.Context, dir, outputPath, quality, fps string) error {
+	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", quality, "--fps", fps)
 }
 
 func lastBytes(b []byte, n int) string {
