@@ -54,7 +54,7 @@ type TranscriptSegment struct {
 // SceneSpec is one fully-resolved scene the multi-scene template renders.
 type SceneSpec struct {
 	SceneNumber     int
-	LayoutVariant   string  // hook_big|list_steps|stat_reveal|quote_cta
+	LayoutVariant   string  // hook_big|hook_punch|list_steps|stat_reveal|compare_two|quote_cta
 	AccentColor     string  // sanitized hex
 	AnimationSpeed  string  // fast|normal|slow
 	StartSec        float64 // scene window on the continuous timeline
@@ -66,7 +66,7 @@ type SceneSpec struct {
 
 // SlotSpec is one semantic content slot rendered in scene flow layout.
 type SlotSpec struct {
-	Role    string        // headline|body|badge|step
+	Role    string        // headline|body|badge|step|stat|callout
 	HTML    template.HTML // pre-escaped (emphasis applied)
 	StepNum int
 }

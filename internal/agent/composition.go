@@ -100,18 +100,22 @@ const (
 	LayoutListSteps  = "list_steps"
 	LayoutStatReveal = "stat_reveal"
 	LayoutQuoteCTA   = "quote_cta"
+	LayoutHookPunch  = "hook_punch"
+	LayoutCompareTwo = "compare_two"
 )
 
 const defaultLayoutVariant = LayoutListSteps
 
 var validLayoutVariants = map[string]bool{
 	LayoutHookBig: true, LayoutListSteps: true, LayoutStatReveal: true, LayoutQuoteCTA: true,
+	LayoutHookPunch: true, LayoutCompareTwo: true,
 }
 
 const defaultSlotRole = "body"
 
 var validSlotRoles = map[string]bool{
 	"headline": true, "body": true, "badge": true, "step": true,
+	"stat": true, "callout": true,
 }
 
 // Normalize keeps LLM scene designs safe: defaults unknown layout_variant /
