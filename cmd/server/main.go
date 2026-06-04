@@ -18,6 +18,7 @@ import (
 	"github.com/jaochai/video-fb/internal/config"
 	"github.com/jaochai/video-fb/internal/database"
 	"github.com/jaochai/video-fb/internal/handler"
+	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/producer"
 	"github.com/jaochai/video-fb/internal/progress"
@@ -85,11 +86,29 @@ func main() {
 	orClient := producer.NewOpenRouterClient(pool)
 	prod := producer.NewProducer(pool, kie, orClient, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
 	if cfg.HyperframesEnabled {
+		// Load the composition_scenes agent config for the multi-scene path.
+		// A missing row is not fatal — it just disables the multi-scene path.
+		var scenesAgentCfg *models.AgentConfig
+		if cfg.HyperframesMultiScene {
+			var cfg2 models.AgentConfig
+			err := pool.QueryRow(ctx,
+				`SELECT system_prompt, prompt_template, model, temperature, skills, insights
+				 FROM agent_configs WHERE agent_name = 'composition_scenes'`).
+				Scan(&cfg2.SystemPrompt, &cfg2.PromptTemplate, &cfg2.Model, &cfg2.Temperature, &cfg2.Skills, &cfg2.Insights)
+			if err != nil {
+				log.Printf("WARNING: composition_scenes agent config not found, multi-scene path disabled: %v", err)
+			} else {
+				scenesAgentCfg = &cfg2
+				log.Println("Hyperframes multi-scene path ENABLED (composition_scenes agent loaded)")
+			}
+		}
 		prod.EnableHyperframes(
 			agent.NewCompositionAgent(llm),
 			producer.NewCompositionBuilder(cfg.HyperframesFontsDir),
 			producer.NewHyperframesRenderer(),
 			producer.NewOpenAITranscriber(pool),
+			scenesAgentCfg,
+			cfg.HyperframesMultiScene,
 		)
 		log.Println("Hyperframes 9:16 render path ENABLED")
 	}

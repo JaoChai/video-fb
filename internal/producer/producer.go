@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -35,12 +36,14 @@ type Producer struct {
 	hf           *hyperframesDeps // nil = disabled, use FFmpeg
 }
 
-// hyperframesDeps bundles everything the Hyperframes 9:16 render path needs.
+// hyperframesDeps bundles everything the Hyperframes render paths need.
 type hyperframesDeps struct {
-	compAgent   *agent.CompositionAgent
-	builder     *CompositionBuilder
-	renderer    *HyperframesRenderer
-	transcriber Transcriber
+	compAgent       *agent.CompositionAgent
+	builder         *CompositionBuilder
+	renderer        *HyperframesRenderer
+	transcriber     Transcriber
+	scenesAgentCfg  *models.AgentConfig // nil = multi-scene path disabled
+	multiScene      bool                // true when HYPERFRAMES_MULTI_SCENE=true
 }
 
 func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
@@ -48,11 +51,25 @@ func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClien
 	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
-// EnableHyperframes turns on the Hyperframes 9:16 render path. When set, the
-// vertical video is generated with animation/captions; if it fails at runtime,
-// Produce falls back to the FFmpeg static-image render so a clip is never lost.
-func (p *Producer) EnableHyperframes(compAgent *agent.CompositionAgent, builder *CompositionBuilder, renderer *HyperframesRenderer, tr Transcriber) {
-	p.hf = &hyperframesDeps{compAgent: compAgent, builder: builder, renderer: renderer, transcriber: tr}
+// EnableHyperframes turns on the Hyperframes render path. scenesAgentCfg and
+// multiScene together gate the multi-scene path; if either is nil/false the
+// existing single-scene path is used instead.
+func (p *Producer) EnableHyperframes(
+	compAgent *agent.CompositionAgent,
+	builder *CompositionBuilder,
+	renderer *HyperframesRenderer,
+	tr Transcriber,
+	scenesAgentCfg *models.AgentConfig,
+	multiScene bool,
+) {
+	p.hf = &hyperframesDeps{
+		compAgent:      compAgent,
+		builder:        builder,
+		renderer:       renderer,
+		transcriber:    tr,
+		scenesAgentCfg: scenesAgentCfg,
+		multiScene:     multiScene,
+	}
 }
 
 func (p *Producer) getVoice(ctx context.Context) string {
@@ -128,6 +145,50 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 
 	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
+	video916 := filepath.Join(clipDir, "video-9x16.mp4")
+
+	// Multi-scene path: generate per-scene TTS, then render both aspect ratios
+	// with the composition_scenes agent. On any error, fall through to the
+	// existing single-scene assembly below.
+	if p.hf != nil && p.hf.multiScene && p.hf.scenesAgentCfg != nil &&
+		(!fileExists(video169) || !fileExists(video916)) {
+		log.Printf("Multi-scene assembly for %s (Hyperframes)", clipID)
+		voice := p.getVoice(ctx)
+		msVoicePath, bounds, msErr := p.synthScenesVoice(ctx, scenes, voice, clipDir)
+		if msErr != nil {
+			log.Printf("Multi-scene TTS failed for %s, falling back to single-scene: %v", clipID, msErr)
+		} else {
+			// Replace the voicePath for uploads later if multi-scene took over.
+			voicePath = msVoicePath
+
+			if !fileExists(video916) {
+				if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "9:16", video916); err != nil {
+					log.Printf("Multi-scene 9:16 failed for %s, falling back: %v", clipID, err)
+					if err2 := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err2 != nil {
+						return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err2)
+					}
+				}
+			} else {
+				log.Printf("Skipping 9:16 multi-scene for %s (file exists)", clipID)
+			}
+
+			if !fileExists(video169) {
+				if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "16:9", video169); err != nil {
+					log.Printf("Multi-scene 16:9 failed for %s, falling back: %v", clipID, err)
+					if err2 := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err2 != nil {
+						return nil, fmt.Errorf("assemble 16:9 (fallback): %w", err2)
+					}
+				}
+			} else {
+				log.Printf("Skipping 16:9 multi-scene for %s (file exists)", clipID)
+			}
+
+			// Both videos handled — skip the single-scene block below.
+			goto assemblyDone
+		}
+	}
+
+	// Single-scene path (original behavior, always reachable as fallback).
 	if !fileExists(video169) {
 		log.Printf("Assembling 16:9 video for %s", clipID)
 		if err := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err != nil {
@@ -137,7 +198,6 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		log.Printf("Skipping 16:9 assembly for %s (file exists)", clipID)
 	}
 
-	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 	if !fileExists(video916) {
 		if p.hf != nil {
 			log.Printf("Assembling 9:16 video for %s via Hyperframes", clipID)
@@ -156,6 +216,8 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	} else {
 		log.Printf("Skipping 9:16 assembly for %s (file exists)", clipID)
 	}
+
+assemblyDone:
 
 	thumbPath := img169
 	p.tracker.CompleteStep("assembly")
@@ -331,6 +393,174 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 	style := fmt.Sprintf("%s|%s|%s", params.LayoutVariant, decision.AccentColor, decision.AnimationSpeed)
 	if _, err := p.pool.Exec(ctx, `UPDATE clips SET composition_style = $2 WHERE id = $1`, clipID, style); err != nil {
 		log.Printf("Hyperframes: failed to record composition_style for %s: %v", clipID, err)
+	}
+	return nil
+}
+
+// aspectTag returns the file-safe ratio tag for a given aspect-ratio string.
+func aspectTag(aspect string) string {
+	if aspect == "16:9" {
+		return "16x9"
+	}
+	return "9x16"
+}
+
+// assembleMultiScene renders a multi-scene Hyperframes video for one aspect ratio.
+// It is modelled on assembleHyperframes916 but uses DecideScenes + BuildScenes
+// (the multi-scene pipeline) so each script scene gets its own layout variant.
+// On any error the caller should fall back to the single-scene path.
+func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir string, scenes []agent.GeneratedScene, bounds []sceneBound, voicePath, aspect, outPath string) error {
+	if len(scenes) == 0 {
+		return fmt.Errorf("no scenes")
+	}
+	if len(bounds) == 0 {
+		return fmt.Errorf("no scene bounds")
+	}
+
+	var category, questioner string
+	if err := p.pool.QueryRow(ctx,
+		`SELECT category, questioner_name FROM clips WHERE id = $1`, clipID).
+		Scan(&category, &questioner); err != nil {
+		return fmt.Errorf("load clip metadata: %w", err)
+	}
+
+	// Transcription is best-effort: captions are nice but not required.
+	segments, err := p.hf.transcriber.Transcribe(ctx, voicePath)
+	if err != nil {
+		log.Printf("assembleMultiScene: transcribe failed for %s (captions skipped): %v", clipID, err)
+		segments = nil
+	}
+
+	// Build the ScenesJSON that feeds the agent prompt. Include the fields the
+	// composition_scenes agent needs: scene number, type, headline, voice text,
+	// background hint.
+	type sceneEntry struct {
+		Number    int    `json:"number"`
+		Type      string `json:"type"`
+		Headline  string `json:"headline"`
+		VoiceText string `json:"voice_text"`
+		BgHint    string `json:"bg_hint"`
+	}
+	entries := make([]sceneEntry, len(scenes))
+	for i, s := range scenes {
+		entries[i] = sceneEntry{
+			Number:    s.SceneNumber,
+			Type:      s.SceneType,
+			Headline:  s.TextContent,
+			VoiceText: s.VoiceText,
+			BgHint:    s.BgHint,
+		}
+	}
+	scenesJSON, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("marshal scenes for agent: %w", err)
+	}
+
+	// Total duration: last bound's End (or sum of scene durations as fallback).
+	totalDur := bounds[len(bounds)-1].End
+	if totalDur <= 0 {
+		for _, s := range scenes {
+			totalDur += s.DurationSeconds
+		}
+	}
+	if totalDur <= 0 {
+		totalDur = 60
+	}
+
+	decision, err := p.hf.compAgent.DecideScenes(ctx, agent.ScenesTemplateData{
+		ScenesJSON:      string(scenesJSON),
+		Category:        category,
+		QuestionerName:  questioner,
+		DurationSeconds: totalDur,
+	}, p.hf.scenesAgentCfg)
+	if err != nil {
+		return fmt.Errorf("composition_scenes decide: %w", err)
+	}
+
+	// Generate per-scene background art in parallel. Failures are non-fatal:
+	// the bgMode func returns "css" for scenes with no image.
+	ratioTag := aspectTag(aspect)
+	bgPaths := make(map[int]string)
+	if len(decision.Scenes) > 0 {
+		eg, egCtx := errgroup.WithContext(ctx)
+		bgResults := make([]struct {
+			sceneNum int
+			path     string
+		}, len(decision.Scenes))
+
+		for i, d := range decision.Scenes {
+			i, d := i, d
+			if d.BgArtPrompt == "" {
+				continue
+			}
+			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d-%s.png", d.SceneNumber, ratioTag))
+			bgResults[i].sceneNum = d.SceneNumber
+			eg.Go(func() error {
+				if fileExists(bgFile) {
+					bgResults[i].path = bgFile
+					return nil
+				}
+				if genErr := p.openRouter.GenerateImage(egCtx, d.BgArtPrompt, aspect, bgFile); genErr != nil {
+					log.Printf("assembleMultiScene: bg gen failed for scene %d (%s): %v", d.SceneNumber, clipID, genErr)
+					return nil // non-fatal
+				}
+				if fileExists(bgFile) {
+					bgResults[i].path = bgFile
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return fmt.Errorf("bg image errgroup: %w", err)
+		}
+		for _, r := range bgResults {
+			if r.path != "" {
+				bgPaths[r.sceneNum] = r.path
+			}
+		}
+	}
+
+	bgModeFunc := func(sceneNumber int) string {
+		if _, ok := bgPaths[sceneNumber]; ok {
+			return "image"
+		}
+		return "css"
+	}
+
+	specs := buildSceneSpecs(decision.Scenes, bounds, bgModeFunc)
+	if len(specs) == 0 {
+		return fmt.Errorf("buildSceneSpecs returned empty (designs=%d bounds=%d)", len(decision.Scenes), len(bounds))
+	}
+
+	params := ScenesParams{
+		AspectRatio:     aspect,
+		BrandName:       "ADS VANCE",
+		CategoryLabel:   strings.ToUpper(category),
+		QuestionerName:  questioner,
+		Kicker:          decision.Kicker,
+		DurationSeconds: totalDur,
+		Scenes:          specs,
+		Segments:        segments,
+	}
+
+	projectDir := filepath.Join(clipDir, "scenes-"+ratioTag)
+	os.RemoveAll(projectDir)
+	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
+		return fmt.Errorf("build scenes: %w", err)
+	}
+	if err := p.hf.renderer.Lint(ctx, projectDir); err != nil {
+		return fmt.Errorf("multi-scene lint: %w", err)
+	}
+	// Inspect is a gate: if the layout has clipped/overlapping content, fail now
+	// so the caller can fall back to a simpler render rather than producing junk.
+	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
+		return fmt.Errorf("multi-scene inspect: %w", err)
+	}
+	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
+		return fmt.Errorf("multi-scene render: %w", err)
+	}
+	if err := os.Rename(filepath.Join(projectDir, "output.mp4"), outPath); err != nil {
+		return fmt.Errorf("move multi-scene video: %w", err)
 	}
 	return nil
 }

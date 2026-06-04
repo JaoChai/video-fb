@@ -11,6 +11,57 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 )
 
+// buildSceneSpecs maps the composition agent's per-scene design + the script
+// scenes + audio boundaries into render-ready []SceneSpec. Slot text gets emphasis
+// applied via highlightTitle. bgMode is "image" for scenes that have a background
+// image planned, else "css".
+//
+// Designs and bounds are matched by index (0-based). If the slices differ in
+// length, only min(len(designs), len(bounds)) entries are produced; extras are
+// silently dropped so a short LLM response never panics.
+func buildSceneSpecs(designs []agent.SceneDesign, bounds []sceneBound, bgMode func(sceneNumber int) string) []SceneSpec {
+	n := len(designs)
+	if nb := len(bounds); nb < n {
+		n = nb
+	}
+	if n == 0 {
+		return nil
+	}
+
+	specs := make([]SceneSpec, n)
+	for i := 0; i < n; i++ {
+		d := designs[i]
+		b := bounds[i]
+
+		// Number step slots sequentially within this scene.
+		stepCounter := 0
+		slots := make([]SlotSpec, 0, len(d.Slots))
+		for _, s := range d.Slots {
+			ss := SlotSpec{
+				Role: s.Role,
+				HTML: highlightTitle(s.Text, s.Emphasis),
+			}
+			if s.Role == "step" {
+				stepCounter++
+				ss.StepNum = stepCounter
+			}
+			slots = append(slots, ss)
+		}
+
+		specs[i] = SceneSpec{
+			SceneNumber:    d.SceneNumber,
+			LayoutVariant:  d.LayoutVariant,
+			AccentColor:    d.AccentColor,
+			AnimationSpeed: d.AnimationSpeed,
+			StartSec:       b.Start,
+			EndSec:         b.End,
+			BackgroundMode: bgMode(d.SceneNumber),
+			Slots:          slots,
+		}
+	}
+	return specs
+}
+
 // sceneBound is one scene's [start, end) window on the combined audio timeline.
 type sceneBound struct{ Start, End float64 }
 
