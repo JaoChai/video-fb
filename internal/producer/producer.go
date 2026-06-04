@@ -161,26 +161,23 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 			// Replace the voicePath for uploads later if multi-scene took over.
 			voicePath = msVoicePath
 
-			if !fileExists(video916) {
-				if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "9:16", video916); err != nil {
-					log.Printf("Multi-scene 9:16 failed for %s, falling back: %v", clipID, err)
-					if err2 := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err2 != nil {
-						return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err2)
-					}
+			// Both videos share the SAME concatenated audio (msVoicePath), so we
+			// ALWAYS (re)render BOTH together — even on a resume where one already
+			// exists — to guarantee the two ratios never end up with mismatched
+			// audio tracks (e.g. a leftover from a prior single-scene run with
+			// different audio). No per-video fileExists skip here.
+			if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "9:16", video916); err != nil {
+				log.Printf("Multi-scene 9:16 failed for %s, falling back: %v", clipID, err)
+				if err2 := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err2 != nil {
+					return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err2)
 				}
-			} else {
-				log.Printf("Skipping 9:16 multi-scene for %s (file exists)", clipID)
 			}
 
-			if !fileExists(video169) {
-				if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "16:9", video169); err != nil {
-					log.Printf("Multi-scene 16:9 failed for %s, falling back: %v", clipID, err)
-					if err2 := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err2 != nil {
-						return nil, fmt.Errorf("assemble 16:9 (fallback): %w", err2)
-					}
+			if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "16:9", video169); err != nil {
+				log.Printf("Multi-scene 16:9 failed for %s, falling back: %v", clipID, err)
+				if err2 := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err2 != nil {
+					return nil, fmt.Errorf("assemble 16:9 (fallback): %w", err2)
 				}
-			} else {
-				log.Printf("Skipping 16:9 multi-scene for %s (file exists)", clipID)
 			}
 
 			// Both videos handled — skip the single-scene block below.
