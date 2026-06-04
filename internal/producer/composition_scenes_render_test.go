@@ -8,46 +8,63 @@ import (
 	"testing"
 )
 
-// richScenesParams builds a sample exercising all 4 layout variants with
-// realistic Thai text so `hyperframes inspect` can catch overflow/clipping.
+// richScenesParams builds a sample exercising all 6 layout variants and every
+// slot role (incl. stat + callout) with realistic Thai text so
+// `hyperframes inspect` can catch overflow/clipping on each.
 func richScenesParams(aspect string) ScenesParams {
 	return ScenesParams{
 		AspectRatio: aspect, BrandName: "ADS VANCE", CategoryLabel: "PIXEL",
 		QuestionerName: "คุณป๊อบ", Kicker: "CAPI & PIXEL", VoiceSrc: "assets/voice.wav",
-		DurationSeconds: 24,
+		DurationSeconds: 38,
 		Scenes: []SceneSpec{
-			{SceneNumber: 1, LayoutVariant: "hook_big", AccentColor: "#ff6b2b", AnimationSpeed: "normal",
-				StartSec: 0, EndSec: 6, BackgroundMode: "css",
+			{SceneNumber: 1, LayoutVariant: "hook_punch", AccentColor: "#ff6b2b", AnimationSpeed: "fast",
+				StartSec: 0, EndSec: 5, BackgroundMode: "css",
 				Slots: []SlotSpec{
 					{Role: "badge", HTML: template.HTML("เคสจริง")},
+					{Role: "headline", HTML: template.HTML(`บัญชีโดน<span class="acc">แบนถาวร</span>`)},
+				}},
+			{SceneNumber: 2, LayoutVariant: "hook_big", AccentColor: "#ff6b2b", AnimationSpeed: "normal",
+				StartSec: 5, EndSec: 11, BackgroundMode: "css",
+				Slots: []SlotSpec{
+					{Role: "badge", HTML: template.HTML("คำถามจากลูกค้า")},
 					{Role: "headline", HTML: template.HTML(`บัญชีโฆษณาโดน<span class="acc">แบนถาวร</span>เพราะอะไร`)},
 				}},
-			{SceneNumber: 2, LayoutVariant: "list_steps", AccentColor: "#ff6b2b", AnimationSpeed: "fast",
-				StartSec: 6, EndSec: 13, BackgroundMode: "css",
+			{SceneNumber: 3, LayoutVariant: "list_steps", AccentColor: "#ff6b2b", AnimationSpeed: "fast",
+				StartSec: 11, EndSec: 18, BackgroundMode: "css",
 				Slots: []SlotSpec{
 					{Role: "headline", HTML: template.HTML("3 ขั้นตอนกู้บัญชีคืน")},
 					{Role: "step", HTML: template.HTML("เช็คเวลา UTC ของระบบให้ตรงกับโซนจริง"), StepNum: 1},
 					{Role: "step", HTML: template.HTML("ยื่นอุทธรณ์พร้อมเอกสารยืนยันตัวตน"), StepNum: 2},
 					{Role: "step", HTML: template.HTML("ตั้งค่า CAPI ใหม่ให้ครบทุก event"), StepNum: 3},
 				}},
-			{SceneNumber: 3, LayoutVariant: "stat_reveal", AccentColor: "#2fd17a", AnimationSpeed: "slow",
-				StartSec: 13, EndSec: 19, BackgroundMode: "css",
+			{SceneNumber: 4, LayoutVariant: "stat_reveal", AccentColor: "#2fd17a", AnimationSpeed: "slow",
+				StartSec: 18, EndSec: 24, BackgroundMode: "css",
 				Slots: []SlotSpec{
 					{Role: "stat", HTML: template.HTML("92%")},
 					{Role: "body", HTML: template.HTML("ของบัญชีที่ยื่นถูกวิธี ได้รับการปลดล็อกภายใน 7 วัน")},
+					{Role: "callout", HTML: template.HTML(`ปลดล็อกเฉลี่ยภายใน <span class="acc">7 วัน</span>`)},
 				}},
-			{SceneNumber: 4, LayoutVariant: "quote_cta", AccentColor: "#ff6b2b", AnimationSpeed: "normal",
-				StartSec: 19, EndSec: 24, BackgroundMode: "css",
+			{SceneNumber: 5, LayoutVariant: "compare_two", AccentColor: "#2fd17a", AnimationSpeed: "normal",
+				StartSec: 24, EndSec: 31, BackgroundMode: "css",
+				Slots: []SlotSpec{
+					{Role: "headline", HTML: template.HTML("ทำเองvsทักแอดส์แวนซ์")},
+					{Role: "body", HTML: template.HTML("ยื่นถูกวิธี ปลดล็อกใน 7 วัน")},
+					{Role: "body", HTML: template.HTML("ลองเองมั่ว เสี่ยงโดนแบนซ้ำ")},
+				}},
+			{SceneNumber: 6, LayoutVariant: "quote_cta", AccentColor: "#ff6b2b", AnimationSpeed: "normal",
+				StartSec: 31, EndSec: 38, BackgroundMode: "css",
 				Slots: []SlotSpec{
 					{Role: "quote", HTML: template.HTML("อย่ารอให้บัญชีโดนแบนก่อนค่อยแก้")},
 					{Role: "cta", HTML: template.HTML("ทักแอดส์แวนซ์เลย")},
 				}},
 		},
 		Segments: []TranscriptSegment{
-			{Text: "บัญชีโฆษณาโดนแบนถาวรเพราะอะไรกันแน่", Start: 0.5, End: 5.5},
-			{Text: "วันนี้เรามีสามขั้นตอนกู้คืนมาฝาก", Start: 6.2, End: 12.5},
-			{Text: "เก้าสิบสองเปอร์เซ็นต์ปลดล็อกได้ใน เจ็ดวัน", Start: 13.3, End: 18.5},
-			{Text: "อย่ารอให้สายเกินไป ทักแอดส์แวนซ์ได้เลย", Start: 19.3, End: 23.5},
+			{Text: "บัญชีโฆษณาโดนแบนถาวร", Start: 0.5, End: 4.5},
+			{Text: "แบนถาวรเพราะอะไรกันแน่", Start: 5.2, End: 10.5},
+			{Text: "วันนี้เรามีสามขั้นตอนกู้คืนมาฝาก", Start: 11.2, End: 17.5},
+			{Text: "เก้าสิบสองเปอร์เซ็นต์ปลดล็อกได้ใน เจ็ดวัน", Start: 18.3, End: 23.5},
+			{Text: "ทำเองกับให้มืออาชีพต่างกันมาก", Start: 24.3, End: 30.5},
+			{Text: "อย่ารอให้สายเกินไป ทักแอดส์แวนซ์ได้เลย", Start: 31.3, End: 37.5},
 		},
 	}
 }

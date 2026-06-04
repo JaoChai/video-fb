@@ -147,6 +147,179 @@ func TestImageStyleAnchor(t *testing.T) {
 	}
 }
 
+// TestMotionTokens verifies the canonical Motion token values are correct.
+func TestMotionTokens(t *testing.T) {
+	t.Run("easing curves are non-empty cubic-bezier strings", func(t *testing.T) {
+		for name, val := range map[string]string{
+			"EaseOut":    Motion.EaseOut,
+			"EaseInOut":  Motion.EaseInOut,
+			"EaseIn":     Motion.EaseIn,
+			"EaseSpring": Motion.EaseSpring,
+		} {
+			if val == "" {
+				t.Errorf("Motion.%s is empty", name)
+			}
+			if !strings.HasPrefix(val, "cubic-bezier(") {
+				t.Errorf("Motion.%s = %q; want cubic-bezier(...) format", name, val)
+			}
+		}
+	})
+
+	t.Run("canonical easing values", func(t *testing.T) {
+		if Motion.EaseOut != "cubic-bezier(0.22,1,0.36,1)" {
+			t.Errorf("Motion.EaseOut = %q", Motion.EaseOut)
+		}
+		if Motion.EaseInOut != "cubic-bezier(0.45,0,0.55,1)" {
+			t.Errorf("Motion.EaseInOut = %q", Motion.EaseInOut)
+		}
+		if Motion.EaseIn != "cubic-bezier(0.55,0,1,0.45)" {
+			t.Errorf("Motion.EaseIn = %q", Motion.EaseIn)
+		}
+		if Motion.EaseSpring != "cubic-bezier(0.34,1.56,0.64,1)" {
+			t.Errorf("Motion.EaseSpring = %q", Motion.EaseSpring)
+		}
+	})
+
+	t.Run("canonical duration values", func(t *testing.T) {
+		if Motion.DurFast != 0.32 {
+			t.Errorf("Motion.DurFast = %v, want 0.32", Motion.DurFast)
+		}
+		if Motion.DurNormal != 0.60 {
+			t.Errorf("Motion.DurNormal = %v, want 0.60", Motion.DurNormal)
+		}
+		if Motion.DurSlow != 0.90 {
+			t.Errorf("Motion.DurSlow = %v, want 0.90", Motion.DurSlow)
+		}
+	})
+
+	t.Run("durations increase fast < normal < slow", func(t *testing.T) {
+		if !(Motion.DurFast < Motion.DurNormal && Motion.DurNormal < Motion.DurSlow) {
+			t.Errorf("expected DurFast < DurNormal < DurSlow, got %v %v %v",
+				Motion.DurFast, Motion.DurNormal, Motion.DurSlow)
+		}
+	})
+}
+
+// TestTypeTokens verifies the canonical Type token values are correct.
+func TestTypeTokens(t *testing.T) {
+	if Type.Family != "Sarabun" {
+		t.Errorf("Type.Family = %q, want %q", Type.Family, "Sarabun")
+	}
+	weights := map[string]int{
+		"Regular":   Type.WeightRegular,
+		"SemiBold":  Type.WeightSemiBold,
+		"Bold":      Type.WeightBold,
+		"ExtraBold": Type.WeightExtraBold,
+	}
+	wantWeights := map[string]int{
+		"Regular":   400,
+		"SemiBold":  600,
+		"Bold":      700,
+		"ExtraBold": 800,
+	}
+	for name, got := range weights {
+		if got != wantWeights[name] {
+			t.Errorf("Type.Weight%s = %d, want %d", name, got, wantWeights[name])
+		}
+	}
+}
+
+// TestCSSVars verifies the CSSVars() output is deterministic, contains all
+// required color var names with correct hex values, and includes motion and
+// type vars.
+func TestCSSVars(t *testing.T) {
+	css := Brand.CSSVars()
+
+	t.Run("deterministic", func(t *testing.T) {
+		second := Brand.CSSVars()
+		if css != second {
+			t.Error("CSSVars() is not deterministic")
+		}
+	})
+
+	t.Run("non-empty", func(t *testing.T) {
+		if css == "" {
+			t.Fatal("CSSVars() returned empty string")
+		}
+	})
+
+	// Color vars — names and values must exactly match the templates.
+	colorVars := []struct{ varName, hex string }{
+		{"--navy-deep", "#0a1428"},
+		{"--navy", "#0f1d35"},
+		{"--navy-hi", "#16284a"},
+		{"--orange", "#ff6b2b"},
+		{"--orange-soft", "#ff8a52"},
+		{"--orange-bright", "#ff9457"},
+		{"--ink", "#f4f7fb"},
+		{"--muted", "#aebdd4"},
+		{"--green", "#2fd17a"},
+		{"--red", "#ff5a52"},
+	}
+	for _, cv := range colorVars {
+		t.Run("color "+cv.varName, func(t *testing.T) {
+			want := cv.varName + ": " + cv.hex
+			if !strings.Contains(css, want) {
+				t.Errorf("CSSVars() missing %q\noutput:\n%s", want, css)
+			}
+		})
+	}
+
+	// Motion vars must be present.
+	motionVars := []string{
+		"--ease-out:",
+		"--ease-in-out:",
+		"--ease-in:",
+		"--ease-spring:",
+		"--dur-fast:",
+		"--dur-normal:",
+		"--dur-slow:",
+	}
+	for _, mv := range motionVars {
+		t.Run("motion "+mv, func(t *testing.T) {
+			if !strings.Contains(css, mv) {
+				t.Errorf("CSSVars() missing motion var %q", mv)
+			}
+		})
+	}
+
+	// Type vars must be present.
+	typeVars := []string{
+		"--font-family:",
+		"--font-weight-regular:",
+		"--font-weight-semibold:",
+		"--font-weight-bold:",
+		"--font-weight-extrabold:",
+	}
+	for _, tv := range typeVars {
+		t.Run("type "+tv, func(t *testing.T) {
+			if !strings.Contains(css, tv) {
+				t.Errorf("CSSVars() missing type var %q", tv)
+			}
+		})
+	}
+
+	// Sarabun font family must appear in the output.
+	t.Run("font family Sarabun", func(t *testing.T) {
+		if !strings.Contains(css, "Sarabun") {
+			t.Errorf("CSSVars() missing Sarabun font family")
+		}
+	})
+
+	// Duration values must use the 's' unit suffix.
+	t.Run("durations have s unit", func(t *testing.T) {
+		if !strings.Contains(css, "--dur-fast: 0.32s") {
+			t.Errorf("CSSVars() --dur-fast missing or wrong value")
+		}
+		if !strings.Contains(css, "--dur-normal: 0.6s") {
+			t.Errorf("CSSVars() --dur-normal missing or wrong value")
+		}
+		if !strings.Contains(css, "--dur-slow: 0.9s") {
+			t.Errorf("CSSVars() --dur-slow missing or wrong value")
+		}
+	})
+}
+
 // TestSafeZone verifies SafeZone returns non-empty, sensible output for both
 // supported aspect ratios and a permissive non-empty fallback for unknown ratios.
 func TestSafeZone(t *testing.T) {

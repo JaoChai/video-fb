@@ -12,6 +12,7 @@ import (
 type scenesTemplateData struct {
 	Width           int
 	Height          int
+	BrandCSS        template.CSS // brand color/motion/type vars (single source of truth)
 	BrandName       string
 	CategoryLabel   string
 	QuestionerName  string
@@ -142,6 +143,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	data := scenesTemplateData{
 		Width:           width,
 		Height:          height,
+		BrandCSS:        template.CSS(Brand.CSSVars()),
 		BrandName:       p.BrandName,
 		CategoryLabel:   p.CategoryLabel,
 		QuestionerName:  p.QuestionerName,
