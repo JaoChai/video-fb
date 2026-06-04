@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jaochai/video-fb/internal/models"
 )
@@ -65,4 +66,75 @@ func (a *CompositionAgent) Decide(ctx context.Context, data CompositionTemplateD
 		return nil, fmt.Errorf("generate composition decision: %w", err)
 	}
 	return &decision, nil
+}
+
+// Slot is one semantic content slot the composition agent fills for a scene.
+// The agent chooses role + text + emphasis; the template (engine) owns geometry,
+// so the agent never sends pixel positions — this is how overlap is prevented.
+type Slot struct {
+	Role     string   `json:"role"`     // "headline" | "body" | "badge" | "step"
+	Text     string   `json:"text"`
+	Emphasis []string `json:"emphasis"` // words inside Text to accent
+}
+
+// SceneDesign is the per-scene visual design (no pixel coordinates).
+type SceneDesign struct {
+	SceneNumber    int    `json:"scene_number"`
+	LayoutVariant  string `json:"layout_variant"`
+	Slots          []Slot `json:"slots"`
+	AccentColor    string `json:"accent_color"`  // sanitized later in producer
+	BgArtPrompt    string `json:"bg_art_prompt"` // text-free background art prompt
+	AnimationSpeed string `json:"animation_speed"`
+}
+
+// ScenesDecision is the multi-scene design DecideScenes returns.
+type ScenesDecision struct {
+	Scenes         []SceneDesign `json:"scenes"`
+	Kicker         string        `json:"kicker"`
+	HighlightWords []string      `json:"highlight_words"`
+}
+
+// Layout variants the template library implements (Phase 3).
+const (
+	LayoutHookBig    = "hook_big"
+	LayoutListSteps  = "list_steps"
+	LayoutStatReveal = "stat_reveal"
+	LayoutQuoteCTA   = "quote_cta"
+)
+
+const defaultLayoutVariant = LayoutListSteps
+
+var validLayoutVariants = map[string]bool{
+	LayoutHookBig: true, LayoutListSteps: true, LayoutStatReveal: true, LayoutQuoteCTA: true,
+}
+
+const defaultSlotRole = "body"
+
+var validSlotRoles = map[string]bool{
+	"headline": true, "body": true, "badge": true, "step": true,
+}
+
+// Normalize keeps LLM scene designs safe: defaults unknown layout_variant /
+// animation_speed, drops empty-text slots, and defaults unknown slot roles.
+// Accent-color sanitization is left to the producer (which owns sanitizeHexColor).
+func (d *ScenesDecision) Normalize() {
+	for i := range d.Scenes {
+		if !validLayoutVariants[d.Scenes[i].LayoutVariant] {
+			d.Scenes[i].LayoutVariant = defaultLayoutVariant
+		}
+		if d.Scenes[i].AnimationSpeed != "fast" && d.Scenes[i].AnimationSpeed != "slow" {
+			d.Scenes[i].AnimationSpeed = "normal"
+		}
+		kept := d.Scenes[i].Slots[:0]
+		for _, s := range d.Scenes[i].Slots {
+			if strings.TrimSpace(s.Text) == "" {
+				continue
+			}
+			if !validSlotRoles[s.Role] {
+				s.Role = defaultSlotRole
+			}
+			kept = append(kept, s)
+		}
+		d.Scenes[i].Slots = kept
+	}
 }
