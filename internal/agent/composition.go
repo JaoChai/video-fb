@@ -138,3 +138,30 @@ func (d *ScenesDecision) Normalize() {
 		d.Scenes[i].Slots = kept
 	}
 }
+
+// ScenesTemplateData feeds the composition_scenes prompt. ScenesJSON is the
+// script's scenes (number, type, headline, voice_text, bg_hint) marshaled to JSON
+// so the agent designs one SceneDesign per script scene.
+type ScenesTemplateData struct {
+	ScenesJSON      string
+	Category        string
+	QuestionerName  string
+	DurationSeconds float64
+}
+
+// DecideScenes asks the LLM to design every scene as semantic slots. cfg must be
+// the 'composition_scenes' agent config. The result is Normalized before return.
+// Not wired into the producer yet (Phase 4).
+func (a *CompositionAgent) DecideScenes(ctx context.Context, data ScenesTemplateData, cfg *models.AgentConfig) (*ScenesDecision, error) {
+	userPrompt, err := renderTemplate(cfg.PromptTemplate, data)
+	if err != nil {
+		return nil, fmt.Errorf("render composition_scenes template: %w", err)
+	}
+
+	var decision ScenesDecision
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &decision); err != nil {
+		return nil, fmt.Errorf("generate scenes decision: %w", err)
+	}
+	decision.Normalize()
+	return &decision, nil
+}
