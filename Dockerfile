@@ -24,10 +24,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpangocairo-1.0-0 libcairo2 libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-install the pinned Hyperframes CLI so renders don't download it each run,
-# and verify the binary is on PATH — fail the build loudly if the install broke,
-# instead of discovering it at runtime via a silent FFmpeg fallback.
-RUN npm install -g hyperframes@0.6.70 && hyperframes --version
+# Warm the npx cache with the pinned Hyperframes CLI instead of a global install.
+# A global `npm install -g hyperframes` lays down the bin but NOT the core runtime
+# manifest (/usr/local/lib/core/dist/hyperframe.manifest.json), so renders fail with
+# "Missing manifest ... Build core runtime artifacts before rendering" and silently
+# fall back to a static FFmpeg image. The npx-cached package is complete (manifest
+# included), and the Go renderer falls back to `npx hyperframes@<ver>` when no global
+# binary is on PATH — so this both fixes the manifest and stays offline at render time.
+RUN npx --yes hyperframes@0.6.70 --version
 
 COPY --from=builder /server /server
 COPY migrations/ /migrations/
