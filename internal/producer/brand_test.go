@@ -54,7 +54,7 @@ func TestImageStyleAnchor(t *testing.T) {
 }
 
 // TestSafeZone verifies SafeZone returns non-empty, sensible output for both
-// supported aspect ratios and panics (returns error) for unknown ratios.
+// supported aspect ratios and a permissive non-empty fallback for unknown ratios.
 func TestSafeZone(t *testing.T) {
 	t.Run("portrait 9:16", func(t *testing.T) {
 		sz := Brand.SafeZone("9:16")
@@ -87,6 +87,19 @@ func TestSafeZone(t *testing.T) {
 		l := Brand.SafeZone("16:9")
 		if p.TextBand == l.TextBand && p.NegativeSpace == l.NegativeSpace {
 			t.Error("SafeZone returned identical descriptions for 9:16 and 16:9")
+		}
+	})
+
+	t.Run("unknown aspect falls back permissively", func(t *testing.T) {
+		sz := Brand.SafeZone("1:1")
+		if sz.Aspect != "1:1" {
+			t.Errorf("SafeZone(1:1).Aspect = %q, want %q (echoed back)", sz.Aspect, "1:1")
+		}
+		if sz.TextBand == "" {
+			t.Error("SafeZone(1:1).TextBand is empty; fallback must be non-empty")
+		}
+		if sz.NegativeSpace == "" {
+			t.Error("SafeZone(1:1).NegativeSpace is empty; fallback must be non-empty")
 		}
 	})
 }
