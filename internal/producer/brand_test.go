@@ -5,6 +5,99 @@ import (
 	"testing"
 )
 
+// TestBuildScenePrompt covers the three-block contract for buildScenePrompt.
+func TestBuildScenePrompt(t *testing.T) {
+	anchor := Brand.ImageStyleAnchor()
+	sz916 := Brand.SafeZone("9:16")
+	sz169 := Brand.SafeZone("16:9")
+
+	t.Run("contains style anchor", func(t *testing.T) {
+		out := buildScenePrompt("a rising conversion graph dashboard", "9:16")
+		if !strings.Contains(out, anchor) {
+			t.Errorf("output missing style anchor\ngot: %q", out)
+		}
+	})
+
+	t.Run("contains concept subject", func(t *testing.T) {
+		concept := "a Facebook Ads Manager dashboard showing a rising conversion graph"
+		out := buildScenePrompt(concept, "9:16")
+		if !strings.Contains(out, concept) {
+			t.Errorf("output missing concept %q\ngot: %q", concept, out)
+		}
+	})
+
+	t.Run("contains no-text instruction", func(t *testing.T) {
+		out := buildScenePrompt("a vibrant cityscape at dusk", "16:9")
+		lower := strings.ToLower(out)
+		if !strings.Contains(lower, "no text") {
+			t.Errorf("output missing no-text instruction\ngot: %q", out)
+		}
+	})
+
+	t.Run("contains negative space for 9:16", func(t *testing.T) {
+		out := buildScenePrompt("concept art", "9:16")
+		if !strings.Contains(out, sz916.NegativeSpace) {
+			t.Errorf("output missing 9:16 NegativeSpace\ngot: %q", out)
+		}
+	})
+
+	t.Run("contains negative space for 16:9", func(t *testing.T) {
+		out := buildScenePrompt("concept art", "16:9")
+		if !strings.Contains(out, sz169.NegativeSpace) {
+			t.Errorf("output missing 16:9 NegativeSpace\ngot: %q", out)
+		}
+	})
+
+	t.Run("aspect negative space differs by ratio", func(t *testing.T) {
+		out916 := buildScenePrompt("concept art", "9:16")
+		out169 := buildScenePrompt("concept art", "16:9")
+		if out916 == out169 {
+			t.Error("9:16 and 16:9 outputs are identical; negative-space block should differ")
+		}
+	})
+
+	t.Run("deterministic same concept and aspect", func(t *testing.T) {
+		concept := "entrepreneur checking analytics on laptop"
+		a := buildScenePrompt(concept, "9:16")
+		b := buildScenePrompt(concept, "9:16")
+		if a != b {
+			t.Errorf("buildScenePrompt is not deterministic\ncall1: %q\ncall2: %q", a, b)
+		}
+	})
+
+	t.Run("empty concept falls back to generic subject", func(t *testing.T) {
+		out := buildScenePrompt("", "9:16")
+		if out == "" {
+			t.Fatal("output is empty for empty concept")
+		}
+		if !strings.Contains(out, anchor) {
+			t.Errorf("fallback output missing style anchor\ngot: %q", out)
+		}
+		// Must not contain a bare "Subject: ." or "Subject: " at end — i.e. the
+		// subject field must be filled with a real fallback value.
+		if strings.Contains(out, "Subject: .") || strings.Contains(out, "Subject:  .") {
+			t.Errorf("fallback subject appears empty in output\ngot: %q", out)
+		}
+	})
+
+	t.Run("whitespace-only concept falls back to generic subject", func(t *testing.T) {
+		out := buildScenePrompt("   ", "9:16")
+		if out == "" {
+			t.Fatal("output is empty for whitespace concept")
+		}
+		if strings.Contains(out, "Subject: .") || strings.Contains(out, "Subject:  .") {
+			t.Errorf("whitespace concept produced empty subject\ngot: %q", out)
+		}
+	})
+
+	t.Run("non-empty output for valid inputs", func(t *testing.T) {
+		out := buildScenePrompt("Facebook ROAS metrics on a dark dashboard", "16:9")
+		if out == "" {
+			t.Fatal("buildScenePrompt returned empty string")
+		}
+	})
+}
+
 // TestBrandColors verifies the canonical brand color values are correct.
 func TestBrandColors(t *testing.T) {
 	tests := []struct {

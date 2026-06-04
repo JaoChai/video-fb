@@ -1,5 +1,7 @@
 package producer
 
+import "strings"
+
 // BrandColors is the single source of truth for the ADS VANCE visual palette,
 // scoped to image-prompt generation. Hex values are taken directly from the
 // layout templates (layout_dynamic_karaoke.html.tmpl and
@@ -98,4 +100,37 @@ func (b BrandColors) ImageStyleAnchor() string {
 		"No other saturated hues. Clean vector-quality rendering, minimal grain, no photorealism. " +
 		"Subtle radial glow from the top-center, gentle vignette at the edges. " +
 		"Atmosphere: confident, modern, premium digital-marketing brand identity."
+}
+
+// genericSceneSubject is the fallback subject used when buildScenePrompt
+// receives an empty or whitespace-only concept.
+const genericSceneSubject = "abstract modern digital-marketing concept art"
+
+// buildScenePrompt composes a complete AI image-generation prompt from three
+// locked blocks:
+//
+//  1. Style anchor — Brand.ImageStyleAnchor(), shared across all scenes so every
+//     clip has a cohesive visual identity.
+//  2. Subject — the caller-supplied concept (e.g. "a Facebook Ads Manager
+//     dashboard showing a rising conversion graph"). Falls back to
+//     genericSceneSubject when concept is empty or whitespace.
+//  3. Composition — instructs the image model to preserve the safe zone for text
+//     overlay and produce absolutely no text, letters, or logos in the image.
+//
+// The function is deterministic: same (concept, aspect) always yields the same
+// string. It is placed in brand.go because it is purely brand-prompt composition,
+// building on ImageStyleAnchor and SafeZone which live here.
+func buildScenePrompt(concept, aspect string) string {
+	subject := strings.TrimSpace(concept)
+	if subject == "" {
+		subject = genericSceneSubject
+	}
+
+	sz := Brand.SafeZone(aspect)
+
+	return Brand.ImageStyleAnchor() + " " +
+		"Subject: " + subject + ". " +
+		"Composition: " + sz.NegativeSpace + ". " +
+		"Keep the image uncluttered with generous negative space. " +
+		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image."
 }
