@@ -217,6 +217,10 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
 	}
+	script.Normalize()
+	if len(script.Scenes) < 1 {
+		return fmt.Errorf("script produced 0 scenes for clip %s", clipID)
+	}
 	validateScript(script)
 	o.tracker.CompleteStep("script")
 
