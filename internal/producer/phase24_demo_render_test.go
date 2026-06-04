@@ -38,9 +38,13 @@ func TestRenderPhase24Demo(t *testing.T) {
 	}
 	segments := captionSegmentsFromScenes(scenes, bounds)
 
+	aspect := os.Getenv("HF_ASPECT")
+	if aspect == "" {
+		aspect = "9:16"
+	}
 	img := func(n int) string { return fmt.Sprintf("assets/bg-scene%d.png", n) }
 	params := ScenesParams{
-		AspectRatio: "9:16", BrandName: "ADS VANCE", CategoryLabel: "PIXEL",
+		AspectRatio: aspect, BrandName: "ADS VANCE", CategoryLabel: "PIXEL",
 		QuestionerName: "คุณป๊อบ", Kicker: "CAPI & PIXEL", VoiceSrc: "assets/voice.wav",
 		DurationSeconds: 59.96,
 		Scenes: []SceneSpec{
@@ -131,7 +135,7 @@ func TestRenderPhase24Demo(t *testing.T) {
 		return err
 	}
 	_ = run("lint")
-	if err := run("render", "--output", "output.mp4", "--quality", "standard", "--fps", "24", "-w", "12"); err != nil {
+	if err := run("render", "--output", "output.mp4", "--quality", "standard", "--fps", "24", "-w", "6"); err != nil {
 		t.Fatalf("render mp4: %v", err)
 	}
 	t.Logf("PHASE 2-4 DEMO MP4: %s", filepath.Join(dir, "output.mp4"))

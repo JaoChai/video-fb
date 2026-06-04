@@ -60,16 +60,19 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
 	return h.run(ctx, dir, "inspect")
 }
 
-// renderWorkers parallelizes frame capture across Chrome instances. Hyperframes'
-// auto setting caps at ~6 regardless of host size; our container has 32 vCPU /
-// 32GB, so 12 workers (~3GB) cuts render time enough to keep high/30 within the
-// timeout — including the heavier 16:9 render — WITHOUT lowering quality.
-const renderWorkers = "12"
+// renderWorkers parallelizes frame capture across Chrome instances. The Railway
+// container has ~8GB RAM (an earlier comment wrongly assumed 32GB). Each Chrome
+// worker is memory-heavy: 12 workers OOM-killed the heavier 16:9 multi-scene
+// render (peaked ~7.6GB then SIGKILL), which silently fell back to a static image.
+// 6 workers + standard/24fps (below) fits 8GB with headroom and still finishes
+// within the timeout. Raise this only if the container's RAM is actually raised.
+const renderWorkers = "6"
 
-// Render produces a high-quality (high/30fps) MP4 at outputPath from the
-// composition in dir, using parallel render workers to stay within the timeout.
+// Render produces an MP4 at outputPath from the composition in dir. Quality is
+// standard/24fps (not high/30) so the memory-heavy multi-scene render fits the
+// ~8GB container without OOM; parallel workers keep it within the timeout.
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) error {
-	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "high", "--fps", "30", "-w", renderWorkers)
+	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
 }
 
 func lastBytes(b []byte, n int) string {
