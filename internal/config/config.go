@@ -17,8 +17,9 @@ type Config struct {
 	ZernioAPIKey    string
 
 	// Hyperframes video pipeline (off by default — falls back to FFmpeg).
-	HyperframesEnabled  bool
-	HyperframesFontsDir string
+	HyperframesEnabled    bool
+	HyperframesFontsDir   string
+	HyperframesMultiScene bool // generate multi-scene 9:16+16:9 via composition_scenes agent
 }
 
 func Load() *Config {
@@ -51,7 +52,8 @@ func Load() *Config {
 		FFmpegPath:      ffmpeg,
 		ZernioAPIKey:    os.Getenv("ZERNIO_API_KEY"),
 
-		HyperframesEnabled:  os.Getenv("HYPERFRAMES_ENABLED") == "true",
-		HyperframesFontsDir: fontsDir,
+		HyperframesEnabled:    os.Getenv("HYPERFRAMES_ENABLED") == "true",
+		HyperframesFontsDir:   fontsDir,
+		HyperframesMultiScene: os.Getenv("HYPERFRAMES_MULTI_SCENE") == "true",
 	}
 }

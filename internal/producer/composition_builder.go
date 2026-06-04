@@ -110,6 +110,72 @@ func (b *CompositionBuilder) Build(params CompositionParams, clipID, projectDir,
 	return projectDir, nil
 }
 
+// BuildScenes writes a complete multi-scene Hyperframes project into projectDir
+// and returns the dir path. voicePath is the combined voice.wav. bgPaths maps a
+// scene number to an absolute background image to copy into assets/ (only scenes
+// with BackgroundMode=="image" need one); the scene's BackgroundImage relative
+// path is set to the copied location.
+func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir, voicePath string, bgPaths map[int]string) (string, error) {
+	assetsDir := filepath.Join(projectDir, "assets")
+	fontsDst := filepath.Join(assetsDir, "fonts")
+	if err := os.MkdirAll(fontsDst, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir project: %w", err)
+	}
+
+	if err := copyFile(voicePath, filepath.Join(assetsDir, "voice.wav")); err != nil {
+		return "", fmt.Errorf("copy voice: %w", err)
+	}
+	params.VoiceSrc = "assets/voice.wav"
+
+	// Mutate a local copy of the scenes slice so we don't clobber the caller's data.
+	scenes := make([]SceneSpec, len(params.Scenes))
+	copy(scenes, params.Scenes)
+	for i := range scenes {
+		if scenes[i].BackgroundMode != "image" {
+			continue
+		}
+		bgSrc, ok := bgPaths[scenes[i].SceneNumber]
+		if !ok || bgSrc == "" {
+			// Graceful downgrade — missing image is not fatal.
+			scenes[i].BackgroundMode = "css"
+			continue
+		}
+		dstName := fmt.Sprintf("assets/bg-scene%d.png", scenes[i].SceneNumber)
+		if err := copyFile(bgSrc, filepath.Join(projectDir, dstName)); err != nil {
+			// Still graceful: downgrade rather than fail.
+			scenes[i].BackgroundMode = "css"
+			continue
+		}
+		scenes[i].BackgroundImage = dstName
+	}
+	params.Scenes = scenes
+
+	if err := copyDir(b.fontsDir, fontsDst); err != nil {
+		return "", fmt.Errorf("copy fonts: %w", err)
+	}
+
+	htmlBytes, err := RenderCompositionScenes(params)
+	if err != nil {
+		return "", fmt.Errorf("render composition scenes: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "index.html"), htmlBytes, 0o644); err != nil {
+		return "", fmt.Errorf("write index.html: %w", err)
+	}
+
+	metaJSON := fmt.Sprintf(`{"id": %q, "name": %q}`, clipID, clipID)
+	for name, content := range map[string]string{
+		"package.json":     projectPackageJSON,
+		"hyperframes.json": projectHyperframesJSON,
+		"meta.json":        metaJSON,
+	} {
+		if err := os.WriteFile(filepath.Join(projectDir, name), []byte(content), 0o644); err != nil {
+			return "", fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+
+	return projectDir, nil
+}
+
 // highlightTitle wraps each highlight word in <span class="hl"> while escaping
 // everything else. Escaping the words too keeps the match consistent.
 func highlightTitle(title string, words []string) template.HTML {
