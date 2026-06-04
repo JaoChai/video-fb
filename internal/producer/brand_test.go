@@ -78,6 +78,10 @@ func TestBuildScenePrompt(t *testing.T) {
 		if strings.Contains(out, "Subject: .") || strings.Contains(out, "Subject:  .") {
 			t.Errorf("fallback subject appears empty in output\ngot: %q", out)
 		}
+		// Pin the actual fallback contract: the generic subject must be present.
+		if !strings.Contains(out, "abstract modern digital-marketing concept art") {
+			t.Errorf("fallback output missing generic subject\ngot: %q", out)
+		}
 	})
 
 	t.Run("whitespace-only concept falls back to generic subject", func(t *testing.T) {
@@ -88,12 +92,9 @@ func TestBuildScenePrompt(t *testing.T) {
 		if strings.Contains(out, "Subject: .") || strings.Contains(out, "Subject:  .") {
 			t.Errorf("whitespace concept produced empty subject\ngot: %q", out)
 		}
-	})
-
-	t.Run("non-empty output for valid inputs", func(t *testing.T) {
-		out := buildScenePrompt("Facebook ROAS metrics on a dark dashboard", "16:9")
-		if out == "" {
-			t.Fatal("buildScenePrompt returned empty string")
+		// Pin the actual fallback contract: the generic subject must be present.
+		if !strings.Contains(out, "abstract modern digital-marketing concept art") {
+			t.Errorf("whitespace concept output missing generic subject\ngot: %q", out)
 		}
 	})
 }
