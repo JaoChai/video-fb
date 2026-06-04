@@ -66,8 +66,9 @@ func (b BrandColors) SafeZone(aspect string) SafeZoneSpec {
 		return SafeZoneSpec{
 			Aspect:   "9:16",
 			TextBand: "lower third of the frame — karaoke captions and brand badges sit in the bottom 35% of the portrait frame",
-			NegativeSpace: "keep the upper two-thirds of the image free of text, logos, or busy detail; " +
-				"the lower third will be overlaid with semi-transparent caption and card elements",
+			NegativeSpace: "compose the main subject toward the top of the frame or out to the side margins; " +
+				"keep the vertical center and the lower 35% calm and uncluttered, because a large centered " +
+				"headline and bottom captions are overlaid there",
 		}
 	case "16:9":
 		return SafeZoneSpec{
