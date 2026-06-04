@@ -500,7 +500,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 				// much slower and previously pushed the 16:9 render past its timeout.
 				var genErr error
 				for attempt := 1; attempt <= 3; attempt++ {
-					if genErr = p.openRouter.GenerateImage(egCtx, d.BgArtPrompt, aspect, bgFile); genErr == nil {
+					if genErr = p.openRouter.GenerateImage(egCtx, buildScenePrompt(d.BgArtPrompt, aspect), aspect, bgFile); genErr == nil {
 						break
 					}
 					log.Printf("assembleMultiScene: bg gen attempt %d/3 failed for scene %d (%s): %v", attempt, d.SceneNumber, clipID, genErr)
