@@ -17,6 +17,9 @@ func TestNormalize_ClampsAndRenumbers(t *testing.T) {
 	if len(s.Scenes) != maxScenes {
 		t.Fatalf("want %d scenes, got %d", maxScenes, len(s.Scenes))
 	}
+	if s.Scenes[0].VoiceText != "a" {
+		t.Errorf("wrong scene kept at index 0: got VoiceText %q", s.Scenes[0].VoiceText)
+	}
 	for i, sc := range s.Scenes {
 		if sc.SceneNumber != i+1 {
 			t.Errorf("scene[%d] number = %d, want %d", i, sc.SceneNumber, i+1)

@@ -101,6 +101,8 @@ const (
 	SceneCTA     = "cta"
 )
 
+// Scene-count bounds. maxScenes caps Normalize(); minScenes is the floor the
+// orchestrator guard enforces (wired in a later task).
 const (
 	minScenes = 1
 	maxScenes = 6
