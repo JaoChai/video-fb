@@ -562,13 +562,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
 		return fmt.Errorf("multi-scene inspect: %w", err)
 	}
-	// 16:9 multi-scene render is much heavier than 9:16 (it overran the timeout);
-	// drop it to medium/24fps so it finishes in time. 9:16 keeps high/30.
-	quality, fps := "high", "30"
-	if aspect == "16:9" {
-		quality, fps = "medium", "24"
-	}
-	if err := p.hf.renderer.RenderOpts(ctx, projectDir, "output.mp4", quality, fps); err != nil {
+	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
 		return fmt.Errorf("multi-scene render: %w", err)
 	}
 	if err := os.Rename(filepath.Join(projectDir, "output.mp4"), outPath); err != nil {
