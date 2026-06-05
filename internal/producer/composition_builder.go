@@ -63,6 +63,7 @@ type templateData struct {
 	OutroDuration   float64
 	CardsJSON       template.JS
 	SegmentsJSON    template.JS
+	GsapJS          template.JS
 }
 
 // Build writes a complete project into projectDir and returns the dir path.
