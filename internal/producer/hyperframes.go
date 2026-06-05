@@ -3,7 +3,9 @@ package producer
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -30,10 +32,31 @@ func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...strin
 	cmd := hyperframesCmd(ctx, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
+	// A render can exit 0 while the page silently failed (e.g. a JS exception
+	// froze every animation, producing a static video). Hyperframes prints those
+	// as "[Browser:PAGEERROR]" / CDN-fetch warnings — surface them either way so
+	// a "successful" but broken render is never invisible.
+	if issues := scanBrowserIssues(out); len(issues) > 0 {
+		log.Printf("hyperframes %v browser issues:\n%s", args, strings.Join(issues, "\n"))
+	}
 	if err != nil {
 		return fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
 	}
 	return nil
+}
+
+// scanBrowserIssues pulls the lines that signal a silent in-page failure (a JS
+// exception or a missing CDN dependency) out of the Hyperframes CLI output.
+func scanBrowserIssues(out []byte) []string {
+	var hits []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "[Browser:PAGEERROR]") ||
+			strings.Contains(line, "Failed to download CDN script") ||
+			strings.Contains(line, "is not defined") {
+			hits = append(hits, strings.TrimSpace(line))
+		}
+	}
+	return hits
 }
 
 // hyperframesCmd prefers the globally-installed CLI (the Docker image installs
