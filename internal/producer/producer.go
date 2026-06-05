@@ -29,6 +29,7 @@ type Producer struct {
 	pool         *pgxpool.Pool
 	kie          *KieClient
 	openRouter   *OpenRouterClient
+	openAIImage  *OpenAIImageClient
 	ffmpeg       *FFmpegAssembler
 	defaultVoice string
 	workDir      string
@@ -46,9 +47,9 @@ type hyperframesDeps struct {
 	multiScene      bool                // true when HYPERFRAMES_MULTI_SCENE=true
 }
 
-func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
+func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, openAIImage *OpenAIImageClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+	return &Producer{pool: pool, kie: kie, openRouter: openRouter, openAIImage: openAIImage, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
 // EnableHyperframes turns on the Hyperframes render path. scenesAgentCfg and
@@ -125,7 +126,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		os.Remove(filepath.Join(clipDir, "video-9x16.mp4"))
 	}
 	if !fileExists(img169) {
-		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
+		if err := p.openAIImage.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 16:9 image: %w", err)
 		}
@@ -134,7 +135,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 
 	if !fileExists(img916) {
-		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
+		if err := p.openAIImage.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 9:16 image: %w", err)
 		}
@@ -336,7 +337,7 @@ func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir s
 	bgMode, bgImg, bgPath := "css", "", ""
 	bgFile := filepath.Join(clipDir, "bg-9x16.png")
 	if !fileExists(bgFile) {
-		if err := p.openRouter.GenerateImage(ctx, backgroundArtPrompt(category), "9:16", bgFile); err != nil {
+		if err := p.openAIImage.GenerateImage(ctx, backgroundArtPrompt(category), "9:16", bgFile); err != nil {
 			log.Printf("Hyperframes: bg art gen failed for %s, using CSS bg: %v", clipID, err)
 		}
 	}
@@ -500,7 +501,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 				// much slower and previously pushed the 16:9 render past its timeout.
 				var genErr error
 				for attempt := 1; attempt <= 3; attempt++ {
-					if genErr = p.openRouter.GenerateImage(egCtx, buildScenePrompt(d.BgArtPrompt, aspect), aspect, bgFile); genErr == nil {
+					if genErr = p.openAIImage.GenerateImage(egCtx, buildScenePrompt(d.BgArtPrompt, aspect), aspect, bgFile); genErr == nil {
 						break
 					}
 					log.Printf("assembleMultiScene: bg gen attempt %d/3 failed for scene %d (%s): %v", attempt, d.SceneNumber, clipID, genErr)
