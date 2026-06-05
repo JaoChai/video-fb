@@ -11,18 +11,18 @@ import (
 // layout_multi_scene.html.tmpl) and must stay in sync with them.
 type BrandColors struct {
 	// Background / structural navy scale
-	NavyDeep string // #0a1428 — page background, deepest layer
-	Navy     string // #0f1d35 — card/panel fill
-	NavyHi   string // #16284a — highlighted/elevated navy surface
+	NavyDeep string // #062F78 — page background, deepest layer
+	Navy     string // #0047AF — card/panel fill
+	NavyHi   string // #1A5FD0 — highlighted/elevated navy surface
 
-	// Primary accent — orange
-	Orange       string // #ff6b2b — primary CTA, badge, accent text
-	OrangeSoft   string // #ff8a52 — gradient midpoint, step number bg
-	OrangeBright string // #ff9457 — progress bar, highlight text
+	// Primary accent — amber
+	Orange       string // #F0A030 — primary CTA, badge, accent text
+	OrangeSoft   string // #E8A030 — gradient midpoint, step number bg
+	OrangeBright string // #FFB454 — progress bar, highlight text
 
 	// Text tones
-	Ink   string // #f4f7fb — primary body text on dark
-	Muted string // #aebdd4 — secondary / caption text
+	Ink   string // #F6F9FF — primary body text on dark
+	Muted string // #BCD2FF — secondary / caption text
 
 	// Semantic status colors
 	Warn string // #ff5a52 — cause / danger (red)
@@ -33,16 +33,16 @@ type BrandColors struct {
 // Brand is the canonical, exported ADS VANCE brand token set.
 // All image-prompt generation should reference this value.
 var Brand = BrandColors{
-	NavyDeep: "#0a1428",
-	Navy:     "#0f1d35",
-	NavyHi:   "#16284a",
+	NavyDeep: "#062F78",
+	Navy:     "#0047AF",
+	NavyHi:   "#1A5FD0",
 
-	Orange:       "#ff6b2b",
-	OrangeSoft:   "#ff8a52",
-	OrangeBright: "#ff9457",
+	Orange:       "#F0A030",
+	OrangeSoft:   "#E8A030",
+	OrangeBright: "#FFB454",
 
-	Ink:   "#f4f7fb",
-	Muted: "#aebdd4",
+	Ink:   "#F6F9FF",
+	Muted: "#BCD2FF",
 
 	Warn: "#ff5a52",
 	Win:  "#2fd17a",

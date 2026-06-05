@@ -106,14 +106,14 @@ func TestBrandColors(t *testing.T) {
 		got  string
 		want string
 	}{
-		{"NavyDeep", Brand.NavyDeep, "#0a1428"},
-		{"Navy", Brand.Navy, "#0f1d35"},
-		{"NavyHi", Brand.NavyHi, "#16284a"},
-		{"Orange", Brand.Orange, "#ff6b2b"},
-		{"OrangeSoft", Brand.OrangeSoft, "#ff8a52"},
-		{"OrangeBright", Brand.OrangeBright, "#ff9457"},
-		{"Ink", Brand.Ink, "#f4f7fb"},
-		{"Muted", Brand.Muted, "#aebdd4"},
+		{"NavyDeep", Brand.NavyDeep, "#062F78"},
+		{"Navy", Brand.Navy, "#0047AF"},
+		{"NavyHi", Brand.NavyHi, "#1A5FD0"},
+		{"Orange", Brand.Orange, "#F0A030"},
+		{"OrangeSoft", Brand.OrangeSoft, "#E8A030"},
+		{"OrangeBright", Brand.OrangeBright, "#FFB454"},
+		{"Ink", Brand.Ink, "#F6F9FF"},
+		{"Muted", Brand.Muted, "#BCD2FF"},
 		{"Warn", Brand.Warn, "#ff5a52"},
 		{"Win", Brand.Win, "#2fd17a"},
 		{"Info", Brand.Info, "#3b82f6"},
@@ -245,14 +245,14 @@ func TestCSSVars(t *testing.T) {
 
 	// Color vars — names and values must exactly match the templates.
 	colorVars := []struct{ varName, hex string }{
-		{"--navy-deep", "#0a1428"},
-		{"--navy", "#0f1d35"},
-		{"--navy-hi", "#16284a"},
-		{"--orange", "#ff6b2b"},
-		{"--orange-soft", "#ff8a52"},
-		{"--orange-bright", "#ff9457"},
-		{"--ink", "#f4f7fb"},
-		{"--muted", "#aebdd4"},
+		{"--navy-deep", "#062F78"},
+		{"--navy", "#0047AF"},
+		{"--navy-hi", "#1A5FD0"},
+		{"--orange", "#F0A030"},
+		{"--orange-soft", "#E8A030"},
+		{"--orange-bright", "#FFB454"},
+		{"--ink", "#F6F9FF"},
+		{"--muted", "#BCD2FF"},
 		{"--green", "#2fd17a"},
 		{"--red", "#ff5a52"},
 	}
