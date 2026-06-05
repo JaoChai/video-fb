@@ -48,6 +48,11 @@ func buildSceneSpecs(designs []agent.SceneDesign, bounds []sceneBound, bgMode fu
 			slots = append(slots, ss)
 		}
 
+		mascotPose := ""
+		if cuePose := MascotCueToPose(d.MascotCue); cuePose != "" {
+			mascotPose = "assets/mascot/" + cuePose + ".png"
+		}
+
 		specs[i] = SceneSpec{
 			SceneNumber:    d.SceneNumber,
 			LayoutVariant:  d.LayoutVariant,
@@ -57,6 +62,8 @@ func buildSceneSpecs(designs []agent.SceneDesign, bounds []sceneBound, bgMode fu
 			EndSec:         b.End,
 			BackgroundMode: bgMode(d.SceneNumber),
 			Slots:          slots,
+			CaptionStyle:   d.CaptionStyle,
+			MascotPose:     mascotPose,
 		}
 	}
 	return specs

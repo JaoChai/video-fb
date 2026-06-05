@@ -486,7 +486,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 
 		for i, d := range decision.Scenes {
 			i, d := i, d
-			if d.BgArtPrompt == "" {
+			if d.BgArtPrompt == "" || d.BgMode != "hero" {
 				continue
 			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d-%s.png", d.SceneNumber, ratioTag))
@@ -546,6 +546,9 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		DurationSeconds: totalDur,
 		Scenes:          specs,
 		Segments:        segments,
+		IntroMascot:     "assets/mascot/rocket.png",
+		OutroMascot:     "assets/mascot/wave.png",
+		CTAText:         "กดติดตาม ADS VANCE ไม่พลาดเรื่องแอด",
 	}
 
 	projectDir := filepath.Join(clipDir, "scenes-"+ratioTag)
