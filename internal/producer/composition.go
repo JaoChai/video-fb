@@ -126,7 +126,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	sanitizedScenes := make([]SceneSpec, len(p.Scenes))
 	copy(sanitizedScenes, p.Scenes)
 	for i := range sanitizedScenes {
-		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, "#ff6b2b")
+		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, Brand.Orange)
 	}
 
 	// lightweight timing slice for the GSAP driver
