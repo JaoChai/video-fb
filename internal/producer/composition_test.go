@@ -74,10 +74,8 @@ func TestRenderComposition(t *testing.T) {
 		}
 	}
 
-	// Template delimiters must be fully consumed. Only check the opening "{{": a
-	// Go template action always begins with it, while the inlined GSAP runtime
-	// legitimately contains "}}" (minified JS).
-	if strings.Contains(s, "{{") {
+	// Template delimiters must be fully consumed.
+	if strings.Contains(s, "{{") || strings.Contains(s, "}}") {
 		t.Errorf("unrendered template delimiter present in output")
 	}
 

@@ -51,6 +51,7 @@ func scanBrowserIssues(out []byte) []string {
 	var hits []string
 	for _, line := range strings.Split(string(out), "\n") {
 		if strings.Contains(line, "[Browser:PAGEERROR]") ||
+			strings.Contains(line, "Composition script failed") || // GSAP/timeline threw (Hyperframes wraps each script in try/catch)
 			strings.Contains(line, "Failed to download CDN script") ||
 			strings.Contains(line, "is not defined") {
 			hits = append(hits, strings.TrimSpace(line))

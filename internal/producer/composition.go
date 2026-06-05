@@ -22,16 +22,19 @@ type scenesTemplateData struct {
 	Scenes          []SceneSpec
 	SegmentsJSON    template.JS
 	ScenesJSON      template.JS
-	GsapJS          template.JS // GSAP runtime, inlined so the render needs no CDN
 }
 
 //go:embed templates/*.html.tmpl
 var templateFS embed.FS
 
-// gsapMinJS is the GSAP runtime, vendored and inlined into every composition so
-// the Hyperframes render never depends on fetching a CDN script at compile time.
-// The Railway container's render couldn't reach cdn.jsdelivr.net, so GSAP failed
-// to load and every scene froze on the first frame (audio was unaffected).
+// gsapMinJS is the GSAP runtime, vendored and written into each project's assets/
+// dir by the builder so the template can load it via a relative <script src> with
+// NO CDN fetch at render time. The Railway container's render couldn't reach
+// cdn.jsdelivr.net, so GSAP failed to load and every scene froze on the first
+// frame (audio was unaffected). It is bundled as an asset rather than inlined
+// into index.html so its internal Math.random() does not trip the Hyperframes
+// "non_deterministic_code" lint gate (which would fall the render back to a
+// static image).
 //
 //go:embed templates/gsap-3.14.2.min.js
 var gsapMinJS string
@@ -84,7 +87,6 @@ func RenderComposition(p CompositionParams) ([]byte, error) {
 		OutroDuration:   p.DurationSeconds - outroStart,
 		CardsJSON:       template.JS(cardsJSON),
 		SegmentsJSON:    template.JS(segsJSON),
-		GsapJS:          template.JS(gsapMinJS),
 	}
 
 	tmpl, err := template.New(name).ParseFS(templateFS, "templates/"+name)
@@ -163,7 +165,6 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Scenes:          sanitizedScenes,
 		SegmentsJSON:    template.JS(segsJSON),
 		ScenesJSON:      template.JS(scenesJSON),
-		GsapJS:          template.JS(gsapMinJS),
 	}
 
 	const name = "layout_multi_scene.html.tmpl"

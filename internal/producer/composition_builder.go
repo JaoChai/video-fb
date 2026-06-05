@@ -63,7 +63,6 @@ type templateData struct {
 	OutroDuration   float64
 	CardsJSON       template.JS
 	SegmentsJSON    template.JS
-	GsapJS          template.JS
 }
 
 // Build writes a complete project into projectDir and returns the dir path.
@@ -87,6 +86,10 @@ func (b *CompositionBuilder) Build(params CompositionParams, clipID, projectDir,
 	}
 	if err := copyDir(b.fontsDir, fontsDst); err != nil {
 		return "", fmt.Errorf("copy fonts: %w", err)
+	}
+
+	if err := writeGsapAsset(assetsDir); err != nil {
+		return "", fmt.Errorf("write gsap asset: %w", err)
 	}
 
 	htmlBytes, err := RenderComposition(params)
@@ -153,6 +156,10 @@ func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir
 
 	if err := copyDir(b.fontsDir, fontsDst); err != nil {
 		return "", fmt.Errorf("copy fonts: %w", err)
+	}
+
+	if err := writeGsapAsset(assetsDir); err != nil {
+		return "", fmt.Errorf("write gsap asset: %w", err)
 	}
 
 	htmlBytes, err := RenderCompositionScenes(params)
@@ -259,6 +266,13 @@ func animationSpeed(s string) string {
 	default:
 		return "normal"
 	}
+}
+
+// writeGsapAsset writes the vendored GSAP runtime into the project's assets dir
+// so the composition loads it via a relative <script src="assets/gsap.min.js">
+// with no CDN fetch (and no inlined Math.random() tripping the lint gate).
+func writeGsapAsset(assetsDir string) error {
+	return os.WriteFile(filepath.Join(assetsDir, "gsap.min.js"), []byte(gsapMinJS), 0o644)
 }
 
 func copyFile(src, dst string) error {
