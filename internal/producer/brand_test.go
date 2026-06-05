@@ -128,7 +128,7 @@ func TestBrandColors(t *testing.T) {
 }
 
 // TestImageStyleAnchor verifies the style anchor is deterministic, non-empty,
-// and contains the canonical navy and orange hex codes.
+// and contains the canonical royal-blue and amber hex codes.
 func TestImageStyleAnchor(t *testing.T) {
 	first := Brand.ImageStyleAnchor()
 	second := Brand.ImageStyleAnchor()
@@ -139,11 +139,11 @@ func TestImageStyleAnchor(t *testing.T) {
 	if first != second {
 		t.Errorf("ImageStyleAnchor() is not deterministic:\n  call 1: %q\n  call 2: %q", first, second)
 	}
-	if !strings.Contains(first, "#0a1428") {
-		t.Errorf("ImageStyleAnchor() missing navy hex #0a1428: %q", first)
+	if !strings.Contains(first, "#0047AF") {
+		t.Errorf("ImageStyleAnchor() missing royal-blue hex #0047AF: %q", first)
 	}
-	if !strings.Contains(first, "#ff6b2b") {
-		t.Errorf("ImageStyleAnchor() missing orange hex #ff6b2b: %q", first)
+	if !strings.Contains(first, "#F0A030") {
+		t.Errorf("ImageStyleAnchor() missing amber hex #F0A030: %q", first)
 	}
 }
 

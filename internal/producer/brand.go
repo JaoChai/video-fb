@@ -99,8 +99,8 @@ func (b BrandColors) SafeZone(aspect string) SafeZoneSpec {
 // image model honours the exact palette.
 func (b BrandColors) ImageStyleAnchor() string {
 	return "Flat modern editorial illustration style with soft cinematic lighting. " +
-		"Strict two-tone palette: deep navy #0a1428 as the dominant background and structural color, " +
-		"vibrant orange #ff6b2b as the single accent for highlights, glows, and focal points. " +
+		"Strict two-tone palette: vivid royal blue #0047AF as the dominant background and structural color, " +
+		"warm amber gold #F0A030 as the single accent for highlights, glows, and focal points. " +
 		"No other saturated hues. Clean vector-quality rendering, minimal grain, no photorealism. " +
 		"Subtle radial glow from the top-center, gentle vignette at the edges. " +
 		"Atmosphere: confident, modern, premium digital-marketing brand identity."
