@@ -136,20 +136,22 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 
 	// lightweight timing slice for the GSAP driver
 	type sceneTiming struct {
-		SceneNumber int     `json:"scene"`
-		StartSec    float64 `json:"start"`
-		EndSec      float64 `json:"end"`
-		Speed       string  `json:"speed"`
-		Variant     string  `json:"variant"`
+		SceneNumber  int     `json:"scene"`
+		StartSec     float64 `json:"start"`
+		EndSec       float64 `json:"end"`
+		Speed        string  `json:"speed"`
+		Variant      string  `json:"variant"`
+		CaptionStyle string  `json:"caption_style"`
 	}
 	timings := make([]sceneTiming, len(p.Scenes))
 	for i, s := range p.Scenes {
 		timings[i] = sceneTiming{
-			SceneNumber: s.SceneNumber,
-			StartSec:    s.StartSec,
-			EndSec:      s.EndSec,
-			Speed:       animationSpeed(s.AnimationSpeed),
-			Variant:     s.LayoutVariant,
+			SceneNumber:  s.SceneNumber,
+			StartSec:     s.StartSec,
+			EndSec:       s.EndSec,
+			Speed:        animationSpeed(s.AnimationSpeed),
+			Variant:      s.LayoutVariant,
+			CaptionStyle: s.CaptionStyle,
 		}
 	}
 	scenesJSON, err := json.Marshal(timings)

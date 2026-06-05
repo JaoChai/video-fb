@@ -16,7 +16,7 @@ func sampleScenesParams(aspect string) ScenesParams {
 		CTAText:         "กดติดตาม ไม่พลาดทุกอัปเดตแอด",
 		Scenes: []SceneSpec{
 			{SceneNumber: 1, LayoutVariant: "hook_big", AccentColor: "#F0A030", AnimationSpeed: "normal",
-				StartSec: 0, EndSec: 15, BackgroundMode: "css",
+				StartSec: 0, EndSec: 15, BackgroundMode: "css", CaptionStyle: "word_pop",
 				Slots: []SlotSpec{{Role: "headline", HTML: template.HTML("บัญชีโดนแบน")}}},
 			{SceneNumber: 2, LayoutVariant: "list_steps", AccentColor: "#F0A030", AnimationSpeed: "normal",
 				StartSec: 15, EndSec: 32, BackgroundMode: "css",
@@ -95,5 +95,18 @@ func TestRenderCompositionScenes_RejectsEmpty(t *testing.T) {
 	}
 	if _, err := RenderCompositionScenes(ScenesParams{AspectRatio: "9:16", DurationSeconds: 10}); err == nil {
 		t.Error("expected error for empty Scenes")
+	}
+}
+
+func TestRenderCompositionScenes_CaptionStyleInJSON(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(out)
+	for _, m := range []string{`"caption_style":"word_pop"`, `"caption_style":"phrase_block"`} {
+		if !strings.Contains(s, m) {
+			t.Errorf("ScenesJSON missing %q", m)
+		}
 	}
 }

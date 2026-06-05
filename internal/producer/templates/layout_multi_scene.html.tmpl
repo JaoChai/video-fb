@@ -614,6 +614,15 @@
 
       // ── Data injected by Go (template.JS — raw JSON, not escaped) ──
       const SCENES = {{.ScenesJSON}};
+
+      // Return the caption_style of the scene active at time t, defaulting to
+      // "phrase_block" when the field is absent or no scene covers t.
+      function captionStyleAt(t) {
+        for (var i = 0; i < SCENES.length; i++) {
+          if (t >= SCENES[i].start && t < SCENES[i].end) return SCENES[i].caption_style || "phrase_block";
+        }
+        return "phrase_block";
+      }
       const SEGMENTS = {{.SegmentsJSON}};
       const TOTAL = {{.DurationSeconds}};
       const ROOT = document.getElementById("root");
@@ -894,9 +903,13 @@
 
       /* ──────────  KARAOKE CAPTIONS (continuous, kinetic)  ────────── */
       // The phrase container fades in once and stays fully readable for its whole
-      // window; WITHIN it each word reveals staggered, and one key word pops with
-      // the scene accent. Word splitting is whitespace-based; any sub-word work
-      // uses Intl.Segmenter graphemes so Thai marks never separate.
+      // window. Two styles are supported per scene:
+      //   word_pop    – per-word staggered reveal with a key-word accent pop
+      //                 (hook scenes: keeps energy high).
+      //   phrase_block – the whole phrase fades in as one block
+      //                 (content scenes: easier to read at speed).
+      // Word splitting is whitespace-based; any sub-word work uses Intl.Segmenter
+      // graphemes so Thai marks never separate.
       const capStage = document.getElementById("capStage");
       SEGMENTS.forEach(function (seg, i) {
         const el = document.createElement("div");
@@ -905,6 +918,7 @@
         capStage.appendChild(el);
 
         // Fit on the plain phrase first, then wrap into per-word spans.
+        // Both styles use buildCaptionWords so the key word is always amber.
         fitEl(el, { maxWidth: CAP_MAXW, base: CAP_BASE, min: CAP_MIN, fontWeight: 700 });
         const words = buildCaptionWords(el);
 
@@ -912,28 +926,40 @@
         const outAt = i < SEGMENTS.length - 1 ? SEGMENTS[i + 1].start : seg.end;
         const win = Math.max(0.4, outAt - inAt);
 
-        // Phrase band fades/scales in as a whole (readability anchor).
-        tl.fromTo(el, { opacity: 0, scale: 0.94, y: 22 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
-        tl.call(function () { el.classList.add("active"); }, null, inAt);
+        var style = captionStyleAt(seg.start);
 
-        // Word-by-word reveal, staggered across the first ~40% of the window
-        // (capped) so the full phrase is legible well before it leaves.
-        const revealSpan = Math.min(win * 0.4, 0.9);
-        const stepGap = words.length > 1 ? revealSpan / words.length : 0;
-        words.forEach(function (w, wi) {
-          const at = inAt + 0.06 + wi * stepGap;
-          tl.fromTo(w, { opacity: 0, yPercent: 38 }, { opacity: 1, yPercent: 0, duration: 0.34, ease: "var(--ease-out)" }, at);
-          if (w.classList.contains("key")) {
-            // Key word beat: a contained scale pop (transform-only, no reflow).
-            tl.fromTo(w, { scale: 0.8 }, { scale: 1.14, duration: 0.26, ease: "var(--ease-spring)" }, at + 0.02);
-            tl.to(w, { scale: 1.0, duration: 0.4, ease: "var(--ease-out)" }, at + 0.28);
-          }
-        });
+        if (style === "word_pop") {
+          // ── word_pop: phrase band in + per-word staggered reveal ──
+          // Phrase band fades/scales in as a whole (readability anchor).
+          tl.fromTo(el, { opacity: 0, scale: 0.94, y: 22 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
+          tl.call(function () { el.classList.add("active"); }, null, inAt);
 
-        // Phrase out before the next phrase starts.
-        tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          // Word-by-word reveal, staggered across the first ~40% of the window
+          // (capped) so the full phrase is legible well before it leaves.
+          const revealSpan = Math.min(win * 0.4, 0.9);
+          const stepGap = words.length > 1 ? revealSpan / words.length : 0;
+          words.forEach(function (w, wi) {
+            const at = inAt + 0.06 + wi * stepGap;
+            tl.fromTo(w, { opacity: 0, yPercent: 38 }, { opacity: 1, yPercent: 0, duration: 0.34, ease: "var(--ease-out)" }, at);
+            if (w.classList.contains("key")) {
+              // Key word beat: a contained scale pop (transform-only, no reflow).
+              tl.fromTo(w, { scale: 0.8 }, { scale: 1.14, duration: 0.26, ease: "var(--ease-spring)" }, at + 0.02);
+              tl.to(w, { scale: 1.0, duration: 0.4, ease: "var(--ease-out)" }, at + 0.28);
+            }
+          });
+
+          // Phrase out before the next phrase starts.
+          tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          tl.set(el, { opacity: 0 }, outAt);
+        } else {
+          // ── phrase_block: whole phrase fades in once as a single unit ──
+          tl.fromTo(el, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
+          tl.call(function () { el.classList.add("active"); }, null, inAt);
+          tl.to(el, { opacity: 0, y: -14, duration: 0.24, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          tl.set(el, { opacity: 0 }, outAt);
+        }
+
         tl.call(function () { el.classList.remove("active"); }, null, outAt);
-        tl.set(el, { opacity: 0 }, outAt);
       });
 
       /* ──────────  MASCOT BUMPERS + PER-SCENE POP (transform/opacity only)  ────────── */
