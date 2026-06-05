@@ -5,6 +5,12 @@ import (
 	"strings"
 )
 
+// BrandName is the channel brand name shown in badges/bumpers.
+const BrandName = "ADS VANCE"
+
+// BrandCTA is the outro call-to-action copy.
+const BrandCTA = "กดติดตาม ADS VANCE ไม่พลาดเรื่องแอด"
+
 // BrandColors is the single source of truth for the ADS VANCE visual palette,
 // scoped to image-prompt generation. Hex values are taken directly from the
 // layout templates (layout_dynamic_karaoke.html.tmpl and

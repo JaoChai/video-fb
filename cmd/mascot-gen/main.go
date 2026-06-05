@@ -25,7 +25,7 @@ func main() {
 		fmt.Println("OPENAI_API_KEY not set")
 		os.Exit(1)
 	}
-	outDir := "assets/mascot"
+	outDir := producer.MascotAssetDir
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		fmt.Printf("mkdir: %v\n", err)
 		os.Exit(1)

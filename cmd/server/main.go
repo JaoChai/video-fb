@@ -106,7 +106,6 @@ func main() {
 			agent.NewCompositionAgent(llm),
 			producer.NewCompositionBuilder(cfg.HyperframesFontsDir),
 			producer.NewHyperframesRenderer(),
-			producer.NewOpenAITranscriber(pool),
 			scenesAgentCfg,
 			cfg.HyperframesMultiScene,
 		)

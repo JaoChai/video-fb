@@ -50,7 +50,7 @@ func buildSceneSpecs(designs []agent.SceneDesign, bounds []sceneBound, bgMode fu
 
 		mascotPose := ""
 		if cuePose := MascotCueToPose(d.MascotCue); cuePose != "" {
-			mascotPose = "assets/mascot/" + cuePose + ".png"
+			mascotPose = MascotAssetPath(cuePose)
 		}
 
 		specs[i] = SceneSpec{

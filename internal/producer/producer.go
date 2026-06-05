@@ -41,7 +41,6 @@ type hyperframesDeps struct {
 	compAgent       *agent.CompositionAgent
 	builder         *CompositionBuilder
 	renderer        *HyperframesRenderer
-	transcriber     Transcriber
 	scenesAgentCfg  *models.AgentConfig // nil = multi-scene path disabled
 	multiScene      bool                // true when HYPERFRAMES_MULTI_SCENE=true
 }
@@ -51,14 +50,13 @@ func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClien
 	return &Producer{pool: pool, kie: kie, openRouter: openRouter, openAIImage: openAIImage, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
-// EnableHyperframes turns on the Hyperframes render path. scenesAgentCfg and
-// multiScene together gate the multi-scene path; if either is nil/false the
-// existing single-scene path is used instead.
+// EnableHyperframes turns on the Hyperframes render path. These deps are
+// required: scenesAgentCfg and multiScene gate the multi-scene path, and if
+// either is nil/false Produce fails — there is no fallback render path.
 func (p *Producer) EnableHyperframes(
 	compAgent *agent.CompositionAgent,
 	builder *CompositionBuilder,
 	renderer *HyperframesRenderer,
-	tr Transcriber,
 	scenesAgentCfg *models.AgentConfig,
 	multiScene bool,
 ) {
@@ -66,7 +64,6 @@ func (p *Producer) EnableHyperframes(
 		compAgent:      compAgent,
 		builder:        builder,
 		renderer:       renderer,
-		transcriber:    tr,
 		scenesAgentCfg: scenesAgentCfg,
 		multiScene:     multiScene,
 	}
@@ -108,6 +105,8 @@ func retryRender(ctx context.Context, attempts int, fn func() error) error {
 	return last
 }
 
+// voiceScript is now unused (voice is synthesized per-scene by synthScenesVoice);
+// it is retained only to preserve the caller signature in orchestrator.go.
 func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.GeneratedScene, imagePrompts []agent.SceneImagePrompts, voiceScript string) (*ProduceResult, error) {
 	clipDir := filepath.Join(p.workDir, clipID)
 	os.MkdirAll(clipDir, 0755)
@@ -117,19 +116,9 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	prompt := imagePrompts[0]
 
+	// voicePath is produced per-scene by synthScenesVoice in the assembly block
+	// below (which overwrites this path); declared here only for the later upload.
 	voicePath := filepath.Join(clipDir, "voice.wav")
-	p.tracker.StartStep("voice")
-	if !fileExists(voicePath) {
-		voice := p.getVoice(ctx)
-		log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
-		if err := p.openRouter.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
-			p.tracker.FailStep("voice", err)
-			return nil, fmt.Errorf("generate voice: %w", err)
-		}
-	} else {
-		log.Printf("Skipping voice for %s (file exists)", clipID)
-	}
-	p.tracker.CompleteStep("voice")
 
 	p.tracker.StartStep("images")
 	img169 := filepath.Join(clipDir, "question-16x9.png")
@@ -159,7 +148,6 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	p.tracker.CompleteStep("images")
 
-	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 
@@ -171,15 +159,19 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		return nil, err
 	}
 
+	// Per-scene TTS produces the concatenated voice track (overwrites voicePath).
+	p.tracker.StartStep("voice")
 	log.Printf("Multi-scene assembly for %s (Hyperframes)", clipID)
 	voice := p.getVoice(ctx)
 	msVoicePath, bounds, msErr := p.synthScenesVoice(ctx, scenes, voice, clipDir)
 	if msErr != nil {
-		p.tracker.FailStep("assembly", msErr)
+		p.tracker.FailStep("voice", msErr)
 		return nil, fmt.Errorf("multi-scene TTS: %w", msErr)
 	}
 	voicePath = msVoicePath
+	p.tracker.CompleteStep("voice")
 
+	p.tracker.StartStep("assembly")
 	// Both ratios share the SAME concatenated audio, so always render both together.
 	// Each render gets a retry; on exhaustion we fail the clip (no fallback) and the
 	// tracker surfaces the error to the UI.
@@ -405,16 +397,16 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 
 	params := ScenesParams{
 		AspectRatio:     aspect,
-		BrandName:       "ADS VANCE",
+		BrandName:       BrandName,
 		CategoryLabel:   strings.ToUpper(category),
 		QuestionerName:  questioner,
 		Kicker:          decision.Kicker,
 		DurationSeconds: totalDur,
 		Scenes:          specs,
 		Segments:        segments,
-		IntroMascot:     "assets/mascot/rocket.png",
-		OutroMascot:     "assets/mascot/wave.png",
-		CTAText:         "กดติดตาม ADS VANCE ไม่พลาดเรื่องแอด",
+		IntroMascot:     MascotAssetPath("rocket"),
+		OutroMascot:     MascotAssetPath("wave"),
+		CTAText:         BrandCTA,
 	}
 
 	projectDir := filepath.Join(clipDir, "scenes-"+ratioTag)
@@ -426,7 +418,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		return fmt.Errorf("multi-scene lint: %w", err)
 	}
 	// Inspect is a gate: if the layout has clipped/overlapping content, fail now
-	// so the caller can fall back to a simpler render rather than producing junk.
+	// rather than producing junk. There is no fallback — inspect failure fails the render.
 	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
 		return fmt.Errorf("multi-scene inspect: %w", err)
 	}
@@ -437,14 +429,6 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		return fmt.Errorf("move multi-scene video: %w", err)
 	}
 	return nil
-}
-
-func segmentsContext(segs []TranscriptSegment) string {
-	var b strings.Builder
-	for _, s := range segs {
-		fmt.Fprintf(&b, "[%.1f-%.1f] %s\n", s.Start, s.End, s.Text)
-	}
-	return b.String()
 }
 
 func fileExists(path string) bool {

@@ -1,5 +1,13 @@
 package producer
 
+// MascotAssetDir is the project-relative directory holding baked mascot PNGs.
+const MascotAssetDir = "assets/mascot"
+
+// MascotAssetPath returns the project-relative path to a baked mascot pose PNG.
+func MascotAssetPath(pose string) string {
+	return MascotAssetDir + "/" + pose + ".png"
+}
+
 // mascotPoses is the fixed pose set baked once (offline) via cmd/mascot-gen and
 // committed under assets/mascot/<name>.png as transparent PNGs.
 var mascotPoses = []string{"rocket", "point_left", "point_right", "thumbs_up", "think", "wave"}
