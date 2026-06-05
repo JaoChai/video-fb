@@ -81,11 +81,10 @@ func main() {
 	imageAgent := agent.NewImageAgent(llm)
 
 	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
-	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
 	tracker := progress.NewTracker()
 	orClient := producer.NewOpenRouterClient(pool)
 	openAIImage := producer.NewOpenAIImageClient(pool)
-	prod := producer.NewProducer(pool, kie, orClient, openAIImage, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
+	prod := producer.NewProducer(pool, kie, orClient, openAIImage, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
 	if cfg.HyperframesEnabled {
 		// Load the composition_scenes agent config for the multi-scene path.
 		// A missing row is not fatal — it just disables the multi-scene path.
