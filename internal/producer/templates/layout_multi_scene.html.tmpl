@@ -543,6 +543,24 @@
           {{end}}
           {{end}}
         </div>
+        {{if $s.MascotPose}}
+        <img class="scene-mascot" id="scene-mascot-{{$s.SceneNumber}}" src="{{$s.MascotPose}}" data-layout-allow-overflow
+             style="position:absolute;right:4%;bottom:calc(var(--cap-bottom) + 80px);width:26%;max-width:340px;z-index:5;opacity:0" />
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .IntroMascot}}
+      <div id="introBumper" class="clip" data-start="0" data-duration="1.4" data-track-index="3" data-layout-allow-overflow
+           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:40;opacity:0;background:radial-gradient(120% 90% at 50% 40%,var(--navy-hi) 0%,var(--navy) 60%,var(--navy-deep) 100%)">
+        <img src="{{.IntroMascot}}" style="width:62%;max-width:760px" data-layout-allow-overflow />
+      </div>
+      {{end}}
+      {{if .OutroMascot}}
+      <div id="outroBumper" class="clip" data-start="{{.OutroStartSec}}" data-duration="{{.OutroDurSec}}" data-track-index="4" data-layout-allow-overflow
+           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;z-index:40;opacity:0;background:radial-gradient(120% 90% at 50% 40%,var(--navy-hi) 0%,var(--navy) 60%,var(--navy-deep) 100%)">
+        <img src="{{.OutroMascot}}" style="width:54%;max-width:680px" data-layout-allow-overflow />
+        <div style="color:#fff;font-weight:800;font-size:42px;text-align:center;letter-spacing:.02em;max-width:80%">{{.CTAText}}</div>
       </div>
       {{end}}
 
@@ -916,6 +934,27 @@
         tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
         tl.call(function () { el.classList.remove("active"); }, null, outAt);
         tl.set(el, { opacity: 0 }, outAt);
+      });
+
+      /* ──────────  MASCOT BUMPERS + PER-SCENE POP (transform/opacity only)  ────────── */
+      // Intro bumper: fade+scale in, hold, fade out before scene 1
+      const intro = document.getElementById("introBumper");
+      if (intro) {
+        tl.fromTo(intro, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.4, ease: "var(--ease-out)" }, 0);
+        tl.to(intro, { opacity: 0, scale: 1.04, duration: 0.4, ease: "var(--ease-in)" }, 1.0);
+      }
+      // Outro bumper: fade+scale in for the final stretch
+      const outro = document.getElementById("outroBumper");
+      if (outro) {
+        const oAt = Math.max(0, TOTAL - 1.6);
+        tl.fromTo(outro, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.4, ease: "var(--ease-out)" }, oAt);
+      }
+      // Per-scene mascot pop: slide in from right, hold, out before scene end
+      SCENES.forEach(function (sc) {
+        const m = document.getElementById("scene-mascot-" + sc.scene);
+        if (!m) return;
+        tl.fromTo(m, { opacity: 0, xPercent: 30 }, { opacity: 1, xPercent: 0, duration: 0.4, ease: "var(--ease-spring)" }, sc.start + 0.3);
+        tl.to(m, { opacity: 0, xPercent: 20, duration: 0.3, ease: "var(--ease-in)" }, Math.max(sc.start + 0.7, sc.end - 0.3));
       });
 
       // Lock the composition to exactly the clip duration

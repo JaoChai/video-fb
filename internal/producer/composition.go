@@ -19,6 +19,11 @@ type scenesTemplateData struct {
 	Kicker          string
 	VoiceSrc        string
 	DurationSeconds float64
+	IntroMascot     string
+	OutroMascot     string
+	CTAText         string
+	OutroStartSec   float64
+	OutroDurSec     float64
 	Scenes          []SceneSpec
 	SegmentsJSON    template.JS
 	ScenesJSON      template.JS
@@ -152,6 +157,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshal scene timings: %w", err)
 	}
 
+	outroStart := p.DurationSeconds - 1.6
+	if outroStart < 0 {
+		outroStart = 0
+	}
+
 	data := scenesTemplateData{
 		Width:           width,
 		Height:          height,
@@ -162,6 +172,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Kicker:          p.Kicker,
 		VoiceSrc:        p.VoiceSrc,
 		DurationSeconds: p.DurationSeconds,
+		IntroMascot:     p.IntroMascot,
+		OutroMascot:     p.OutroMascot,
+		CTAText:         p.CTAText,
+		OutroStartSec:   outroStart,
+		OutroDurSec:     p.DurationSeconds - outroStart,
 		Scenes:          sanitizedScenes,
 		SegmentsJSON:    template.JS(segsJSON),
 		ScenesJSON:      template.JS(scenesJSON),

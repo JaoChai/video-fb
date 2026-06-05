@@ -11,12 +11,16 @@ func sampleScenesParams(aspect string) ScenesParams {
 		AspectRatio: aspect, BrandName: "ADS VANCE", CategoryLabel: "PIXEL",
 		QuestionerName: "คุณป๊อบ", Kicker: "CAPI & PIXEL", VoiceSrc: "assets/voice.wav",
 		DurationSeconds: 45,
+		IntroMascot:     "assets/mascot/rocket.png",
+		OutroMascot:     "assets/mascot/wave.png",
+		CTAText:         "กดติดตาม ไม่พลาดทุกอัปเดตแอด",
 		Scenes: []SceneSpec{
 			{SceneNumber: 1, LayoutVariant: "hook_big", AccentColor: "#F0A030", AnimationSpeed: "normal",
 				StartSec: 0, EndSec: 15, BackgroundMode: "css",
 				Slots: []SlotSpec{{Role: "headline", HTML: template.HTML("บัญชีโดนแบน")}}},
 			{SceneNumber: 2, LayoutVariant: "list_steps", AccentColor: "#F0A030", AnimationSpeed: "normal",
 				StartSec: 15, EndSec: 32, BackgroundMode: "css",
+				MascotPose: "assets/mascot/thumbs_up.png", CaptionStyle: "phrase_block",
 				Slots: []SlotSpec{{Role: "step", HTML: template.HTML("เช็คเวลา UTC"), StepNum: 1}}},
 			{SceneNumber: 3, LayoutVariant: "quote_cta", AccentColor: "#2fd17a", AnimationSpeed: "normal",
 				StartSec: 32, EndSec: 45, BackgroundMode: "css",
@@ -53,6 +57,19 @@ func TestRenderCompositionScenes_16x9(t *testing.T) {
 	s := string(out)
 	if !strings.Contains(s, `data-width="1920"`) || !strings.Contains(s, `data-height="1080"`) {
 		t.Errorf("16:9 dimensions wrong")
+	}
+}
+
+func TestRenderCompositionScenes_Bumper(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(out)
+	for _, m := range []string{`id="introBumper"`, "assets/mascot/rocket.png", `id="outroBumper"`, "assets/mascot/wave.png", "กดติดตาม", "assets/mascot/thumbs_up.png"} {
+		if !strings.Contains(s, m) {
+			t.Errorf("output missing %q", m)
+		}
 	}
 }
 

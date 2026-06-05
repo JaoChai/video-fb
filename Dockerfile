@@ -37,6 +37,8 @@ COPY --from=builder /server /server
 COPY migrations/ /migrations/
 # Sarabun fonts the composition builder copies into each project.
 COPY hyperframes-poc/poc-video/assets/fonts/ /app/assets/fonts/
+# Mascot poses the composition builder copies into each project (intro/outro/per-scene).
+COPY assets/mascot/ /app/assets/mascot/
 
 ENV PORT=8080
 # Tell Puppeteer (used by Hyperframes) to use the system Chromium, not download one.
