@@ -19,6 +19,11 @@ type scenesTemplateData struct {
 	Kicker          string
 	VoiceSrc        string
 	DurationSeconds float64
+	IntroMascot     string
+	OutroMascot     string
+	CTAText         string
+	OutroStartSec   float64
+	OutroDurSec     float64
 	Scenes          []SceneSpec
 	SegmentsJSON    template.JS
 	ScenesJSON      template.JS
@@ -126,30 +131,37 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	sanitizedScenes := make([]SceneSpec, len(p.Scenes))
 	copy(sanitizedScenes, p.Scenes)
 	for i := range sanitizedScenes {
-		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, "#ff6b2b")
+		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, Brand.Orange)
 	}
 
 	// lightweight timing slice for the GSAP driver
 	type sceneTiming struct {
-		SceneNumber int     `json:"scene"`
-		StartSec    float64 `json:"start"`
-		EndSec      float64 `json:"end"`
-		Speed       string  `json:"speed"`
-		Variant     string  `json:"variant"`
+		SceneNumber  int     `json:"scene"`
+		StartSec     float64 `json:"start"`
+		EndSec       float64 `json:"end"`
+		Speed        string  `json:"speed"`
+		Variant      string  `json:"variant"`
+		CaptionStyle string  `json:"caption_style"`
 	}
 	timings := make([]sceneTiming, len(p.Scenes))
 	for i, s := range p.Scenes {
 		timings[i] = sceneTiming{
-			SceneNumber: s.SceneNumber,
-			StartSec:    s.StartSec,
-			EndSec:      s.EndSec,
-			Speed:       animationSpeed(s.AnimationSpeed),
-			Variant:     s.LayoutVariant,
+			SceneNumber:  s.SceneNumber,
+			StartSec:     s.StartSec,
+			EndSec:       s.EndSec,
+			Speed:        animationSpeed(s.AnimationSpeed),
+			Variant:      s.LayoutVariant,
+			CaptionStyle: s.CaptionStyle,
 		}
 	}
 	scenesJSON, err := json.Marshal(timings)
 	if err != nil {
 		return nil, fmt.Errorf("marshal scene timings: %w", err)
+	}
+
+	outroStart := p.DurationSeconds - 1.6
+	if outroStart < 0 {
+		outroStart = 0
 	}
 
 	data := scenesTemplateData{
@@ -162,6 +174,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Kicker:          p.Kicker,
 		VoiceSrc:        p.VoiceSrc,
 		DurationSeconds: p.DurationSeconds,
+		IntroMascot:     p.IntroMascot,
+		OutroMascot:     p.OutroMascot,
+		CTAText:         p.CTAText,
+		OutroStartSec:   outroStart,
+		OutroDurSec:     p.DurationSeconds - outroStart,
 		Scenes:          sanitizedScenes,
 		SegmentsJSON:    template.JS(segsJSON),
 		ScenesJSON:      template.JS(scenesJSON),

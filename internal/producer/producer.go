@@ -29,11 +29,11 @@ type Producer struct {
 	pool         *pgxpool.Pool
 	kie          *KieClient
 	openRouter   *OpenRouterClient
-	ffmpeg       *FFmpegAssembler
+	openAIImage  *OpenAIImageClient
 	defaultVoice string
 	workDir      string
 	tracker      *progress.Tracker
-	hf           *hyperframesDeps // nil = disabled, use FFmpeg
+	hf           *hyperframesDeps // must be set (multi-scene) — there is no fallback render path
 }
 
 // hyperframesDeps bundles everything the Hyperframes render paths need.
@@ -41,24 +41,22 @@ type hyperframesDeps struct {
 	compAgent       *agent.CompositionAgent
 	builder         *CompositionBuilder
 	renderer        *HyperframesRenderer
-	transcriber     Transcriber
 	scenesAgentCfg  *models.AgentConfig // nil = multi-scene path disabled
 	multiScene      bool                // true when HYPERFRAMES_MULTI_SCENE=true
 }
 
-func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
+func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, openAIImage *OpenAIImageClient, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+	return &Producer{pool: pool, kie: kie, openRouter: openRouter, openAIImage: openAIImage, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
-// EnableHyperframes turns on the Hyperframes render path. scenesAgentCfg and
-// multiScene together gate the multi-scene path; if either is nil/false the
-// existing single-scene path is used instead.
+// EnableHyperframes turns on the Hyperframes render path. These deps are
+// required: scenesAgentCfg and multiScene gate the multi-scene path, and if
+// either is nil/false Produce fails — there is no fallback render path.
 func (p *Producer) EnableHyperframes(
 	compAgent *agent.CompositionAgent,
 	builder *CompositionBuilder,
 	renderer *HyperframesRenderer,
-	tr Transcriber,
 	scenesAgentCfg *models.AgentConfig,
 	multiScene bool,
 ) {
@@ -66,7 +64,6 @@ func (p *Producer) EnableHyperframes(
 		compAgent:      compAgent,
 		builder:        builder,
 		renderer:       renderer,
-		transcriber:    tr,
 		scenesAgentCfg: scenesAgentCfg,
 		multiScene:     multiScene,
 	}
@@ -92,6 +89,24 @@ type ProduceResult struct {
 	ThumbnailURL string
 }
 
+// retryRender runs fn up to attempts times, returning nil on first success or
+// the last error after exhausting attempts. Respects ctx cancellation.
+func retryRender(ctx context.Context, attempts int, fn func() error) error {
+	var last error
+	for i := 0; i < attempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if last = fn(); last == nil {
+			return nil
+		}
+		log.Printf("render attempt %d/%d failed: %v", i+1, attempts, last)
+	}
+	return last
+}
+
+// voiceScript is now unused (voice is synthesized per-scene by synthScenesVoice);
+// it is retained only to preserve the caller signature in orchestrator.go.
 func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.GeneratedScene, imagePrompts []agent.SceneImagePrompts, voiceScript string) (*ProduceResult, error) {
 	clipDir := filepath.Join(p.workDir, clipID)
 	os.MkdirAll(clipDir, 0755)
@@ -101,19 +116,9 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	prompt := imagePrompts[0]
 
+	// voicePath is produced per-scene by synthScenesVoice in the assembly block
+	// below (which overwrites this path); declared here only for the later upload.
 	voicePath := filepath.Join(clipDir, "voice.wav")
-	p.tracker.StartStep("voice")
-	if !fileExists(voicePath) {
-		voice := p.getVoice(ctx)
-		log.Printf("Generating voice for %s (voice: %s)", clipID, voice)
-		if err := p.openRouter.GenerateVoice(ctx, voiceScript, voice, voicePath); err != nil {
-			p.tracker.FailStep("voice", err)
-			return nil, fmt.Errorf("generate voice: %w", err)
-		}
-	} else {
-		log.Printf("Skipping voice for %s (file exists)", clipID)
-	}
-	p.tracker.CompleteStep("voice")
 
 	p.tracker.StartStep("images")
 	img169 := filepath.Join(clipDir, "question-16x9.png")
@@ -125,7 +130,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 		os.Remove(filepath.Join(clipDir, "video-9x16.mp4"))
 	}
 	if !fileExists(img169) {
-		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
+		if err := p.openAIImage.GenerateImage(ctx, prompt.ImagePrompt169, "16:9", img169); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 16:9 image: %w", err)
 		}
@@ -134,7 +139,7 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 
 	if !fileExists(img916) {
-		if err := p.openRouter.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
+		if err := p.openAIImage.GenerateImage(ctx, prompt.ImagePrompt916, "9:16", img916); err != nil {
 			p.tracker.FailStep("images", err)
 			return nil, fmt.Errorf("generate 9:16 image: %w", err)
 		}
@@ -143,78 +148,45 @@ func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.Ge
 	}
 	p.tracker.CompleteStep("images")
 
-	p.tracker.StartStep("assembly")
 	video169 := filepath.Join(clipDir, "video-16x9.mp4")
 	video916 := filepath.Join(clipDir, "video-9x16.mp4")
 
-	// Multi-scene path: generate per-scene TTS, then render both aspect ratios
-	// with the composition_scenes agent. On any error, fall through to the
-	// existing single-scene assembly below.
-	if p.hf != nil && p.hf.multiScene && p.hf.scenesAgentCfg != nil &&
-		(!fileExists(video169) || !fileExists(video916)) {
-		log.Printf("Multi-scene assembly for %s (Hyperframes)", clipID)
-		voice := p.getVoice(ctx)
-		msVoicePath, bounds, msErr := p.synthScenesVoice(ctx, scenes, voice, clipDir)
-		if msErr != nil {
-			log.Printf("Multi-scene TTS failed for %s, falling back to single-scene: %v", clipID, msErr)
-		} else {
-			// Replace the voicePath for uploads later if multi-scene took over.
-			voicePath = msVoicePath
-
-			// Both videos share the SAME concatenated audio (msVoicePath), so we
-			// ALWAYS (re)render BOTH together — even on a resume where one already
-			// exists — to guarantee the two ratios never end up with mismatched
-			// audio tracks (e.g. a leftover from a prior single-scene run with
-			// different audio). No per-video fileExists skip here.
-			if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "9:16", video916); err != nil {
-				log.Printf("Multi-scene 9:16 failed for %s, falling back: %v", clipID, err)
-				if err2 := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err2 != nil {
-					return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err2)
-				}
-			}
-
-			if err := p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "16:9", video169); err != nil {
-				log.Printf("Multi-scene 16:9 failed for %s, falling back: %v", clipID, err)
-				if err2 := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err2 != nil {
-					return nil, fmt.Errorf("assemble 16:9 (fallback): %w", err2)
-				}
-			}
-
-			// Both videos handled — skip the single-scene block below.
-			goto assemblyDone
-		}
+	// Hyperframes multi-scene is the ONLY render path. If it isn't enabled there is
+	// no fallback — fail loudly rather than silently producing a lesser video.
+	if p.hf == nil || !p.hf.multiScene || p.hf.scenesAgentCfg == nil {
+		err := fmt.Errorf("hyperframes multi-scene pipeline not enabled — cannot produce video")
+		p.tracker.FailStep("assembly", err)
+		return nil, err
 	}
 
-	// Single-scene path (original behavior, always reachable as fallback).
-	if !fileExists(video169) {
-		log.Printf("Assembling 16:9 video for %s", clipID)
-		if err := p.ffmpeg.AssembleSingleImage(img169, voicePath, video169); err != nil {
-			return nil, fmt.Errorf("assemble 16:9: %w", err)
-		}
-	} else {
-		log.Printf("Skipping 16:9 assembly for %s (file exists)", clipID)
+	// Per-scene TTS produces the concatenated voice track (overwrites voicePath).
+	p.tracker.StartStep("voice")
+	log.Printf("Multi-scene assembly for %s (Hyperframes)", clipID)
+	voice := p.getVoice(ctx)
+	msVoicePath, bounds, msErr := p.synthScenesVoice(ctx, scenes, voice, clipDir)
+	if msErr != nil {
+		p.tracker.FailStep("voice", msErr)
+		return nil, fmt.Errorf("multi-scene TTS: %w", msErr)
 	}
+	voicePath = msVoicePath
+	p.tracker.CompleteStep("voice")
 
-	if !fileExists(video916) {
-		if p.hf != nil {
-			log.Printf("Assembling 9:16 video for %s via Hyperframes", clipID)
-			if err := p.assembleHyperframes916(ctx, clipID, clipDir, scenes, voicePath, video916); err != nil {
-				log.Printf("Hyperframes 9:16 failed for %s, falling back to FFmpeg: %v", clipID, err)
-				if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
-					return nil, fmt.Errorf("assemble 9:16 (fallback): %w", err)
-				}
-			}
-		} else {
-			log.Printf("Assembling 9:16 video for %s", clipID)
-			if err := p.ffmpeg.AssembleSingleImageVertical(img916, voicePath, video916); err != nil {
-				return nil, fmt.Errorf("assemble 9:16: %w", err)
-			}
-		}
-	} else {
-		log.Printf("Skipping 9:16 assembly for %s (file exists)", clipID)
+	p.tracker.StartStep("assembly")
+	// Both ratios share the SAME concatenated audio, so always render both together.
+	// Each render gets a retry; on exhaustion we fail the clip (no fallback) and the
+	// tracker surfaces the error to the UI.
+	if err := retryRender(ctx, 2, func() error {
+		return p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "9:16", video916)
+	}); err != nil {
+		p.tracker.FailStep("assembly", fmt.Errorf("9:16 render failed after retries: %w", err))
+		return nil, fmt.Errorf("render 9:16 after retries: %w", err)
 	}
-
-assemblyDone:
+	if err := retryRender(ctx, 2, func() error {
+		return p.assembleMultiScene(ctx, clipID, clipDir, scenes, bounds, voicePath, "16:9", video169)
+	}); err != nil {
+		p.tracker.FailStep("assembly", fmt.Errorf("16:9 render failed after retries: %w", err))
+		return nil, fmt.Errorf("render 16:9 after retries: %w", err)
+	}
 
 	thumbPath := img169
 	p.tracker.CompleteStep("assembly")
@@ -281,119 +253,6 @@ assemblyDone:
 	}, nil
 }
 
-// assembleHyperframes916 renders the vertical video with the composition agent +
-// Hyperframes (CSS background, captions, animated cards) instead of a static image.
-func (p *Producer) assembleHyperframes916(ctx context.Context, clipID, clipDir string, scenes []agent.GeneratedScene, voicePath, outPath string) error {
-	if len(scenes) == 0 {
-		return fmt.Errorf("no scenes")
-	}
-	scene := scenes[0]
-
-	var category, questioner string
-	if err := p.pool.QueryRow(ctx,
-		`SELECT category, questioner_name FROM clips WHERE id = $1`, clipID).Scan(&category, &questioner); err != nil {
-		return fmt.Errorf("load clip metadata: %w", err)
-	}
-
-	// Captions are best-effort: if transcription fails the video still renders
-	// (cards + title), just without phrase captions.
-	segments, err := p.hf.transcriber.Transcribe(ctx, voicePath)
-	if err != nil {
-		log.Printf("Hyperframes: transcribe failed for %s (captions skipped): %v", clipID, err)
-		segments = nil
-	}
-	duration := scene.DurationSeconds
-	if n := len(segments); n > 0 && segments[n-1].End > duration {
-		duration = segments[n-1].End
-	}
-	if duration <= 0 {
-		duration = 60
-	}
-
-	var cfg models.AgentConfig
-	if err := p.pool.QueryRow(ctx,
-		`SELECT system_prompt, prompt_template, model, temperature, skills, insights
-		 FROM agent_configs WHERE agent_name = 'composition'`).
-		Scan(&cfg.SystemPrompt, &cfg.PromptTemplate, &cfg.Model, &cfg.Temperature, &cfg.Skills, &cfg.Insights); err != nil {
-		return fmt.Errorf("load composition agent config: %w", err)
-	}
-
-	decision, err := p.hf.compAgent.Decide(ctx, agent.CompositionTemplateData{
-		Question:        scene.TextContent,
-		VoiceText:       scene.VoiceText,
-		Category:        category,
-		QuestionerName:  questioner,
-		FormatName:      "qa",
-		DurationSeconds: duration,
-		SegmentsContext: segmentsContext(segments),
-	}, &cfg)
-	if err != nil {
-		return fmt.Errorf("composition decide: %w", err)
-	}
-
-	// Generate clean background art (NO text) for the GPT image to sit behind the
-	// Hyperframes-drawn text/captions. If it fails, fall back to the CSS background.
-	bgMode, bgImg, bgPath := "css", "", ""
-	bgFile := filepath.Join(clipDir, "bg-9x16.png")
-	if !fileExists(bgFile) {
-		if err := p.openRouter.GenerateImage(ctx, backgroundArtPrompt(category), "9:16", bgFile); err != nil {
-			log.Printf("Hyperframes: bg art gen failed for %s, using CSS bg: %v", clipID, err)
-		}
-	}
-	if fileExists(bgFile) {
-		bgMode, bgImg, bgPath = "image", "assets/bg-9x16.png", bgFile
-	}
-
-	cards := make([]CardSpec, len(decision.Cards))
-	for i, c := range decision.Cards {
-		cards[i] = CardSpec{
-			ID: fmt.Sprintf("card%d", i+1), Type: c.Type,
-			StartSec: c.StartSec, EndSec: c.EndSec,
-			Kicker: c.Kicker, Body: c.Body, StepNum: c.StepNum,
-		}
-	}
-	params := CompositionParams{
-		Title:           scene.TextContent,
-		HighlightWords:  decision.HighlightWords,
-		Kicker:          decision.Kicker,
-		BrandName:       "ADS VANCE",
-		CategoryLabel:   strings.ToUpper(category),
-		QuestionerName:  questioner,
-		LayoutVariant:   "dynamic_karaoke",
-		AccentColor:     decision.AccentColor,
-		SecondaryAccent: decision.SecondaryAccent,
-		AnimationSpeed:  decision.AnimationSpeed,
-		BackgroundMode:  bgMode,
-		BackgroundImage: bgImg,
-		VoiceSrc:        "assets/voice.wav",
-		DurationSeconds: duration,
-		Segments:        segments,
-		Cards:           cards,
-	}
-
-	projectDir := filepath.Join(clipDir, "composition-916")
-	os.RemoveAll(projectDir)
-	if _, err := p.hf.builder.Build(params, clipID, projectDir, voicePath, bgPath); err != nil {
-		return fmt.Errorf("build composition: %w", err)
-	}
-	if err := p.hf.renderer.Lint(ctx, projectDir); err != nil {
-		return fmt.Errorf("composition lint: %w", err)
-	}
-	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
-		return fmt.Errorf("composition render: %w", err)
-	}
-	if err := os.Rename(filepath.Join(projectDir, "output.mp4"), outPath); err != nil {
-		return fmt.Errorf("move rendered video: %w", err)
-	}
-
-	// Record the design used, for the analyzer's future style-vs-performance learning.
-	style := fmt.Sprintf("%s|%s|%s", params.LayoutVariant, decision.AccentColor, decision.AnimationSpeed)
-	if _, err := p.pool.Exec(ctx, `UPDATE clips SET composition_style = $2 WHERE id = $1`, clipID, style); err != nil {
-		log.Printf("Hyperframes: failed to record composition_style for %s: %v", clipID, err)
-	}
-	return nil
-}
-
 // aspectTag returns the file-safe ratio tag for a given aspect-ratio string.
 func aspectTag(aspect string) string {
 	if aspect == "16:9" {
@@ -403,9 +262,9 @@ func aspectTag(aspect string) string {
 }
 
 // assembleMultiScene renders a multi-scene Hyperframes video for one aspect ratio.
-// It is modelled on assembleHyperframes916 but uses DecideScenes + BuildScenes
-// (the multi-scene pipeline) so each script scene gets its own layout variant.
-// On any error the caller should fall back to the single-scene path.
+// It uses DecideScenes + BuildScenes (the multi-scene pipeline) so each script
+// scene gets its own layout variant. This is the only render path; on error the
+// caller retries and ultimately fails the clip (no fallback).
 func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir string, scenes []agent.GeneratedScene, bounds []sceneBound, voicePath, aspect, outPath string) error {
 	if len(scenes) == 0 {
 		return fmt.Errorf("no scenes")
@@ -485,7 +344,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 
 		for i, d := range decision.Scenes {
 			i, d := i, d
-			if d.BgArtPrompt == "" {
+			if d.BgArtPrompt == "" || d.BgMode != "hero" {
 				continue
 			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d-%s.png", d.SceneNumber, ratioTag))
@@ -500,7 +359,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 				// much slower and previously pushed the 16:9 render past its timeout.
 				var genErr error
 				for attempt := 1; attempt <= 3; attempt++ {
-					if genErr = p.openRouter.GenerateImage(egCtx, buildScenePrompt(d.BgArtPrompt, aspect), aspect, bgFile); genErr == nil {
+					if genErr = p.openAIImage.GenerateImage(egCtx, buildScenePrompt(d.BgArtPrompt, aspect), aspect, bgFile); genErr == nil {
 						break
 					}
 					log.Printf("assembleMultiScene: bg gen attempt %d/3 failed for scene %d (%s): %v", attempt, d.SceneNumber, clipID, genErr)
@@ -538,13 +397,16 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 
 	params := ScenesParams{
 		AspectRatio:     aspect,
-		BrandName:       "ADS VANCE",
+		BrandName:       BrandName,
 		CategoryLabel:   strings.ToUpper(category),
 		QuestionerName:  questioner,
 		Kicker:          decision.Kicker,
 		DurationSeconds: totalDur,
 		Scenes:          specs,
 		Segments:        segments,
+		IntroMascot:     MascotAssetPath("rocket"),
+		OutroMascot:     MascotAssetPath("wave"),
+		CTAText:         BrandCTA,
 	}
 
 	projectDir := filepath.Join(clipDir, "scenes-"+ratioTag)
@@ -556,7 +418,7 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		return fmt.Errorf("multi-scene lint: %w", err)
 	}
 	// Inspect is a gate: if the layout has clipped/overlapping content, fail now
-	// so the caller can fall back to a simpler render rather than producing junk.
+	// rather than producing junk. There is no fallback — inspect failure fails the render.
 	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
 		return fmt.Errorf("multi-scene inspect: %w", err)
 	}
@@ -567,34 +429,6 @@ func (p *Producer) assembleMultiScene(ctx context.Context, clipID, clipDir strin
 		return fmt.Errorf("move multi-scene video: %w", err)
 	}
 	return nil
-}
-
-// backgroundArtPrompt builds an image prompt for a clean, text-free background.
-// The Hyperframes layer draws all text on top, so the art must have none —
-// just brand-colored abstract tech visuals with open negative space.
-func backgroundArtPrompt(category string) string {
-	motif := map[string]string{
-		"pixel":    "glowing data tracking nodes and conversion flow lines",
-		"payment":  "abstract billing dashboard glow and currency flow",
-		"account":  "secure account shield and network grid",
-		"campaign": "ascending performance charts and audience network",
-	}[category]
-	if motif == "" {
-		motif = "abstract digital marketing dashboard glow"
-	}
-	return "Clean abstract background art for a 9:16 vertical video. " +
-		"Dark navy gradient (#0a1428 to #16284a) with subtle orange (#ff6b2b) accents. " +
-		"Motif: " + motif + ". Modern flat tech, cinematic depth, soft glow. " +
-		"IMPORTANT: absolutely NO text, NO letters, NO numbers, NO words, NO UI labels, NO logos. " +
-		"Keep the upper-center area calm and uncluttered (negative space) for text overlay added later."
-}
-
-func segmentsContext(segs []TranscriptSegment) string {
-	var b strings.Builder
-	for _, s := range segs {
-		fmt.Fprintf(&b, "[%.1f-%.1f] %s\n", s.Start, s.End, s.Text)
-	}
-	return b.String()
 }
 
 func fileExists(path string) bool {

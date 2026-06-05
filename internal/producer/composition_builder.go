@@ -5,6 +5,7 @@ import (
 	"html"
 	"html/template"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,31 @@ func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir
 
 	if err := copyDir(b.fontsDir, fontsDst); err != nil {
 		return "", fmt.Errorf("copy fonts: %w", err)
+	}
+
+	// Copy referenced mascot PNGs (intro/outro bumper + per-scene poses) from the
+	// repo's assets/mascot/ (sibling of the fonts dir) into the project. A missing
+	// source PNG is a non-fatal warning — the real PNGs are generated manually.
+	mascotSrcDir := filepath.Join(filepath.Dir(b.fontsDir), "mascot")
+	mascotRefs := []string{params.IntroMascot, params.OutroMascot}
+	for _, s := range scenes {
+		mascotRefs = append(mascotRefs, s.MascotPose)
+	}
+	copiedMascots := map[string]bool{}
+	for _, ref := range mascotRefs {
+		if ref == "" || copiedMascots[ref] {
+			continue
+		}
+		copiedMascots[ref] = true
+		base := filepath.Base(ref)
+		dst := filepath.Join(assetsDir, "mascot", base)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return "", fmt.Errorf("mkdir mascot: %w", err)
+		}
+		if err := copyFile(filepath.Join(mascotSrcDir, base), dst); err != nil {
+			log.Printf("BuildScenes: mascot asset %q not found in %s, skipping (will not fail build): %v", base, mascotSrcDir, err)
+			continue
+		}
 	}
 
 	if err := writeGsapAsset(assetsDir); err != nil {

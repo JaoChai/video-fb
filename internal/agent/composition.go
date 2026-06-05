@@ -82,9 +82,12 @@ type SceneDesign struct {
 	SceneNumber    int    `json:"scene_number"`
 	LayoutVariant  string `json:"layout_variant"`
 	Slots          []Slot `json:"slots"`
-	AccentColor    string `json:"accent_color"`  // sanitized later in producer
-	BgArtPrompt    string `json:"bg_art_prompt"` // text-free background art prompt
+	AccentColor    string `json:"accent_color"`   // sanitized later in producer
+	BgArtPrompt    string `json:"bg_art_prompt"`  // text-free background art prompt
 	AnimationSpeed string `json:"animation_speed"`
+	CaptionStyle   string `json:"caption_style"` // word_pop|phrase_block
+	BgMode         string `json:"bg_mode"`       // hero|flat
+	MascotCue      string `json:"mascot_cue"`    // none|point|thumbs|think
 }
 
 // ScenesDecision is the multi-scene design DecideScenes returns.
@@ -118,6 +121,10 @@ var validSlotRoles = map[string]bool{
 	"stat": true, "callout": true,
 }
 
+var validCaptionStyles = map[string]bool{"word_pop": true, "phrase_block": true}
+var validBgModes = map[string]bool{"hero": true, "flat": true}
+var validMascotCues = map[string]bool{"none": true, "point": true, "thumbs": true, "think": true}
+
 // Normalize keeps LLM scene designs safe: defaults unknown layout_variant /
 // animation_speed, drops empty-text slots, and defaults unknown slot roles.
 // Accent-color sanitization is left to the producer (which owns sanitizeHexColor).
@@ -128,6 +135,15 @@ func (d *ScenesDecision) Normalize() {
 		}
 		if d.Scenes[i].AnimationSpeed != "fast" && d.Scenes[i].AnimationSpeed != "slow" {
 			d.Scenes[i].AnimationSpeed = "normal"
+		}
+		if !validCaptionStyles[d.Scenes[i].CaptionStyle] {
+			d.Scenes[i].CaptionStyle = "phrase_block"
+		}
+		if !validBgModes[d.Scenes[i].BgMode] {
+			d.Scenes[i].BgMode = "flat"
+		}
+		if !validMascotCues[d.Scenes[i].MascotCue] {
+			d.Scenes[i].MascotCue = "none"
 		}
 		kept := d.Scenes[i].Slots[:0]
 		for _, s := range d.Scenes[i].Slots {

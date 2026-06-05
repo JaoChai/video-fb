@@ -42,7 +42,7 @@
         width: {{.Width}}px;
         height: {{.Height}}px;
         overflow: hidden;
-        background: #0a1428;
+        background: var(--navy-deep);
       }
 
       /* ─────────────────────────  THEME  ───────────────────────── */
@@ -102,8 +102,8 @@
         inset: 0;
         background: radial-gradient(
           120% 100% at 50% 50%,
-          rgba(10, 20, 40, 0) 50%,
-          rgba(8, 16, 32, 0.55) 100%
+          rgba(6, 24, 64, 0) 50%,
+          rgba(4, 18, 52, 0.58) 100%
         );
       }
       .scene-img-wrap {
@@ -127,10 +127,10 @@
         inset: 0;
         background: linear-gradient(
           180deg,
-          rgba(10, 20, 40, 0.60) 0%,
-          rgba(10, 20, 40, 0.15) 28%,
-          rgba(10, 20, 40, 0.15) 62%,
-          rgba(10, 20, 40, 0.85) 100%
+          rgba(6, 24, 64, 0.62) 0%,
+          rgba(6, 24, 64, 0.15) 28%,
+          rgba(6, 24, 64, 0.15) 62%,
+          rgba(6, 24, 64, 0.88) 100%
         );
       }
 
@@ -187,7 +187,7 @@
         width: 100%;
         max-width: {{if eq .Width 1080}}880px{{else}}1320px{{end}};
         text-align: left;
-        background: rgba(15, 29, 53, 0.82);
+        background: rgba(10, 35, 88, 0.82);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 24px;
         padding: {{if eq .Width 1080}}28px 34px{{else}}26px 36px{{end}};
@@ -253,7 +253,7 @@
         font-weight: 800;
         line-height: 1.18;
         color: #fff;
-        background: rgba(15, 29, 53, 0.86);
+        background: rgba(10, 35, 88, 0.86);
         border: 2px solid var(--scene-accent);
         border-left-width: 10px;
         border-radius: 18px;
@@ -349,14 +349,14 @@
       .scene-content[data-layout="compare_two"] .slot-step:first-of-type,
       .scene-content[data-layout="compare_two"] .slot-body:first-of-type,
       .scene-content[data-layout="compare_two"] .slot-callout:first-of-type {
-        background: rgba(15, 29, 53, 0.86);
+        background: rgba(10, 35, 88, 0.86);
         border: 2px solid var(--scene-accent);
         color: #fff;
       }
       .scene-content[data-layout="compare_two"] .slot-step:last-of-type,
       .scene-content[data-layout="compare_two"] .slot-body:last-of-type,
       .scene-content[data-layout="compare_two"] .slot-callout:last-of-type {
-        background: rgba(15, 29, 53, 0.55);
+        background: rgba(10, 35, 88, 0.55);
         border: 2px solid rgba(174, 189, 212, 0.4);
         color: var(--muted);
       }
@@ -387,7 +387,7 @@
         width: 0px;
         height: 8px;
         background: linear-gradient(90deg, var(--orange-bright), var(--orange-soft));
-        box-shadow: 0 0 18px rgba(255, 107, 43, 0.6);
+        box-shadow: 0 0 18px rgba(255, 180, 84, 0.6);
       }
 
       /* ── Brand badge intro ── */
@@ -409,17 +409,17 @@
         background: var(--orange-bright);
         padding: 14px 26px;
         border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(255, 107, 43, 0.35);
+        box-shadow: 0 10px 30px rgba(255, 180, 84, 0.35);
       }
       .badge-cat {
         font-weight: 700;
         font-size: 24px;
         letter-spacing: 0.22em;
         color: var(--orange-bright);
-        border: 2px solid rgba(255, 107, 43, 0.55);
+        border: 2px solid rgba(255, 180, 84, 0.55);
         padding: 12px 22px;
         border-radius: 12px;
-        background: rgba(255, 107, 43, 0.08);
+        background: rgba(255, 180, 84, 0.08);
       }
 
       /* ── Karaoke caption band (reserved zone, full-width centered) ── */
@@ -443,7 +443,7 @@
         font-weight: 700;
         line-height: 1.34;
         color: #ffffff;
-        background: rgba(10, 20, 40, 0.82);
+        background: rgba(8, 24, 64, 0.86);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 24px;
         padding: 26px 40px;
@@ -543,6 +543,24 @@
           {{end}}
           {{end}}
         </div>
+        {{if $s.MascotPose}}
+        <img class="scene-mascot" id="scene-mascot-{{$s.SceneNumber}}" src="{{$s.MascotPose}}" data-layout-allow-overflow
+             style="position:absolute;right:4%;bottom:calc(var(--cap-bottom) + 80px);width:26%;max-width:340px;z-index:5;opacity:0" />
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .IntroMascot}}
+      <div id="introBumper" class="clip" data-start="0" data-duration="1.4" data-track-index="3" data-layout-allow-overflow
+           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:40;opacity:0;background:radial-gradient(120% 90% at 50% 40%,var(--navy-hi) 0%,var(--navy) 60%,var(--navy-deep) 100%)">
+        <img src="{{.IntroMascot}}" style="width:62%;max-width:760px" data-layout-allow-overflow />
+      </div>
+      {{end}}
+      {{if .OutroMascot}}
+      <div id="outroBumper" class="clip" data-start="{{.OutroStartSec}}" data-duration="{{.OutroDurSec}}" data-track-index="4" data-layout-allow-overflow
+           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;z-index:40;opacity:0;background:radial-gradient(120% 90% at 50% 40%,var(--navy-hi) 0%,var(--navy) 60%,var(--navy-deep) 100%)">
+        <img src="{{.OutroMascot}}" style="width:54%;max-width:680px" data-layout-allow-overflow />
+        <div style="color:#fff;font-weight:800;font-size:42px;text-align:center;letter-spacing:.02em;max-width:80%">{{.CTAText}}</div>
       </div>
       {{end}}
 
@@ -596,6 +614,15 @@
 
       // ── Data injected by Go (template.JS — raw JSON, not escaped) ──
       const SCENES = {{.ScenesJSON}};
+
+      // Return the caption_style of the scene active at time t, defaulting to
+      // "phrase_block" when the field is absent or no scene covers t.
+      function captionStyleAt(t) {
+        for (var i = 0; i < SCENES.length; i++) {
+          if (t >= SCENES[i].start && t < SCENES[i].end) return SCENES[i].caption_style || "phrase_block";
+        }
+        return "phrase_block";
+      }
       const SEGMENTS = {{.SegmentsJSON}};
       const TOTAL = {{.DurationSeconds}};
       const ROOT = document.getElementById("root");
@@ -876,9 +903,13 @@
 
       /* ──────────  KARAOKE CAPTIONS (continuous, kinetic)  ────────── */
       // The phrase container fades in once and stays fully readable for its whole
-      // window; WITHIN it each word reveals staggered, and one key word pops with
-      // the scene accent. Word splitting is whitespace-based; any sub-word work
-      // uses Intl.Segmenter graphemes so Thai marks never separate.
+      // window. Two styles are supported per scene:
+      //   word_pop    – per-word staggered reveal with a key-word accent pop
+      //                 (hook scenes: keeps energy high).
+      //   phrase_block – the whole phrase fades in as one block
+      //                 (content scenes: easier to read at speed).
+      // Word splitting is whitespace-based; any sub-word work uses Intl.Segmenter
+      // graphemes so Thai marks never separate.
       const capStage = document.getElementById("capStage");
       SEGMENTS.forEach(function (seg, i) {
         const el = document.createElement("div");
@@ -887,6 +918,7 @@
         capStage.appendChild(el);
 
         // Fit on the plain phrase first, then wrap into per-word spans.
+        // Both styles use buildCaptionWords so the key word is always amber.
         fitEl(el, { maxWidth: CAP_MAXW, base: CAP_BASE, min: CAP_MIN, fontWeight: 700 });
         const words = buildCaptionWords(el);
 
@@ -894,28 +926,63 @@
         const outAt = i < SEGMENTS.length - 1 ? SEGMENTS[i + 1].start : seg.end;
         const win = Math.max(0.4, outAt - inAt);
 
-        // Phrase band fades/scales in as a whole (readability anchor).
-        tl.fromTo(el, { opacity: 0, scale: 0.94, y: 22 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
-        tl.call(function () { el.classList.add("active"); }, null, inAt);
+        var style = captionStyleAt(seg.start);
 
-        // Word-by-word reveal, staggered across the first ~40% of the window
-        // (capped) so the full phrase is legible well before it leaves.
-        const revealSpan = Math.min(win * 0.4, 0.9);
-        const stepGap = words.length > 1 ? revealSpan / words.length : 0;
-        words.forEach(function (w, wi) {
-          const at = inAt + 0.06 + wi * stepGap;
-          tl.fromTo(w, { opacity: 0, yPercent: 38 }, { opacity: 1, yPercent: 0, duration: 0.34, ease: "var(--ease-out)" }, at);
-          if (w.classList.contains("key")) {
-            // Key word beat: a contained scale pop (transform-only, no reflow).
-            tl.fromTo(w, { scale: 0.8 }, { scale: 1.14, duration: 0.26, ease: "var(--ease-spring)" }, at + 0.02);
-            tl.to(w, { scale: 1.0, duration: 0.4, ease: "var(--ease-out)" }, at + 0.28);
-          }
-        });
+        if (style === "word_pop") {
+          // ── word_pop: phrase band in + per-word staggered reveal ──
+          // Phrase band fades/scales in as a whole (readability anchor).
+          tl.fromTo(el, { opacity: 0, scale: 0.94, y: 22 }, { opacity: 1, scale: 1.0, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
+          tl.call(function () { el.classList.add("active"); }, null, inAt);
 
-        // Phrase out before the next phrase starts.
-        tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          // Word-by-word reveal, staggered across the first ~40% of the window
+          // (capped) so the full phrase is legible well before it leaves.
+          const revealSpan = Math.min(win * 0.4, 0.9);
+          const stepGap = words.length > 1 ? revealSpan / words.length : 0;
+          words.forEach(function (w, wi) {
+            const at = inAt + 0.06 + wi * stepGap;
+            tl.fromTo(w, { opacity: 0, yPercent: 38 }, { opacity: 1, yPercent: 0, duration: 0.34, ease: "var(--ease-out)" }, at);
+            if (w.classList.contains("key")) {
+              // Key word beat: a contained scale pop (transform-only, no reflow).
+              tl.fromTo(w, { scale: 0.8 }, { scale: 1.14, duration: 0.26, ease: "var(--ease-spring)" }, at + 0.02);
+              tl.to(w, { scale: 1.0, duration: 0.4, ease: "var(--ease-out)" }, at + 0.28);
+            }
+          });
+
+          // Phrase out before the next phrase starts.
+          tl.to(el, { opacity: 0, y: -16, duration: 0.26, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          tl.set(el, { opacity: 0 }, outAt);
+        } else {
+          // ── phrase_block: whole phrase fades in once as a single unit ──
+          tl.fromTo(el, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.3, ease: "var(--ease-out)" }, inAt);
+          tl.call(function () { el.classList.add("active"); }, null, inAt);
+          tl.to(el, { opacity: 0, y: -14, duration: 0.24, ease: "var(--ease-in)" }, Math.max(inAt + 0.4, outAt - 0.22));
+          tl.set(el, { opacity: 0 }, outAt);
+        }
+
         tl.call(function () { el.classList.remove("active"); }, null, outAt);
-        tl.set(el, { opacity: 0 }, outAt);
+      });
+
+      /* ──────────  MASCOT BUMPERS + PER-SCENE POP (transform/opacity only)  ────────── */
+      // Intro bumper: fade+scale in, hold, fade out before scene 1
+      const intro = document.getElementById("introBumper");
+      if (intro) {
+        tl.fromTo(intro, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.4, ease: "var(--ease-out)" }, 0);
+        tl.to(intro, { opacity: 0, scale: 1.04, duration: 0.4, ease: "var(--ease-in)" }, 1.0);
+      }
+      // Outro bumper: fade+scale in for the final stretch
+      const outro = document.getElementById("outroBumper");
+      if (outro) {
+        const oAt = Math.max(0, TOTAL - 1.6);
+        tl.fromTo(outro, { opacity: 0, scale: 0.92 }, { opacity: 1, scale: 1, duration: 0.4, ease: "var(--ease-out)" }, oAt);
+      }
+      // Per-scene mascot pop: slide in from right, hold, out before scene end
+      SCENES.forEach(function (sc) {
+        const m = document.getElementById("scene-mascot-" + sc.scene);
+        if (!m) return;
+        tl.fromTo(m, { opacity: 0, xPercent: 30 }, { opacity: 1, xPercent: 0, duration: 0.4, ease: "var(--ease-spring)", overwrite: "auto" }, sc.start + 0.3);
+        tl.to(m, { opacity: 0, xPercent: 20, duration: 0.3, ease: "var(--ease-in)", overwrite: "auto" }, Math.max(sc.start + 0.7, sc.end - 0.3));
+        // Hard-kill at scene end so non-linear seeking never leaves a stale mascot.
+        tl.set(m, { opacity: 0 }, sc.end);
       });
 
       // Lock the composition to exactly the clip duration

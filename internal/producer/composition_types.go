@@ -61,6 +61,8 @@ type SceneSpec struct {
 	EndSec          float64
 	BackgroundMode  string // "css" | "image"
 	BackgroundImage string // relative assets path when image
+	MascotPose      string // relative assets path to a per-scene mascot PNG ("" = none)
+	CaptionStyle    string // "word_pop" | "phrase_block"
 	Slots           []SlotSpec
 }
 
@@ -80,6 +82,9 @@ type ScenesParams struct {
 	Kicker          string
 	VoiceSrc        string
 	DurationSeconds float64
+	IntroMascot     string // relative assets path for the intro bumper mascot ("" = none)
+	OutroMascot     string // relative assets path for the outro bumper mascot ("" = none)
+	CTAText         string // call-to-action line shown under the outro mascot ("" = none)
 	Scenes          []SceneSpec
 	Segments        []TranscriptSegment
 }

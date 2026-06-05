@@ -33,6 +33,7 @@ func NewScriptAgent(llm *LLMClient, ragEngine *rag.Engine, research *ResearchAge
 type GeneratedScene struct {
 	SceneNumber     int             `json:"scene_number"`
 	SceneType       string          `json:"scene_type"`
+	SceneRole       string          `json:"scene_role"` // hook|content|stat|compare|closing
 	TextContent     string          `json:"text_content"`
 	VoiceText       string          `json:"voice_text"`
 	BgHint          string          `json:"bg_hint"`
@@ -112,6 +113,23 @@ var validSceneTypes = map[string]bool{
 	SceneHook: true, SceneProblem: true, SceneStep: true, SceneWin: true, SceneCTA: true,
 }
 
+var validSceneRoles = map[string]bool{
+	"hook": true, "content": true, "stat": true, "compare": true, "closing": true,
+}
+
+// sceneTypeToRole derives a default role from the legacy scene_type when the
+// LLM didn't supply a valid scene_role.
+func sceneTypeToRole(t string) string {
+	switch t {
+	case SceneHook:
+		return "hook"
+	case SceneCTA:
+		return "closing"
+	default:
+		return "content"
+	}
+}
+
 // Normalize keeps an LLM-produced script safe for the pipeline: caps the scene
 // count, renumbers scenes 1..N in arrival order, and defaults any unrecognized
 // scene_type to SceneStep. It does not fabricate scenes (0-scene is the caller's
@@ -124,6 +142,9 @@ func (s *GeneratedScript) Normalize() {
 		s.Scenes[i].SceneNumber = i + 1
 		if !validSceneTypes[s.Scenes[i].SceneType] {
 			s.Scenes[i].SceneType = SceneStep
+		}
+		if !validSceneRoles[s.Scenes[i].SceneRole] {
+			s.Scenes[i].SceneRole = sceneTypeToRole(s.Scenes[i].SceneType)
 		}
 	}
 }

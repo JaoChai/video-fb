@@ -94,6 +94,27 @@ func TestBuildSceneSpecs(t *testing.T) {
 	}
 }
 
+func TestBuildSceneSpecsMapsCaptionAndMascot(t *testing.T) {
+	designs := []agent.SceneDesign{
+		{SceneNumber: 1, LayoutVariant: "hook_big", AccentColor: "#F0A030", CaptionStyle: "word_pop", MascotCue: "thumbs"},
+		{SceneNumber: 2, LayoutVariant: "list_steps", AccentColor: "#F0A030", CaptionStyle: "phrase_block", MascotCue: "none"},
+	}
+	bounds := []sceneBound{{0, 5}, {5, 10}}
+	specs := buildSceneSpecs(designs, bounds, func(int) string { return "css" })
+	if len(specs) != 2 {
+		t.Fatalf("got %d specs, want 2", len(specs))
+	}
+	if specs[0].CaptionStyle != "word_pop" {
+		t.Errorf("scene0 CaptionStyle = %q, want word_pop", specs[0].CaptionStyle)
+	}
+	if specs[0].MascotPose != "assets/mascot/thumbs_up.png" {
+		t.Errorf("scene0 MascotPose = %q, want assets/mascot/thumbs_up.png", specs[0].MascotPose)
+	}
+	if specs[1].MascotPose != "" {
+		t.Errorf("scene1 MascotPose = %q, want empty (cue none)", specs[1].MascotPose)
+	}
+}
+
 func TestComputeBounds(t *testing.T) {
 	t.Run("three scenes", func(t *testing.T) {
 		got := computeBounds([]float64{8, 11, 5})
