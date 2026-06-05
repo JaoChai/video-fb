@@ -30,6 +30,20 @@ func TestNormalize_ClampsAndRenumbers(t *testing.T) {
 	}
 }
 
+func TestSceneRoleDefault(t *testing.T) {
+	s := &GeneratedScript{Scenes: []GeneratedScene{
+		{SceneType: "hook"},
+		{SceneType: "step", SceneRole: "weird"},
+	}}
+	s.Normalize()
+	if s.Scenes[0].SceneRole != "hook" {
+		t.Errorf("scene0 role = %q, want hook (derived from type)", s.Scenes[0].SceneRole)
+	}
+	if s.Scenes[1].SceneRole != "content" {
+		t.Errorf("scene1 invalid role should default to content, got %q", s.Scenes[1].SceneRole)
+	}
+}
+
 func TestNormalize_DefaultsInvalidType(t *testing.T) {
 	s := &GeneratedScript{Scenes: []GeneratedScene{
 		{SceneNumber: 1, SceneType: "", VoiceText: "x"},
