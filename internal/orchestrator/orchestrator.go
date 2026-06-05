@@ -194,20 +194,33 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
+// brandTailRe matches a trailing brand mention in any form the LLM might add:
+// " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", " Ads Vance".
+var brandTailRe = regexp.MustCompile(`(?i)\s*[|({\[]?\s*ads\s*vance\s*[)}\]]?\s*$`)
+
 func validateScript(script *agent.GeneratedScript) {
 	const suffix = " | Ads Vance"
 	const maxLen = 70
+	const trimCutset = " |-({[" // separators/brackets left dangling after brand removal
 
-	title := strings.TrimSuffix(script.YoutubeTitle, suffix)
-	titleRunes := []rune(title)
-	suffixLen := len([]rune(suffix))
-	maxContent := maxLen - suffixLen
+	// Strip any brand variant the LLM appended — repeat to catch doubled brands.
+	title := script.YoutubeTitle
+	for {
+		stripped := strings.TrimRight(brandTailRe.ReplaceAllString(title, ""), trimCutset)
+		if stripped == title {
+			break
+		}
+		title = stripped
+	}
+	title = strings.TrimSpace(title)
 
-	if len(titleRunes) > maxContent {
-		titleRunes = titleRunes[:maxContent]
+	maxContent := maxLen - len([]rune(suffix))
+	if titleRunes := []rune(title); len(titleRunes) > maxContent {
+		title = strings.TrimRight(strings.TrimSpace(string(titleRunes[:maxContent])), trimCutset)
 		log.Printf("Warning: youtube_title truncated to fit %d chars", maxLen)
 	}
-	script.YoutubeTitle = string(titleRunes) + suffix
+
+	script.YoutubeTitle = title + suffix
 }
 
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
