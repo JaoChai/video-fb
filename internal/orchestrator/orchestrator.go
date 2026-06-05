@@ -195,13 +195,17 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 }
 
 // brandTailRe matches a trailing brand mention in any form the LLM might add:
-// " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", " Ads Vance".
+// " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", "[Ads Vance]", " Ads Vance".
+// Matching the bare name (no delimiter) at the end is deliberate — the canonical
+// suffix is re-appended afterward, so a trailing "Ads Vance" is always treated as brand.
 var brandTailRe = regexp.MustCompile(`(?i)\s*[|({\[]?\s*ads\s*vance\s*[)}\]]?\s*$`)
 
 func validateScript(script *agent.GeneratedScript) {
 	const suffix = " | Ads Vance"
 	const maxLen = 70
-	const trimCutset = " |-({[" // separators/brackets left dangling after brand removal
+	// Trailing chars left dangling after brand removal / mid-title truncation:
+	// whitespace, pipe, hyphen, and unmatched opening brackets (their content was cut).
+	const trimCutset = " |-({["
 
 	// Strip any brand variant the LLM appended — repeat to catch doubled brands.
 	title := script.YoutubeTitle

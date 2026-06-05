@@ -39,6 +39,21 @@ func TestValidateScriptTitle(t *testing.T) {
 			in:   "BM โดนระงับ ทำไงดี (Ads Vance)",
 			want: "BM โดนระงับ ทำไงดี" + suffix,
 		},
+		{
+			name: "square bracket brand variant",
+			in:   "Pixel นับซ้ำ แก้ยังไง [Ads Vance]",
+			want: "Pixel นับซ้ำ แก้ยังไง" + suffix,
+		},
+		{
+			name: "empty title → bare suffix (documents degenerate output)",
+			in:   "",
+			want: suffix,
+		},
+		{
+			name: "brand-only title → bare suffix",
+			in:   "{Ads Vance}",
+			want: suffix,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
