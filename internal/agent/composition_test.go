@@ -81,6 +81,24 @@ func TestScenesDecision_Normalize_NewVariants(t *testing.T) {
 	}
 }
 
+func TestScenesNormalizeNewFields(t *testing.T) {
+	d := &ScenesDecision{Scenes: []SceneDesign{
+		{LayoutVariant: "hook_big", Slots: []Slot{{Role: "headline", Text: "x"}}},
+		{LayoutVariant: "list_steps", Slots: []Slot{{Role: "body", Text: "y"}},
+			CaptionStyle: "bogus", BgMode: "bogus", MascotCue: "bogus"},
+	}}
+	d.Normalize()
+	if d.Scenes[1].CaptionStyle != "phrase_block" {
+		t.Errorf("invalid caption_style should default phrase_block, got %q", d.Scenes[1].CaptionStyle)
+	}
+	if d.Scenes[1].BgMode != "flat" {
+		t.Errorf("invalid bg_mode should default flat, got %q", d.Scenes[1].BgMode)
+	}
+	if d.Scenes[1].MascotCue != "none" {
+		t.Errorf("invalid mascot_cue should default none, got %q", d.Scenes[1].MascotCue)
+	}
+}
+
 // TestScenesDecision_Normalize_StillDefaultsUnknown confirms that genuinely
 // unknown variants and roles continue to be defaulted (regression guard).
 func TestScenesDecision_Normalize_StillDefaultsUnknown(t *testing.T) {
