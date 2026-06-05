@@ -32,13 +32,15 @@ var poseDirective = map[string]string{
 
 // MascotEditPrompt builds the gpt-image-2 /edits prompt for one pose. The
 // reference image (the brand logo mascot) is sent alongside; this text directs
-// the new pose while preserving identity, palette, and a transparent background.
+// the new pose while preserving identity and palette. gpt-image-2 edits do not
+// support a transparent background, so we request a flat royal-blue fill that
+// blends into the video's royal-blue scenes/bumper.
 func MascotEditPrompt(pose string) string {
 	return "Keep the exact same character: a friendly orange-and-amber cheetah mascot " +
 		"wearing a white astronaut suit and a blue ADS VANCE cap, bold outline cartoon style. " +
 		"Redraw the same mascot " + poseDirective[pose] + ". " +
 		"Royal blue #0047AF and amber #F0A030 brand palette, thick navy outlines. " +
-		"Transparent background. Full body, centered, no text, no logo wordmark."
+		"Solid flat royal blue #0047AF background, no scenery or props. Full body, centered, no text, no logo wordmark."
 }
 
 // MascotCueToPose maps a composition agent mascot_cue to a baked pose name.

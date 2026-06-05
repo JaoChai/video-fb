@@ -8,8 +8,10 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jaochai/video-fb/internal/producer"
 )
@@ -49,10 +51,17 @@ func genPose(key, ref, pose, out string) error {
 	w := multipart.NewWriter(&buf)
 	w.WriteField("model", "gpt-image-2")
 	w.WriteField("prompt", producer.MascotEditPrompt(pose))
-	w.WriteField("background", "transparent")
 	w.WriteField("size", "1024x1024")
-	w.WriteField("style_intensity", "high")
-	fw, err := w.CreateFormFile("image", filepath.Base(ref))
+	mimeType := "image/jpeg"
+	if strings.HasSuffix(strings.ToLower(ref), ".png") {
+		mimeType = "image/png"
+	} else if strings.HasSuffix(strings.ToLower(ref), ".webp") {
+		mimeType = "image/webp"
+	}
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="%s"`, filepath.Base(ref)))
+	h.Set("Content-Type", mimeType)
+	fw, err := w.CreatePart(h)
 	if err != nil {
 		return err
 	}
