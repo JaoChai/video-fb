@@ -102,13 +102,14 @@ Replaces `internal/agent/llm.go` (OpenRouter) for all agents. kie.ai is **not** 
 - **Claude** — `POST https://api.kie.ai/claude/v1/messages`, Anthropic Messages format. Body: `{model:"claude-sonnet-4-6", messages:[...], max_tokens, stream:false}`. **Must set `stream:false`** (defaults true). Text at `content[]` blocks where `type=="text"`.
 - **Gemini** — `POST https://api.kie.ai/gemini/v1/models/gemini-3-5-flash:streamGenerateContent`, Google format. Body: `{contents:[{role:"user",parts:[{text}]}], tools:[{googleSearch:{}}]?, generationConfig:{...}}`. **Streaming-only** — read and concatenate chunks; text at `candidates[].content.parts[].text`. Roles are `user`/`model` (not `assistant`).
 - **Methods:** `GenerateClaude(ctx, system, user, temp) (string,error)`, `GenerateGemini(ctx, user, opts) (string,error)` (opts: enable googleSearch), plus `GenerateJSON*` wrappers reusing the existing `extractJSON` + retry-with-lower-temp logic from `llm.go`.
+- **Routing by model-name prefix** (no schema change to the existing `model` column): `claude-*` → Claude endpoint, `gemini-*` → Gemini endpoint. A single `Generate(ctx, model, system, user, temp)` entry point dispatches by prefix so each agent's DB `model` value alone selects the provider. Research's `googleSearch` is enabled when the caller passes the option (research agent only).
 - Drive control flow off response fields, not the inconsistent top-level `code` (per kie.ai docs).
 
 > System prompts: Claude takes a top-level `system`; Gemini has no system role — prepend system text to the first user `part` (or use `systemInstruction` if confirmed available; default to prepend).
 
 ### 4.2 Agents — `internal/agent/*`
 
-Rewrite each agent to call `KieLLMClient` with its assigned model. Agent configs in DB (`agents` table, `agentsRepo.GetByName`) gain a model/provider field so the model per role stays DB-tunable (consistent with current pattern).
+Rewrite each agent to call `KieLLMClient` with its assigned model. Agent configs live in DB (`agent_configs` table, `agentsRepo.GetByName`); the existing `model` column stays DB-tunable and selects the provider via prefix routing (4.1). Each agent's `skills` text (4.7) feeds `BuildSystemPrompt`. See 4.6 for the full registry and the five positions that must stay in sync.
 
 - **research.go** — Gemini + googleSearch. Input: category + persona + recent-topics (dedup). Output: `ResearchBrief` JSON. Keep the existing "never fabricate news / graceful no-op" guards; if no reliable info, skip the clip (no Q&A fallback — that concept is retired).
 - **script.go** — Claude. Input: ResearchBrief + format + persona + target duration. Output: `Script`. Enforce conversational Thai, ≤15-word sentences, strong 3-second hook.
@@ -141,6 +142,59 @@ Rewrite each agent to call `KieLLMClient` with its assigned model. Agent configs
 
 ---
 
+### 4.6 Agent registry & naming consistency (every position must match)
+
+The same `agent_name` string is the join key across **five** places. All five must agree for every agent — this is the #1 historical breakage (per the `new-agent-setup` skill). Canonical registry for the redesign:
+
+| agent_name | model (DB value) | endpoint (by prefix) | template struct fields → frontend `TEMPLATE_VARS` |
+|---|---|---|---|
+| `research` | `gemini-3-5-flash` | Gemini + googleSearch | `Category, AudiencePersona, PreviousTopics, RAGContext` |
+| `script` | `claude-sonnet-4-6` | Claude | `Topic, CoreMessage, NarrativeAngle, KeyPoints, TargetDurationSec, FormatInstruction, AudiencePersona` |
+| `scene` | `claude-sonnet-4-6` | Claude | `Script, TargetSceneCount, TargetDurationSec, ThemeDescription` |
+| `imageprompt` | `gemini-3-5-flash` | Gemini | `SceneText, OnScreenText, ThemeDescription, PrimaryColor, AccentColor` |
+| `metadata` | `gemini-3-5-flash` | Gemini | `Topic, Script, Category, AudiencePersona` |
+| `dedup` | `gemini-3-5-flash` | Gemini | (existing dedup vars) |
+| `analytics` | `gemini-3-5-flash` | Gemini | (existing — migrated off OpenRouter for consistency) |
+
+**Changes vs current registry:**
+- **Remove** `question` (questioner/Q&A flow retired).
+- **Rename** `image` → `imageprompt` (clearer; drop questioner-centric vars).
+- **Add** `scene` and `metadata`.
+- **Migrate** `analytics` to kie.ai (Gemini) so the rule "all agents on kie.ai" holds with no exception. (TTS is not an agent — stays OpenRouter.)
+
+**The five registration positions to keep in sync** (per agent):
+1. **DB seed** — `agent_configs` table, via migration (`agent_name, system_prompt, prompt_template, model, temperature, enabled, skills`). Table is `agent_configs` (the repo's `UPDATE agent_configs`), not `agents`.
+2. **Go fetch** — `agentsRepo.GetByName(ctx, "<agent_name>")` in `orchestrator.go`, `research.go`, `analyzer.go`. Update all call sites: drop `"question"`/`"image"`, add `"scene"`/`"metadata"`/`"imageprompt"`.
+3. **Frontend `TEMPLATE_VARS`** — `frontend/src/pages/Agents.tsx` (currently keyed `question/script/image`). Replace keys + var lists to match the struct fields above (`renderTemplate` substitutes `{{.FieldName}}` from the Go struct, so the lists must equal the exact Go field names).
+4. **Frontend placeholders** — model placeholder `openai/gpt-4.1` → `claude-sonnet-4-6` (in `AgentModelsCard.tsx`); skills placeholder text generic.
+5. **Tracker step names** — `progress.Tracker` steps renamed to `research, script, scene, image_prompts, metadata, voice, images, render, upload` and mirrored in any frontend progress UI (`ProductionProgress.tsx`).
+
+> **Honesty note on the `new-agent-setup` skill:** its file paths (`internal/llm/routing.go`, `internal/agents/xxx_agent.go`, `internal/service/skill_loader.go`, `frontend/src/features/agents/utils/agentMeta.ts`) **do not exist in this repo** — the skill was written for a different layout. Use it for its *checklist discipline* (register everywhere, update count/tests, build both), but apply it to the **actual** positions listed above.
+
+### 4.7 Per-agent `skills` field (the in-agent "skills")
+
+The `skills` column is appended to each agent's system prompt as a `## Skills & Guidelines` block (`models/agent.go` `BuildSystemPrompt`). It is seeded in the migration and editable in the Agents page. Define it per agent:
+
+- **research** — "ค้นเว็บหาข้อมูลปัจจุบันที่มีแหล่งอ้างอิงจริงเท่านั้น; ห้ามแต่งข่าว/ตัวเลข; เลือกมุมเล่าที่โดนใจนักยิงแอด; สรุปเป็น core_message ประโยคเดียว."
+- **script** — "เขียนสคริปไทยพูดได้ลื่น, ประโยค ≤15 คำ, hook 3 วินาทีแรกชัด, โครง hook→problem→payoff→CTA, อ้างเฉพาะ fact ที่มีแหล่ง."
+- **scene** — "แตกเป็น 6-10 ซีน หนึ่งซีนหนึ่งไอเดีย, เลือก layout_variant ให้เข้าจังหวะ, กำหนด emphasis_words, on_screen_text สั้นอ่านรู้เรื่องตอนปิดเสียง, output JSON ตาม schema."
+- **imageprompt** — "แปลงซีนเป็น prompt ภาพ brand-styled: navy gradient + ส้ม accent, ห้ามมีตัวหนังสือในภาพ, เว้น negative space กลางบนไว้ใส่ overlay, แนวตั้ง 9:16."
+- **metadata** — "title แบบ search-intent ภาษาไทย, ต่อท้าย ' | Ads Vance', desc กระชับ, tags ตรงหัวข้อ."
+- **dedup** — (คงของเดิม) "กันหัวข้อซ้ำกับคลิปล่าสุดเชิงความหมาย."
+- **analytics** — (คงของเดิม) วิเคราะห์ยอดวิวแล้วเขียน insight ต่อ agent.
+
+These are seed defaults; the user can tune them live in the Agents page.
+
+### 4.8 Frontend ↔ backend alignment
+
+The frontend already renders agents generically from `/api/v1/agents` (`Agents.tsx`, `AgentModelsCard.tsx`) and the `Agent` interface already includes `skills` — so most of the page adapts automatically once the DB seed changes. Required edits:
+
+- `frontend/src/pages/Agents.tsx` — replace the hardcoded `TEMPLATE_VARS` map (keys + variable lists) with the 4.6 registry. This drives the `{{.Var}}` chips shown under each prompt template; stale keys = wrong hints.
+- `frontend/src/components/settings/AgentModelsCard.tsx` — update model placeholder to a kie.ai example (`claude-sonnet-4-6`).
+- `frontend/src/components/ProductionProgress.tsx` — update step labels to the new tracker steps (research/script/scene/image_prompts/metadata/voice/images/render/upload) so the live progress matches backend.
+- No API contract change (the `/api/v1/agents` PATCH already carries `skills`, `model`, etc.). If any new endpoint is added later, follow the `new-api-endpoint` skill.
+- After edits: `cd frontend && npm run build` and `go build ./...` must both pass (per `new-agent-setup` checklist).
+
 ## 5. Data Model / DB
 
 Existing `clips` / `scenes` tables stay; extend them. New migration files (next number after `028` → `029_*`):
@@ -159,7 +213,13 @@ Existing `clips` / `scenes` tables stay; extend them. New migration files (next 
 - `narrative_angle TEXT`
 - `research_brief JSONB` (full brief for audit/regeneration)
 
-Use the **safe-migration** skill when authoring these (additive columns, nullable — no destructive changes).
+**`agent_configs`** seed/update (in the same or adjacent migration):
+- Insert `scene` and `metadata` rows (system_prompt, prompt_template, model, temperature, skills per 4.6/4.7).
+- Update `script` and `image`→`imageprompt` rows (rename `agent_name`, new model `claude-sonnet-4-6`/`gemini-3-5-flash`, new template, new skills).
+- Update `research`, `dedup`, `analytics` model values to `gemini-3-5-flash`.
+- Delete the `question` row.
+
+Use the **safe-migration** skill when authoring all of these (additive scene/clip columns are nullable; agent_configs seed changes are data-only — no destructive schema changes). Use **llm-structured-output** when shaping the JSON-mode prompts/schemas for the research/script/scene agents.
 
 ---
 
@@ -173,21 +233,22 @@ Single image (Approach A): Go binary + Node 22 + headless Chrome + FFmpeg + pinn
 
 - Keep `kie_api_key` (already used by `KieClient`) — now also powers all LLM agents.
 - Keep `openrouter_api_key` — now used **only** for TTS.
-- Add per-agent model fields to `agents` table (DB-tunable model per role).
+- Per-agent `model` column already exists in `agent_configs` — no schema add; KieLLM routes by model-name prefix (4.1). Seed values per 4.6.
 - Add a setting for pinned hyperframes version (optional; can be compile-time const).
 
 ---
 
 ## 8. Build Sequence (phases for the implementation plan)
 
-1. **kie.ai LLM client** (`kiellm.go`) + tests (Claude + Gemini shapers, JSON wrappers). Foundation.
-2. **DB migrations** (029) — additive scene/clip columns; agents model field.
-3. **Agents** rewrite to KieLLM: research (Gemini+search) → script (Claude) → scene (Claude) → imageprompt/metadata/dedup (Gemini). TDD per agent (JSON schema validation).
-4. **Hyperframes templater + render** (`hyperframes.go`) — port `hfslice` template, bundle assets, `npx render`, render a fixture clip end-to-end.
-5. **Producer rewrite** — per-scene TTS + ffprobe timing + per-scene gpt-image-2 + render + upload; remove static path.
-6. **Orchestrator** — topic-driven flow; remove Q&A fallback; wire tracker steps.
-7. **Dockerfile** — Node+Chrome+FFmpeg; deploy & smoke-test one full video on Railway.
-8. **Cleanup** — remove dead OpenRouter LLM path (`llm.go`) once all agents migrated; run `/simplify` on the diff before commit (per user preference).
+1. **kie.ai LLM client** (`kiellm.go`) + tests (Claude + Gemini shapers, prefix routing, JSON wrappers). Foundation.
+2. **DB migrations** (029) — additive scene/clip columns + `agent_configs` seed changes per 4.6/4.7 (use **safe-migration**).
+3. **Agents** rewrite to KieLLM: research (Gemini+search) → script (Claude) → scene (Claude) → imageprompt/metadata/dedup/analytics (Gemini). TDD per agent + **llm-structured-output** for JSON schemas. Apply **new-agent-setup** checklist discipline against the *actual* registration positions (4.6), not the skill's stale paths.
+4. **Frontend alignment** (4.8) — `TEMPLATE_VARS`, model placeholder, progress step labels; `npm run build` green.
+5. **Hyperframes templater + render** (`hyperframes.go`) — port `hfslice` template, bundle assets, `npx render`, render a fixture clip end-to-end.
+6. **Producer rewrite** — per-scene TTS + ffprobe timing + per-scene gpt-image-2 + render + upload; remove static path.
+7. **Orchestrator** — topic-driven flow; remove Q&A fallback; wire renamed tracker steps; update all `GetByName` call sites.
+8. **Dockerfile** — Node+Chrome+FFmpeg; deploy & smoke-test one full video on Railway (use **pre-deploy-checklist**).
+9. **Cleanup** — remove dead OpenRouter LLM path (`llm.go`) and `question` agent once all migrated; run `/simplify` on the diff before commit (per user preference).
 
 ---
 
@@ -210,3 +271,5 @@ Single image (Approach A): Go binary + Node 22 + headless Chrome + FFmpeg + pinn
 4. Research produces sourced facts; no fabricated news; topics don't repeat recent ones (dedup).
 5. Resume-from-failure still works (re-run skips completed steps).
 6. Deploys as a single Railway service.
+7. **Agent naming is consistent across all five positions** (4.6): DB seed, `GetByName` call sites, frontend `TEMPLATE_VARS`, placeholders, tracker steps — no `question`/`image` leftovers; `go build ./...` and `npm run build` both green.
+8. Each agent has a seeded `skills` block (4.7) and is editable in the Agents page; per-agent `model` correctly routes to Claude or Gemini by prefix.
