@@ -1,0 +1,16 @@
+# Keep the Docker build context lean (these are not needed to build the server).
+.git
+.github
+.superpowers
+bin
+docs
+frontend
+node_modules
+*.md
+# Untracked local prototypes / large artifacts (not part of the build).
+hfslice
+hyperframes-poc
+*.mp4
+*.wav
+.env
+.env.*
