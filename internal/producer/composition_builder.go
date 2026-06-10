@@ -209,15 +209,6 @@ func sanitizeHexColor(c, fallback string) string {
 	return c
 }
 
-func animationSpeed(s string) string {
-	switch s {
-	case "fast", "slow":
-		return s
-	default:
-		return "normal"
-	}
-}
-
 // writeGsapAsset writes the vendored GSAP runtime into the project's assets dir
 // so the composition loads it via a relative <script src="assets/gsap.min.js">
 // with no CDN fetch (and no inlined Math.random() tripping the lint gate).

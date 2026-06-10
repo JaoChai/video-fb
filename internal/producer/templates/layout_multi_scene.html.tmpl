@@ -188,7 +188,7 @@
 
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
-        const sceneEl=document.getElementById("scene-"+(idx+1));
+        const sceneEl=document.getElementById("scene-"+sc.scene);
         if(!sceneEl)return;
         const inAt=idx===0?0:Math.max(0,sc.start-0.35);
         const content=sceneEl.querySelector(".scene-content");
