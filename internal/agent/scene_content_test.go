@@ -8,6 +8,7 @@ func TestStripEmoji(t *testing.T) {
 		"2026 ปี":        "2026 ปี",
 		"Pay Now 💳":      "Pay Now ",
 		"no emoji here":  "no emoji here",
+		"ขั้น 1 • โทร":   "ขั้น 1  โทร",
 	}
 	for in, want := range cases {
 		if got := StripEmoji(in); got != want {

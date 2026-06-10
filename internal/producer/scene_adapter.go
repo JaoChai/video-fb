@@ -109,7 +109,10 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 			T   string `json:"t"`
 			Bad bool   `json:"bad"`
 		} `json:"rows"`
-		Chips []struct{ N, T string } `json:"chips"`
+		Chips []struct {
+			N string `json:"n"`
+			T string `json:"t"`
+		} `json:"chips"`
 	}
 	if len(s.Content) > 0 {
 		_ = json.Unmarshal(s.Content, &raw)
