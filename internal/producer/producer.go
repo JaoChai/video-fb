@@ -297,6 +297,9 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
 		return "", fmt.Errorf("build scenes: %w", err)
 	}
+	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
+		log.Printf("hyperframes inspect flagged layout issues for clip %s (rendering anyway): %v", clipID, err)
+	}
 	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
 		return "", fmt.Errorf("render: %w", err)
 	}

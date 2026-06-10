@@ -269,5 +269,6 @@ func buildScenePrompt(concept, aspect string) string {
 		"Subject: " + subject + ". " +
 		"Composition: " + sz.NegativeSpace + ". " +
 		"Keep the image uncluttered with generous negative space. " +
-		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image."
+		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image." +
+		" Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% as simple, uncluttered background (a text card is overlaid there)."
 }
