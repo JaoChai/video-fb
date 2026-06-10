@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/agent"
@@ -95,9 +96,43 @@ func highlightTitleStr(title string, words []string) string {
 // minimal "hero" with the on-screen text as the title. A later phase replaces
 // this with per-layout structuring (stat/step/rows/chips/cta).
 func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
-	return SceneContent{
-		SceneNumber: s.SceneNumber, Start: b.Start, End: b.End,
-		Layout: "hero", CaptionStyle: normalizeCaptionStyle(s.CaptionStyle),
-		Title: highlightTitleStr(strings.TrimSpace(s.OnScreenText), s.EmphasisWords),
+	c := SceneContent{
+		SceneNumber:  s.SceneNumber,
+		Start:        b.Start,
+		End:          b.End,
+		Layout:       agent.ClampLayout(s.Layout),
+		CaptionStyle: normalizeCaptionStyle(s.CaptionStyle),
 	}
+	var raw struct {
+		Kicker, Title, Sub, Stat, Unit, StatLabel, Num, Of, Pill, CTA, Brand string
+		Rows                                                                 []struct {
+			T   string `json:"t"`
+			Bad bool   `json:"bad"`
+		} `json:"rows"`
+		Chips []struct{ N, T string } `json:"chips"`
+	}
+	if len(s.Content) > 0 {
+		_ = json.Unmarshal(s.Content, &raw)
+	}
+	clean := agent.StripEmoji
+	c.Kicker, c.Sub = clean(raw.Kicker), clean(raw.Sub)
+	c.Title = clean(raw.Title) // may legitimately contain <span class="acc">…</span>
+	c.Stat, c.Unit, c.StatLabel = clean(raw.Stat), clean(raw.Unit), clean(raw.StatLabel)
+	c.Num, c.Of, c.Pill = clean(raw.Num), clean(raw.Of), clean(raw.Pill)
+	c.CTA, c.Brand = clean(raw.CTA), clean(raw.Brand)
+	for _, r := range raw.Rows {
+		if t := clean(r.T); t != "" {
+			c.Rows = append(c.Rows, ContentRow{Text: t, Bad: r.Bad})
+		}
+	}
+	for _, ch := range raw.Chips {
+		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T)})
+	}
+	// Fallback: if the model gave no structured content, render a hero title from
+	// the legacy on_screen_text + emphasis_words so the scene is never blank.
+	if c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" {
+		c.Layout = "hero"
+		c.Title = highlightTitleStr(clean(strings.TrimSpace(s.OnScreenText)), s.EmphasisWords)
+	}
+	return c
 }

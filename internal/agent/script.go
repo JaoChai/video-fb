@@ -45,6 +45,9 @@ type GeneratedScene struct {
 	Beat          string   `json:"beat"`
 	CaptionStyle  string   `json:"caption_style"`
 	ImagePrompt   string   `json:"image_prompt"`
+	// Style-B structured content (Plan 2b-6). Emitted by the upgraded SceneAgent.
+	Layout  string          `json:"layout"`  // hook|hero|stat|step|tip|cta
+	Content json.RawMessage `json:"content"` // typed per layout; parsed in scene_adapter.go
 }
 
 type GeneratedScript struct {
