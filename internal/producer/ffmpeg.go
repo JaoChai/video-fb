@@ -97,10 +97,13 @@ func (f *FFmpegAssembler) assembleSingleWithScale(imagePath, audioPath, outputPa
 	return nil
 }
 
-// ExtractThumbnail writes the first video frame of videoPath as a PNG at outPath.
+// ExtractThumbnail writes a single PNG thumbnail from videoPath at outPath.
+// It seeks ~1.5s in (past the intro fade) so the thumbnail is a real content
+// frame, not the near-black opening frame; -update 1 writes one image without
+// ffmpeg's image-sequence-pattern warning.
 func (f *FFmpegAssembler) ExtractThumbnail(videoPath, outPath string) error {
 	os.MkdirAll(filepath.Dir(outPath), 0755)
-	args := []string{"-i", videoPath, "-vframes", "1", "-y", outPath}
+	args := []string{"-ss", "1.5", "-i", videoPath, "-frames:v", "1", "-update", "1", "-y", outPath}
 	cmd := exec.Command(f.ffmpegPath, args...)
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
