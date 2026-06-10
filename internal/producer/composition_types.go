@@ -23,6 +23,7 @@ type SceneSpec struct {
 	MascotPose      string // relative assets path to a per-scene mascot PNG ("" = none)
 	CaptionStyle    string // "word_pop" | "phrase_block"
 	Slots           []SlotSpec
+	Content         SceneContent
 }
 
 // SlotSpec is one semantic content slot rendered in scene flow layout.
@@ -30,6 +31,44 @@ type SlotSpec struct {
 	Role    string        // headline|body|badge|step|stat|callout
 	HTML    template.HTML // pre-escaped (emphasis applied)
 	StepNum int
+}
+
+// SceneContent is the structured, render-ready content for one scene. It is
+// serialized into ScenesJSON and consumed by the template's in-page DOM builder.
+// Exactly one layout's fields are populated per scene; the rest stay zero.
+type SceneContent struct {
+	SceneNumber     int     `json:"scene"`
+	Start           float64 `json:"start"`
+	End             float64 `json:"end"`
+	Layout          string  `json:"type"`          // hook|hero|stat|step|tip|cta
+	CaptionStyle    string  `json:"caption_style"` // word_pop|phrase_block
+	BackgroundImage string  `json:"bg"`            // relative assets path, "" = gradient only
+
+	Kicker    string        `json:"kicker,omitempty"`
+	Title     string        `json:"title,omitempty"` // may contain <span class="acc"> from emphasis
+	Sub       string        `json:"sub,omitempty"`
+	Rows      []ContentRow  `json:"rows,omitempty"`
+	Stat      string        `json:"stat,omitempty"`
+	Unit      string        `json:"unit,omitempty"`
+	StatLabel string        `json:"statLabel,omitempty"`
+	Chips     []ContentChip `json:"chips,omitempty"`
+	Num       string        `json:"num,omitempty"`
+	Of        string        `json:"of,omitempty"`
+	Pill      string        `json:"pill,omitempty"`
+	CTA       string        `json:"cta,omitempty"`
+	Brand     string        `json:"brand,omitempty"`
+}
+
+// ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
+type ContentRow struct {
+	Text string `json:"t"`
+	Bad  bool   `json:"bad,omitempty"`
+}
+
+// ContentChip is one small stat chip beneath a stat card.
+type ContentChip struct {
+	N string `json:"n"`
+	T string `json:"t"`
 }
 
 // ScenesParams is the full input for the multi-scene template.

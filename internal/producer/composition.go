@@ -73,29 +73,19 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, Brand.Orange)
 	}
 
-	// lightweight timing slice for the GSAP driver
-	type sceneTiming struct {
-		SceneNumber  int     `json:"scene"`
-		StartSec     float64 `json:"start"`
-		EndSec       float64 `json:"end"`
-		Speed        string  `json:"speed"`
-		Variant      string  `json:"variant"`
-		CaptionStyle string  `json:"caption_style"`
-	}
-	timings := make([]sceneTiming, len(p.Scenes))
-	for i, s := range p.Scenes {
-		timings[i] = sceneTiming{
-			SceneNumber:  s.SceneNumber,
-			StartSec:     s.StartSec,
-			EndSec:       s.EndSec,
-			Speed:        animationSpeed(s.AnimationSpeed),
-			Variant:      s.LayoutVariant,
-			CaptionStyle: s.CaptionStyle,
+	// Structured, render-ready content for the template's in-page DOM builder.
+	// The image background path is resolved here (the scene knows it only after
+	// BuildScenes has copied the asset), overriding whatever Content carried.
+	contents := make([]SceneContent, len(p.Scenes))
+	for i, sc := range p.Scenes {
+		contents[i] = sc.Content
+		if sc.BackgroundMode == "image" {
+			contents[i].BackgroundImage = sc.BackgroundImage
 		}
 	}
-	scenesJSON, err := json.Marshal(timings)
+	scenesJSON, err := json.Marshal(contents)
 	if err != nil {
-		return nil, fmt.Errorf("marshal scene timings: %w", err)
+		return nil, fmt.Errorf("marshal scene contents: %w", err)
 	}
 
 	outroStart := p.DurationSeconds - 1.6

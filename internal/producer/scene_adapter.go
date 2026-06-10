@@ -77,7 +77,27 @@ func buildSceneSpecs(scenes []agent.GeneratedScene, bounds []sceneBound) []Scene
 			BackgroundMode: bgMode,
 			CaptionStyle:   normalizeCaptionStyle(s.CaptionStyle),
 			Slots:          slots,
+			Content:        buildSceneContent(s, b),
 		}
 	}
 	return specs
+}
+
+// highlightTitleStr wraps emphasis words in <span class="acc"> (the Style-B
+// accent class) while escaping the rest. Returns a plain string so it can be
+// JSON-serialized into SceneContent.Title (the template injects it via innerHTML).
+func highlightTitleStr(title string, words []string) string {
+	return highlightWithClass(title, words, "acc")
+}
+
+// buildSceneContent maps a GeneratedScene + its measured audio bound into the
+// structured SceneContent the Style-B template renders. Phase-1 stub: emits a
+// minimal "hero" with the on-screen text as the title. A later phase replaces
+// this with per-layout structuring (stat/step/rows/chips/cta).
+func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
+	return SceneContent{
+		SceneNumber: s.SceneNumber, Start: b.Start, End: b.End,
+		Layout: "hero", CaptionStyle: normalizeCaptionStyle(s.CaptionStyle),
+		Title: highlightTitleStr(strings.TrimSpace(s.OnScreenText), s.EmphasisWords),
+	}
 }

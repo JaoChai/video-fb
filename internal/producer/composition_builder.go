@@ -139,10 +139,15 @@ func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir
 // highlightTitle wraps each highlight word in <span class="hl"> while escaping
 // everything else. Escaping the words too keeps the match consistent.
 func highlightTitle(title string, words []string) template.HTML {
+	return template.HTML(highlightWithClass(title, words, "hl")) //nolint:gosec // escaped
+}
+
+// highlightWithClass is the shared core: it HTML-escapes title, then wraps each
+// emphasis word in <span class="CLASS"> using sentinels so a later word never
+// matches injected markup. Dedupes and skips a word contained in a longer one to
+// avoid nested spans. Returns an escape-safe string.
+func highlightWithClass(title string, words []string, class string) string {
 	escaped := html.EscapeString(title)
-	// Mark matches with sentinels first and convert to spans in one final pass, so
-	// a later word can never match the injected markup. Dedupe and skip a word that
-	// is contained in a longer highlight word — both would otherwise nest spans.
 	seen := map[string]bool{}
 	for _, w := range words {
 		w = strings.TrimSpace(w)
@@ -153,9 +158,9 @@ func highlightTitle(title string, words []string) template.HTML {
 		ew := html.EscapeString(w)
 		escaped = strings.ReplaceAll(escaped, ew, "\x00"+ew+"\x01")
 	}
-	escaped = strings.ReplaceAll(escaped, "\x00", `<span class="hl">`)
+	escaped = strings.ReplaceAll(escaped, "\x00", `<span class="`+class+`">`)
 	escaped = strings.ReplaceAll(escaped, "\x01", `</span>`)
-	return template.HTML(escaped)
+	return escaped
 }
 
 // containedInLonger reports whether w is a substring of a strictly longer word

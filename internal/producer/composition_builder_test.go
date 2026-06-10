@@ -46,6 +46,7 @@ func TestBuildScenes(t *testing.T) {
 				Slots: []SlotSpec{
 					{Role: "headline", HTML: template.HTML("บัญชีโดนแบน")},
 				},
+				Content: SceneContent{SceneNumber: 1, Start: 0, End: 15, Layout: "hero", CaptionStyle: "phrase_block", Title: "บัญชีโดนแบน"},
 			},
 			{
 				SceneNumber:    2,
@@ -58,6 +59,7 @@ func TestBuildScenes(t *testing.T) {
 				Slots: []SlotSpec{
 					{Role: "headline", HTML: template.HTML("ทักแอดส์แวนซ์")},
 				},
+				Content: SceneContent{SceneNumber: 2, Start: 15, End: 30, Layout: "cta", CaptionStyle: "phrase_block", Title: "ทักแอดส์แวนซ์", CTA: "ทักเลย", Brand: "ADS VANCE"},
 			},
 		},
 		Segments: []TranscriptSegment{{Text: "ทดสอบ", Start: 0, End: 2}},
