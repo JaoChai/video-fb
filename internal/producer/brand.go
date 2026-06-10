@@ -13,8 +13,7 @@ const BrandCTA = "กดติดตาม ADS VANCE ไม่พลาดเร
 
 // BrandColors is the single source of truth for the ADS VANCE visual palette,
 // scoped to image-prompt generation. Hex values are taken directly from the
-// layout templates (layout_dynamic_karaoke.html.tmpl and
-// layout_multi_scene.html.tmpl) and must stay in sync with them.
+// layout_multi_scene.html.tmpl template and must stay in sync with it.
 type BrandColors struct {
 	// Background / structural navy scale
 	NavyDeep string // #062F78 — page background, deepest layer
@@ -174,10 +173,9 @@ var Type = TypeTokens{
 // CSSVars returns a CSS :root block of custom properties for all brand color,
 // motion, and type tokens.
 //
-// Color var names EXACTLY match the names already hardcoded in
-// layout_dynamic_karaoke.html.tmpl and layout_multi_scene.html.tmpl, so a
-// later task can replace each template's hardcoded :root block with
-// {{ .BrandCSSVars }} and get identical output.
+// Color var names EXACTLY match the names referenced in
+// layout_multi_scene.html.tmpl (which injects this block via {{ .BrandCSS }}),
+// so the template's colors stay in sync with this single source of truth.
 //
 // Motion and type vars are additive (prefixed --ease-*, --dur-*, --font-*).
 //

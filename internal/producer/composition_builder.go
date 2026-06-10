@@ -31,7 +31,7 @@ const projectHyperframesJSON = `{
 `
 
 // CompositionBuilder assembles a renderable Hyperframes project directory from
-// CompositionParams. The layout template is embedded (see RenderComposition), so
+// ScenesParams. The layout template is embedded (see RenderCompositionScenes), so
 // a built binary needs no template files on disk — only the Sarabun fonts.
 type CompositionBuilder struct {
 	fontsDir string // source Sarabun .ttf files to copy into each project
@@ -202,13 +202,6 @@ func sanitizeHexColor(c, fallback string) string {
 		}
 	}
 	return c
-}
-
-func backgroundMode(m string) string {
-	if m == "image" {
-		return "image"
-	}
-	return "css"
 }
 
 func animationSpeed(s string) string {

@@ -45,8 +45,8 @@ var templateFS embed.FS
 var gsapMinJS string
 
 // RenderCompositionScenes executes the multi-scene layout template for p and
-// returns the composition HTML. It is the parallel to RenderComposition for the
-// multi-scene pipeline.
+// returns the composition HTML (it does not assemble a project dir or copy
+// assets — use CompositionBuilder.BuildScenes for that).
 func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	if p.DurationSeconds <= 0 {
 		return nil, fmt.Errorf("DurationSeconds must be > 0, got %v", p.DurationSeconds)
