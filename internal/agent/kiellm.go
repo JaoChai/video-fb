@@ -136,21 +136,29 @@ type kieGeminiResponse struct {
 	} `json:"error"`
 }
 
-// parseGeminiText handles both a JSON array of streamed chunks and a single
-// response object, concatenating all candidate part text.
+// parseGeminiText concatenates all candidate part text from a Gemini response.
+// kie.ai's streamGenerateContent returns Server-Sent Events ("data: {...}" lines
+// terminated by "data: [DONE]"), confirmed by live call. A JSON array of chunks
+// and a single response object are also tolerated as fallbacks.
 func parseGeminiText(body []byte) (string, error) {
 	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return "", fmt.Errorf("empty gemini response")
+	}
 	var chunks []kieGeminiResponse
-	if len(trimmed) > 0 && trimmed[0] == '[' {
+	switch trimmed[0] {
+	case '[':
 		if err := json.Unmarshal(trimmed, &chunks); err != nil {
 			return "", fmt.Errorf("parse gemini stream array: %w", err)
 		}
-	} else {
+	case '{':
 		var single kieGeminiResponse
 		if err := json.Unmarshal(trimmed, &single); err != nil {
 			return "", fmt.Errorf("parse gemini response: %w", err)
 		}
 		chunks = []kieGeminiResponse{single}
+	default:
+		chunks = parseGeminiSSE(trimmed)
 	}
 	var sb strings.Builder
 	for _, ch := range chunks {
@@ -168,6 +176,29 @@ func parseGeminiText(body []byte) (string, error) {
 		return "", fmt.Errorf("no text in gemini response")
 	}
 	return out, nil
+}
+
+// parseGeminiSSE extracts response chunks from Server-Sent Events: each line is
+// "data: <json>", terminated by "data: [DONE]". Non-data and non-JSON lines are
+// skipped so keep-alives and the terminator don't break parsing.
+func parseGeminiSSE(body []byte) []kieGeminiResponse {
+	var chunks []kieGeminiResponse
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var ch kieGeminiResponse
+		if err := json.Unmarshal([]byte(payload), &ch); err != nil {
+			continue
+		}
+		chunks = append(chunks, ch)
+	}
+	return chunks
 }
 
 const (

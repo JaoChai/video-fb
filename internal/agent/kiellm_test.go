@@ -155,6 +155,27 @@ func TestParseGeminiText(t *testing.T) {
 			body:    `[]`,
 			wantErr: true,
 		},
+		{
+			// Real kie.ai wire format (confirmed by live call): SSE data lines + [DONE].
+			name: "SSE data lines",
+			body: "data: {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"po\"}]}}]}\n\ndata: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"ng\"}]}}]}\n\ndata: [DONE]\n",
+			want: "pong",
+		},
+		{
+			name:    "SSE with usage-only and DONE (no candidate text)",
+			body:    "data: {\"usageMetadata\":{\"totalTokenCount\":5}}\n\ndata: [DONE]\n",
+			wantErr: true,
+		},
+		{
+			name:    "SSE error line",
+			body:    "data: {\"error\":{\"message\":\"quota\"}}\n\ndata: [DONE]\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty body",
+			body:    "",
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
