@@ -92,9 +92,10 @@ func highlightTitleStr(title string, words []string) string {
 }
 
 // buildSceneContent maps a GeneratedScene + its measured audio bound into the
-// structured SceneContent the Style-B template renders. Phase-1 stub: emits a
-// minimal "hero" with the on-screen text as the title. A later phase replaces
-// this with per-layout structuring (stat/step/rows/chips/cta).
+// structured SceneContent the Style-B template renders. It clamps the layout,
+// unmarshals the model's per-layout content object, and strips emoji from every
+// text field. When the model emits no structured content it falls back to a hero
+// title built from on_screen_text + emphasis_words, so a scene is never blank.
 func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	c := SceneContent{
 		SceneNumber:  s.SceneNumber,
