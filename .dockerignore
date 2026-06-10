@@ -1,10 +1,13 @@
 # Keep the Docker build context lean (these are not needed to build the server).
+# NOTE: do NOT ignore `frontend/` here — the frontend Railway service builds from
+# this same repo root and needs frontend/* (package.json, nginx.conf, src). The
+# backend image only compiles cmd/server, so including frontend/ in its context is
+# harmless. (Excluding it broke the frontend build: "frontend/nginx.conf not found".)
 .git
 .github
 .superpowers
 bin
 docs
-frontend
 node_modules
 *.md
 # Untracked local prototypes / large artifacts (not part of the build).
