@@ -34,4 +34,9 @@ type CreateSceneRequest struct {
 	VoiceText       string          `json:"voice_text"`
 	DurationSeconds float64         `json:"duration_seconds"`
 	TextOverlays    json.RawMessage `json:"text_overlays"`
+	LayoutVariant   string          `json:"layout_variant"`
+	OnScreenText    string          `json:"on_screen_text"`
+	EmphasisWords   json.RawMessage `json:"emphasis_words"`
+	Beat            string          `json:"beat"`
+	CaptionStyle    string          `json:"caption_style"`
 }

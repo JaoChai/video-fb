@@ -37,6 +37,14 @@ type GeneratedScene struct {
 	VoiceText       string          `json:"voice_text"`
 	DurationSeconds float64         `json:"duration_seconds"`
 	TextOverlays    json.RawMessage `json:"text_overlays"`
+	// Plan 2b additions — populated by the new SceneAgent (Claude). The legacy
+	// ScriptAgent leaves these empty, which is valid.
+	LayoutVariant string   `json:"layout_variant"`
+	OnScreenText  string   `json:"on_screen_text"`
+	EmphasisWords []string `json:"emphasis_words"`
+	Beat          string   `json:"beat"`
+	CaptionStyle  string   `json:"caption_style"`
+	ImagePrompt   string   `json:"image_prompt"`
 }
 
 type GeneratedScript struct {
