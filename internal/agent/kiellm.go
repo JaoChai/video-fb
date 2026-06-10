@@ -2,9 +2,16 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func providerForModel(model string) (string, error) {
@@ -161,4 +168,117 @@ func parseGeminiText(body []byte) (string, error) {
 		return "", fmt.Errorf("no text in gemini response")
 	}
 	return out, nil
+}
+
+const (
+	kieClaudeAPI    = "https://api.kie.ai/claude/v1/messages"
+	kieGeminiAPIFmt = "https://api.kie.ai/gemini/v1/models/%s:streamGenerateContent"
+	kieLLMMaxTokens = 8000
+)
+
+type KieLLMClient struct {
+	pool   *pgxpool.Pool
+	client *http.Client
+}
+
+func NewKieLLMClient(pool *pgxpool.Pool) *KieLLMClient {
+	return &KieLLMClient{pool: pool, client: &http.Client{Timeout: 5 * time.Minute}}
+}
+
+func (c *KieLLMClient) getAPIKey(ctx context.Context) (string, error) {
+	var key string
+	if err := c.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'kie_api_key'`).Scan(&key); err != nil {
+		return "", fmt.Errorf("get kie_api_key from settings: %w", err)
+	}
+	if key == "" {
+		return "", fmt.Errorf("kie_api_key is empty — set it in Settings page")
+	}
+	return key, nil
+}
+
+// Generate routes to Claude or Gemini by model prefix and returns the text.
+func (c *KieLLMClient) Generate(ctx context.Context, model, system, user string, temp float64) (string, error) {
+	return c.generate(ctx, model, system, user, temp, false)
+}
+
+// GenerateWithSearch is Generate with Gemini googleSearch grounding enabled.
+// Only valid for gemini-* models (the research agent); Claude ignores the flag.
+func (c *KieLLMClient) GenerateWithSearch(ctx context.Context, model, system, user string, temp float64) (string, error) {
+	return c.generate(ctx, model, system, user, temp, true)
+}
+
+func (c *KieLLMClient) generate(ctx context.Context, model, system, user string, temp float64, search bool) (string, error) {
+	provider, err := providerForModel(model)
+	if err != nil {
+		return "", err
+	}
+	apiKey, err := c.getAPIKey(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var url string
+	var reqBody []byte
+	switch provider {
+	case "claude":
+		url = kieClaudeAPI
+		reqBody, err = buildClaudeBody(model, system, user, temp, kieLLMMaxTokens)
+	case "gemini":
+		url = fmt.Sprintf(kieGeminiAPIFmt, model)
+		reqBody, err = buildGeminiBody(system, user, temp, search)
+	}
+	if err != nil {
+		return "", fmt.Errorf("build %s request: %w", provider, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("kie %s HTTP %d: %s", provider, resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+	}
+
+	if provider == "claude" {
+		return parseClaudeText(respBody)
+	}
+	return parseGeminiText(respBody)
+}
+
+// GenerateJSON calls Generate and unmarshals the (fence-stripped) result into
+// target, retrying with progressively lower temperature on parse failure.
+func (c *KieLLMClient) GenerateJSON(ctx context.Context, model, system, user string, temp float64, target any) error {
+	const maxRetries = 2
+	var lastErr error
+	for attempt := range maxRetries + 1 {
+		t := temp
+		if attempt > 0 {
+			t = max(0, temp-0.2*float64(attempt))
+			log.Printf("KieLLM JSON retry %d/%d (temperature: %.2f)", attempt, maxRetries, t)
+		}
+		text, err := c.Generate(ctx, model, system, user, t)
+		if err != nil {
+			return err
+		}
+		cleaned := extractJSON(text)
+		if err := json.Unmarshal([]byte(cleaned), target); err != nil {
+			lastErr = fmt.Errorf("parse JSON from KieLLM: %w\nraw: %s", err, text[:min(len(text), 300)])
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }
