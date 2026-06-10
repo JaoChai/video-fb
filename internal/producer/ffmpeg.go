@@ -96,3 +96,15 @@ func (f *FFmpegAssembler) assembleSingleWithScale(imagePath, audioPath, outputPa
 	}
 	return nil
 }
+
+// ExtractThumbnail writes the first video frame of videoPath as a PNG at outPath.
+func (f *FFmpegAssembler) ExtractThumbnail(videoPath, outPath string) error {
+	os.MkdirAll(filepath.Dir(outPath), 0755)
+	args := []string{"-i", videoPath, "-vframes", "1", "-y", outPath}
+	cmd := exec.Command(f.ffmpegPath, args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg thumbnail failed: %w", err)
+	}
+	return nil
+}
