@@ -317,12 +317,13 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 	}
 	p.tracker.CompleteStep("assembly")
 
+	p.tracker.StartStep("upload")
 	thumbPath := filepath.Join(filepath.Dir(mp4Path), "thumbnail.png")
 	if err := p.ffmpeg.ExtractThumbnail(mp4Path, thumbPath); err != nil {
+		p.tracker.FailStep("upload", err)
 		return nil, fmt.Errorf("extract thumbnail: %w", err)
 	}
 
-	p.tracker.StartStep("upload")
 	uploadDir := "adsvance/" + clipID
 	video916URL, err := p.kie.UploadFile(ctx, mp4Path, uploadDir)
 	if err != nil {
