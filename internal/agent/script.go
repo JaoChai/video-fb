@@ -21,12 +21,12 @@ type ScriptTemplateData struct {
 }
 
 type ScriptAgent struct {
-	llm      *LLMClient
+	llm      *KieLLMClient
 	rag      *rag.Engine
 	research *ResearchAgent
 }
 
-func NewScriptAgent(llm *LLMClient, ragEngine *rag.Engine, research *ResearchAgent) *ScriptAgent {
+func NewScriptAgent(llm *KieLLMClient, ragEngine *rag.Engine, research *ResearchAgent) *ScriptAgent {
 	return &ScriptAgent{llm: llm, rag: ragEngine, research: research}
 }
 

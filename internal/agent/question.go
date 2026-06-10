@@ -28,14 +28,14 @@ type QuestionTemplateData struct {
 }
 
 type QuestionAgent struct {
-	llm      *LLMClient
+	llm      *KieLLMClient
 	rag      *rag.Engine
 	pool     *pgxpool.Pool
 	deduper  *Deduper
 	research *ResearchAgent
 }
 
-func NewQuestionAgent(llm *LLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool, research *ResearchAgent) *QuestionAgent {
+func NewQuestionAgent(llm *KieLLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool, research *ResearchAgent) *QuestionAgent {
 	return &QuestionAgent{llm: llm, rag: ragEngine, pool: pool, deduper: NewDeduper(pool, ragEngine), research: research}
 }
 
