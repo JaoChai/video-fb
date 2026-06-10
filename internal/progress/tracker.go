@@ -32,7 +32,7 @@ type ProductionStatus struct {
 	ErrorLogs   []string `json:"error_logs,omitempty"`
 }
 
-var stepNames = []string{"question", "script", "image_prompts", "voice", "images", "assembly", "upload", "complete"}
+var stepNames = []string{"question", "script", "scene", "assembly", "upload", "complete"}
 
 type Tracker struct {
 	mu       sync.RWMutex

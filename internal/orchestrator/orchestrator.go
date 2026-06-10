@@ -41,12 +41,26 @@ func sanitizeVoiceText(s string, brandAliases map[string]string) string {
 	return s
 }
 
+// scriptNarration joins all scene voice_texts into the full narration the
+// SceneAgent breaks down. The legacy ScriptAgent emits a single scene whose
+// voice_text is the whole narration; joining is defensive against multi-scene.
+func scriptNarration(script *agent.GeneratedScript) string {
+	parts := make([]string, 0, len(script.Scenes))
+	for _, s := range script.Scenes {
+		if t := strings.TrimSpace(s.VoiceText); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 type Orchestrator struct {
 	settingsRepo  *repository.SettingsRepo
 	formatsRepo   *repository.FormatsRepo
 	questionAgent *agent.QuestionAgent
 	scriptAgent   *agent.ScriptAgent
 	imageAgent    *agent.ImageAgent
+	sceneAgent    *agent.SceneAgent
 	producer      *producer.Producer
 	clipsRepo     *repository.ClipsRepo
 	scenesRepo    *repository.ScenesRepo
@@ -59,6 +73,7 @@ func New(
 	qa *agent.QuestionAgent,
 	sa *agent.ScriptAgent,
 	ia *agent.ImageAgent,
+	sca *agent.SceneAgent,
 	prod *producer.Producer,
 	clips *repository.ClipsRepo,
 	scenes *repository.ScenesRepo,
@@ -70,7 +85,8 @@ func New(
 ) *Orchestrator {
 	return &Orchestrator{
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
-		producer: prod, clipsRepo: clips, scenesRepo: scenes,
+		sceneAgent: sca,
+		producer:   prod, clipsRepo: clips, scenesRepo: scenes,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
 }
@@ -194,6 +210,12 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
+// Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
+const (
+	targetSceneCount  = 8
+	targetDurationSec = 75
+)
+
 // brandTailRe matches a trailing brand mention in any form the LLM might add:
 // " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", "[Ads Vance]", " Ads Vance".
 // Matching the bare name (no delimiter) at the end is deliberate — the canonical
@@ -237,7 +259,31 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	validateScript(script)
 	o.tracker.CompleteStep("script")
 
-	for _, scene := range script.Scenes {
+	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
+	o.tracker.StartStep("scene")
+	sceneCfg, err := o.agentsRepo.GetByName(ctx, "scene")
+	if err != nil {
+		o.tracker.FailStep("scene", err)
+		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
+	}
+	narration := scriptNarration(script)
+	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, theme, sceneCfg)
+	if err != nil {
+		o.tracker.FailStep("scene", err)
+		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
+	}
+	// Sanitize each scene's narration for TTS (brand aliases, strip URLs/@handles).
+	for i := range scenes {
+		scenes[i].VoiceText = sanitizeVoiceText(scenes[i].VoiceText, brandAliases)
+	}
+	o.tracker.CompleteStep("scene")
+
+	// Persist scenes with the 2b layout/caption fields.
+	for _, scene := range scenes {
+		emphasis, mErr := json.Marshal(scene.EmphasisWords)
+		if mErr != nil || len(emphasis) == 0 {
+			emphasis = []byte("[]")
+		}
 		overlays := scene.TextOverlays
 		if overlays == nil {
 			overlays = []byte("[]")
@@ -247,27 +293,19 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			SceneNumber:     scene.SceneNumber,
 			SceneType:       scene.SceneType,
 			TextContent:     scene.TextContent,
+			ImagePrompt:     scene.ImagePrompt,
 			VoiceText:       scene.VoiceText,
 			DurationSeconds: scene.DurationSeconds,
 			TextOverlays:    overlays,
+			LayoutVariant:   scene.LayoutVariant,
+			OnScreenText:    scene.OnScreenText,
+			EmphasisWords:   emphasis,
+			Beat:            scene.Beat,
+			CaptionStyle:    scene.CaptionStyle,
 		})
 	}
 
-	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, script.Scenes, theme, q.QuestionerName, imageCfg)
-	if err != nil {
-		o.tracker.FailStep("image_prompts", err)
-		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
-	}
-	o.saveImagePrompts(ctx, clipID, imagePrompts)
-	o.tracker.CompleteStep("image_prompts")
-
-	var fullVoice string
-	for _, s := range script.Scenes {
-		fullVoice += s.VoiceText + " "
-	}
-	fullVoice = sanitizeVoiceText(fullVoice, brandAliases)
-
+	// Metadata from the validated script.
 	o.clipsRepo.UpsertMetadata(ctx, models.ClipMetadata{
 		ClipID:       clipID,
 		YoutubeTitle: &script.YoutubeTitle,
@@ -275,7 +313,22 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		YoutubeTags:  script.YoutubeTags,
 	})
 
-	return o.runProduction(ctx, clipID, script.Scenes, imagePrompts, fullVoice)
+	// ── Assemble the multi-scene 9:16 video + thumbnail + upload ──
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes)
+	if err != nil {
+		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
+	}
+
+	readyStatus := "ready"
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
+		Status:       &readyStatus,
+		Video916URL:  &result.Video916URL,
+		ThumbnailURL: &result.ThumbnailURL,
+		VoiceScript:  &narration,
+		AnswerScript: &narration,
+	})
+	log.Printf("Clip ready (hyperframes): %s", clipID)
+	return nil
 }
 
 func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error {
@@ -320,47 +373,31 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
 
-	scenes, err := o.scenesRepo.ListByClip(ctx, clip.ID)
-	if err != nil {
-		return o.failClip(ctx, clip.ID, fmt.Errorf("list scenes: %w", err))
-	}
-
 	q := agent.GeneratedQuestion{
 		Question:       clip.Question,
 		QuestionerName: clip.QuestionerName,
 		Category:       clip.Category,
 	}
 
-	if len(scenes) == 0 {
-		log.Printf("Retry %s: no scenes found, running full pipeline", clip.ID)
-		theme, err := o.themesRepo.GetActive(ctx)
-		if err != nil {
-			return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
-		}
-		scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
-		if err != nil {
-			return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
-		}
-		imageCfg, err := o.agentsRepo.GetByName(ctx, "image")
-		if err != nil {
-			return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
-		}
-		// Retried clips re-narrate with the standard Q&A format.
-		format, err := o.formatsRepo.GetByName(ctx, "qa")
-		if err != nil {
-			format = &models.ContentFormat{FormatName: "qa", DisplayName: "Q&A"}
-		}
-		persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
-		return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
+	theme, err := o.themesRepo.GetActive(ctx)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-
-	if scenes[0].ImagePrompt == "" {
-		log.Printf("Retry %s: scenes exist, resuming from image prompts (saving Claude script credits)", clip.ID)
-		return o.resumeFromImagePrompts(ctx, clip.ID, scenes, q.QuestionerName, brandAliases)
+	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}
+	imageCfg, err := o.agentsRepo.GetByName(ctx, "image")
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
+	}
+	format, err := o.formatsRepo.GetByName(ctx, "qa")
+	if err != nil {
+		format = &models.ContentFormat{FormatName: "qa", DisplayName: "Q&A"}
+	}
+	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
-	log.Printf("Retry %s: scenes + image prompts exist, resuming from production (saving all Claude credits)", clip.ID)
-	return o.resumeFromProduction(ctx, clip.ID, scenes, q.QuestionerName, brandAliases)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
 func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {

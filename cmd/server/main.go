@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -78,12 +79,22 @@ func main() {
 	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool, researchAgent)
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine, researchAgent)
 	imageAgent := agent.NewImageAgent(llm)
+	sceneAgent := agent.NewSceneAgent(llm)
 
 	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
 	tracker := progress.NewTracker()
 	orClient := producer.NewOpenRouterClient(pool)
 	prod := producer.NewProducer(pool, kie, orClient, ffmpeg, cfg.ElevenLabsVoice, "/tmp/adsvance-output", tracker)
+
+	fontsDir := os.Getenv("FONTS_DIR")
+	if fontsDir == "" {
+		fontsDir = "internal/producer/assets/fonts"
+	}
+	if abs, err := filepath.Abs(fontsDir); err == nil {
+		fontsDir = abs
+	}
+	prod.EnableHyperframes(fontsDir)
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
@@ -92,7 +103,7 @@ func main() {
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
 
-	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, prod,
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, prod,
 		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, formatsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)

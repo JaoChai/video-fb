@@ -302,3 +302,40 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	}
 	return filepath.Join(projectDir, "output.mp4"), nil
 }
+
+// ProduceHyperframes916 assembles a 9:16 multi-scene MP4 from scenes (per-scene
+// TTS + gpt-image-2 + render via AssembleHyperframes916), extracts a thumbnail
+// from the first frame, uploads both to kie.ai, and returns their URLs. It is the
+// multi-scene counterpart to the static Produce. Requires EnableHyperframes and a
+// non-nil tracker (the production path always provides one).
+func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene) (*ProduceResult, error) {
+	p.tracker.StartStep("assembly")
+	mp4Path, err := p.AssembleHyperframes916(ctx, clipID, scenes)
+	if err != nil {
+		p.tracker.FailStep("assembly", err)
+		return nil, fmt.Errorf("assemble hyperframes: %w", err)
+	}
+	p.tracker.CompleteStep("assembly")
+
+	p.tracker.StartStep("upload")
+	thumbPath := filepath.Join(filepath.Dir(mp4Path), "thumbnail.png")
+	if err := p.ffmpeg.ExtractThumbnail(mp4Path, thumbPath); err != nil {
+		p.tracker.FailStep("upload", err)
+		return nil, fmt.Errorf("extract thumbnail: %w", err)
+	}
+
+	uploadDir := "adsvance/" + clipID
+	video916URL, err := p.kie.UploadFile(ctx, mp4Path, uploadDir)
+	if err != nil {
+		p.tracker.FailStep("upload", err)
+		return nil, fmt.Errorf("upload video: %w", err)
+	}
+	thumbnailURL, err := p.kie.UploadFile(ctx, thumbPath, uploadDir)
+	if err != nil {
+		p.tracker.FailStep("upload", err)
+		return nil, fmt.Errorf("upload thumbnail: %w", err)
+	}
+	p.tracker.CompleteStep("upload")
+
+	return &ProduceResult{Video916URL: video916URL, ThumbnailURL: thumbnailURL}, nil
+}
