@@ -41,6 +41,19 @@ func sanitizeVoiceText(s string, brandAliases map[string]string) string {
 	return s
 }
 
+// scriptNarration joins all scene voice_texts into the full narration the
+// SceneAgent breaks down. The legacy ScriptAgent emits a single scene whose
+// voice_text is the whole narration; joining is defensive against multi-scene.
+func scriptNarration(script *agent.GeneratedScript) string {
+	parts := make([]string, 0, len(script.Scenes))
+	for _, s := range script.Scenes {
+		if t := strings.TrimSpace(s.VoiceText); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 type Orchestrator struct {
 	settingsRepo  *repository.SettingsRepo
 	formatsRepo   *repository.FormatsRepo
