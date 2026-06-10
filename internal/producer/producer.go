@@ -211,7 +211,10 @@ type hyperframesDeps struct {
 }
 
 // EnableHyperframes wires the multi-scene render engine into the producer.
-// fontsDir holds the Sarabun .ttf files (internal/producer/assets/fonts).
+// fontsDir is an ABSOLUTE path to the Sarabun .ttf files (the repo copy lives at
+// internal/producer/assets/fonts); a caller outside this package — e.g. the
+// orchestrator wiring in main.go — must resolve it absolutely, since the render
+// runs from a per-clip working dir, not the package dir.
 // Additive: the static-image Produce path does not use p.hf.
 func (p *Producer) EnableHyperframes(fontsDir string) {
 	p.hf = &hyperframesDeps{
