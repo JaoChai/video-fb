@@ -10,15 +10,10 @@
       @font-face{font-family:"Sarabun";src:url("assets/fonts/Sarabun-Bold.ttf") format("truetype");font-weight:700;font-display:block}
       @font-face{font-family:"Sarabun";src:url("assets/fonts/Sarabun-ExtraBold.ttf") format("truetype");font-weight:800;font-display:block}
 
-      :root{ {{.BrandCSS}} }
-      /* Style-B tokens the brand block does not name 1:1 (amber family, red/green
-         status colors, GSAP-feel eases). Kept so the body/JS vars still resolve. */
-      :root{
-        --amber:#F0A030; --amber-soft:#E8A030; --amber-bright:#FFB454;
-        --red:#ff6b62; --green:#3fe08a;
-        --ease-out:cubic-bezier(.16,1,.3,1);
-        --ease-spring:cubic-bezier(.34,1.56,.64,1);
-      }
+      {{.BrandCSS}}
+      /* Style-B body uses --amber* but BrandCSS emits --orange*; alias so the
+         brand stays single-source. (--red/--green/--ease-* already in BrandCSS.) */
+      :root{ --amber:var(--orange); --amber-soft:var(--orange-soft); --amber-bright:var(--orange-bright); }
       *{margin:0;padding:0;box-sizing:border-box}
       html,body{width:{{.Width}}px;height:{{.Height}}px;overflow:hidden;background:var(--navy-deep)}
       /* Thai-safe: NEVER negative letter-spacing (it collides vowels/tone marks) */
