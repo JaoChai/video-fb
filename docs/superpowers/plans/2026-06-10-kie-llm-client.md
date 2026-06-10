@@ -640,9 +640,9 @@ git commit -m "feat(agent): kie.ai LLM client transport + GenerateJSON wrapper"
 ## Self-Review Notes
 
 - **Spec coverage:** Implements spec §4.1 (kie.ai LLM client: two shapers, prefix routing, JSON wrapper, `kie_api_key`, control flow off response fields not top-level `code`). Other spec sections (agents, render, producer, orchestrator, frontend, deploy) are covered by Plans 2 and 3.
-- **Honesty flags (from research — verify against a live call before Plan 2 agents depend on exact shapes):**
-  1. Gemini `streamGenerateContent` wire format (JSON array vs SSE) is not nailed down in kie.ai docs. `parseGeminiText` tolerates a JSON array or a single object; if kie.ai returns SSE (`data:` lines), add an SSE-splitting branch then. Validate with one real `gemini-3-5-flash` call.
-  2. Gemini `generationConfig.temperature` support is unconfirmed in docs — sent as standard Gemini field; harmless if ignored.
-  3. Claude `system` as a top-level field is the Anthropic Messages convention; confirm kie.ai passes it through (fallback: prepend system to the user message, same as Gemini).
+- **Honesty flags — RESOLVED by live call to kie.ai on 2026-06-10:**
+  1. ✅ Gemini wire format = **SSE** (`data: {json}` lines + `data: [DONE]`), NOT a JSON array. `parseGeminiText` was fixed to handle SSE (commit `1bd6800`, `parseGeminiSSE` + regression tests); array/object kept as fallback.
+  2. ✅ Gemini `generationConfig.temperature` accepted (HTTP 200).
+  3. ✅ Claude `system` top-level passes through; `stream:false` returns a single JSON object with text at `content[].text`. `googleSearch` also verified returning grounded answers.
 - **No placeholders, types consistent:** `buildClaudeBody`/`parseClaudeText`/`buildGeminiBody`/`parseGeminiText`/`providerForModel`/`KieLLMClient.Generate`/`GenerateWithSearch`/`GenerateJSON` names are used identically across tasks.
 - **Integration check (manual, optional before Plan 2):** with `kie_api_key` set in `settings`, a tiny `main` or test calling `Generate(ctx, "claude-sonnet-4-6", "", "say hi", 0)` and `GenerateWithSearch(ctx, "gemini-3-5-flash", "", "latest Meta ads news", 0.3)` should each return non-empty text. This is the moment to fix any wire-format surprise from the flags above.
