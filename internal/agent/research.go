@@ -12,19 +12,18 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
-// ResearchAgent finds fresh, reliable information via live web search.
-// Its configured model must have native web search (e.g. perplexity/sonar) —
-// no crawler or embedding pipeline needed.
+// ResearchAgent finds fresh, reliable information via Gemini googleSearch
+// grounding (kie.ai). No crawler or embedding pipeline needed.
 //
 // Design note: the prompt is deliberately simple. Strict source whitelists or
 // explicit "answer empty if unsure" escape hatches make search models bail out
-// and return nothing (verified against perplexity/sonar in production).
+// and return nothing.
 type ResearchAgent struct {
-	llm        *LLMClient
+	llm        *KieLLMClient
 	agentsRepo *repository.AgentsRepo
 }
 
-func NewResearchAgent(llm *LLMClient, agentsRepo *repository.AgentsRepo) *ResearchAgent {
+func NewResearchAgent(llm *KieLLMClient, agentsRepo *repository.AgentsRepo) *ResearchAgent {
 	return &ResearchAgent{llm: llm, agentsRepo: agentsRepo}
 }
 
@@ -50,7 +49,7 @@ func (a *ResearchAgent) Research(ctx context.Context, topic string) (string, err
 สรุป 3 ข่าวล่าสุด แต่ละข่าวบอก: เกิดอะไรขึ้น / มีผลเมื่อไหร่ / กระทบคนยิงแอดยังไง / URL แหล่งที่มา
 ตอบเป็นภาษาไทย อย่าใช้ข้อมูลจากเว็บที่ขายบริการกู้บัญชี ปลดแบน หรือขาย/เช่าบัญชีโฆษณา`, topic)
 
-	text, err := a.llm.Generate(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature)
+	text, err := a.llm.GenerateWithSearch(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature)
 	if err != nil {
 		return "", fmt.Errorf("research search: %w", err)
 	}
