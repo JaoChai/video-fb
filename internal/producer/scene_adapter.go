@@ -2,6 +2,7 @@ package producer
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/agent"
@@ -116,7 +117,9 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		} `json:"chips"`
 	}
 	if len(s.Content) > 0 {
-		_ = json.Unmarshal(s.Content, &raw)
+		if err := json.Unmarshal(s.Content, &raw); err != nil {
+			log.Printf("scene %d: malformed content JSON (%v) — degrading to hero", s.SceneNumber, err)
+		}
 	}
 	clean := agent.StripEmoji
 	c.Kicker, c.Sub = clean(raw.Kicker), clean(raw.Sub)
@@ -134,7 +137,10 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	}
 	// Fallback: if the model gave no structured content, render a hero title from
 	// the legacy on_screen_text + emphasis_words so the scene is never blank.
-	if c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" {
+	empty := c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" &&
+		len(c.Chips) == 0 && c.Pill == "" && c.Sub == "" && c.StatLabel == ""
+	if empty {
+		log.Printf("scene %d: no structured content (layout %q) — hero fallback from on_screen_text", s.SceneNumber, s.Layout)
 		c.Layout = "hero"
 		c.Title = highlightTitleStr(clean(strings.TrimSpace(s.OnScreenText)), s.EmphasisWords)
 	}

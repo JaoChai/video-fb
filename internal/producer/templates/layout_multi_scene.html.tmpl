@@ -149,7 +149,7 @@
       const SEGMENTS = {{.SegmentsJSON}};
 
       function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
-      function rowsBlock(rows){const w=el("div","rows");rows.forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
+      function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
       function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",c.t.replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
 
       SCENES.forEach((sc,i)=>{
@@ -160,7 +160,7 @@
         else if(sc.type==="hero"){ c.appendChild(el("h1","title",sc.title)); if(sc.sub)c.appendChild(el("div","sub",sc.sub)); }
         else if(sc.type==="stat"){
           const card=el("div","card");
-          card.appendChild(el("div","stat",sc.stat+(sc.unit?'<span class="unit">'+sc.unit+'</span>':'')));
+          card.appendChild(el("div","stat",(sc.stat||"")+(sc.unit?'<span class="unit">'+sc.unit+'</span>':'')));
           card.appendChild(el("div","stat-label",sc.statLabel));
           c.appendChild(card);
           if(sc.chips) c.appendChild(chipsBlock(sc.chips));
