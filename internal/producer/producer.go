@@ -31,6 +31,7 @@ type Producer struct {
 	defaultVoice string
 	workDir      string
 	tracker      *progress.Tracker
+	hf           *hyperframesDeps // nil until EnableHyperframes; only the multi-scene path uses it
 }
 
 func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
@@ -201,4 +202,103 @@ func fileExists(path string) bool {
 		return false
 	}
 	return stat.Size() > 0
+}
+
+// hyperframesDeps bundles the multi-scene render engine; set via EnableHyperframes.
+type hyperframesDeps struct {
+	builder  *CompositionBuilder
+	renderer *HyperframesRenderer
+}
+
+// EnableHyperframes wires the multi-scene render engine into the producer.
+// fontsDir is an ABSOLUTE path to the Sarabun .ttf files (the repo copy lives at
+// internal/producer/assets/fonts); a caller outside this package — e.g. the
+// orchestrator wiring in main.go — must resolve it absolutely, since the render
+// runs from a per-clip working dir, not the package dir.
+// Additive: the static-image Produce path does not use p.hf.
+func (p *Producer) EnableHyperframes(fontsDir string) {
+	p.hf = &hyperframesDeps{
+		builder:  NewCompositionBuilder(fontsDir),
+		renderer: NewHyperframesRenderer(),
+	}
+}
+
+// AssembleHyperframes916 turns SceneAgent scenes into a 9:16 multi-scene MP4 via
+// the hyperframes engine and returns the LOCAL output.mp4 path. Steps: per-scene
+// TTS (measured) → per-scene gpt-image-2 backgrounds (kie.ai; missing/failed →
+// css) → GeneratedScene→SceneSpec → fill the multi-scene template → render.
+// Upload / thumbnail / clip-status are the caller's job (orchestrator).
+// Requires EnableHyperframes to have been called.
+func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene) (string, error) {
+	if p.hf == nil {
+		return "", fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")
+	}
+	if len(scenes) == 0 {
+		return "", fmt.Errorf("no scenes")
+	}
+
+	clipDir := filepath.Join(p.workDir, clipID)
+	if err := os.MkdirAll(clipDir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir clipDir: %w", err)
+	}
+	voice := p.getVoice(ctx)
+
+	// 1) per-scene TTS → combined voice.wav + measured [start,end) bounds.
+	voicePath, bounds, err := p.synthScenesVoice(ctx, scenes, voice, clipDir)
+	if err != nil {
+		return "", fmt.Errorf("synth scenes voice: %w", err)
+	}
+
+	// 2) per-scene gpt-image-2 backgrounds (kie.ai). A missing/failed image is
+	//    non-fatal — BuildScenes downgrades that scene to a css background.
+	bgPaths := map[int]string{}
+	for _, s := range scenes {
+		if strings.TrimSpace(s.ImagePrompt) == "" {
+			continue
+		}
+		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
+		if !fileExists(bgFile) {
+			prompt := buildScenePrompt(s.ImagePrompt, "9:16")
+			if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
+				log.Printf("AssembleHyperframes916: scene %d image gen failed, using css: %v", s.SceneNumber, genErr)
+				continue
+			}
+		}
+		if fileExists(bgFile) {
+			bgPaths[s.SceneNumber] = bgFile
+		}
+	}
+
+	// 3) map scenes → SceneSpec, build captions, assemble ScenesParams.
+	specs := buildSceneSpecs(scenes, bounds)
+	if len(specs) == 0 {
+		return "", fmt.Errorf("buildSceneSpecs returned empty (scenes=%d bounds=%d)", len(scenes), len(bounds))
+	}
+	segments := captionSegmentsFromScenes(scenes, bounds)
+	total := 0.0
+	if len(bounds) > 0 {
+		total = bounds[len(bounds)-1].End
+	}
+	params := ScenesParams{
+		AspectRatio:     "9:16",
+		BrandName:       BrandName,
+		CTAText:         BrandCTA,
+		VoiceSrc:        "assets/voice.wav",
+		DurationSeconds: total,
+		Scenes:          specs,
+		Segments:        segments,
+	}
+
+	// 4) build the project dir and render the MP4.
+	projectDir := filepath.Join(clipDir, "composition-916")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir projectDir: %w", err)
+	}
+	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
+		return "", fmt.Errorf("build scenes: %w", err)
+	}
+	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
+		return "", fmt.Errorf("render: %w", err)
+	}
+	return filepath.Join(projectDir, "output.mp4"), nil
 }
