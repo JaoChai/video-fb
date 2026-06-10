@@ -72,7 +72,7 @@ func main() {
 		return
 	}
 
-	llm := agent.NewLLMClient(pool)
+	llm := agent.NewKieLLMClient(pool)
 	agentsRepo := repository.NewAgentsRepo(pool)
 	researchAgent := agent.NewResearchAgent(llm, agentsRepo)
 	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool, researchAgent)

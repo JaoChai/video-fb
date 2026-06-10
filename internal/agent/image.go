@@ -16,10 +16,10 @@ type ImageTemplateData struct {
 }
 
 type ImageAgent struct {
-	llm *LLMClient
+	llm *KieLLMClient
 }
 
-func NewImageAgent(llm *LLMClient) *ImageAgent {
+func NewImageAgent(llm *KieLLMClient) *ImageAgent {
 	return &ImageAgent{llm: llm}
 }
 

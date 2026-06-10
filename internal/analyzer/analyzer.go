@@ -15,11 +15,11 @@ const historyPrefixInsights = "[insights] "
 
 type Analyzer struct {
 	pool       *pgxpool.Pool
-	llm        *agent.LLMClient
+	llm        *agent.KieLLMClient
 	agentsRepo *repository.AgentsRepo
 }
 
-func New(pool *pgxpool.Pool, llm *agent.LLMClient, agentsRepo *repository.AgentsRepo) *Analyzer {
+func New(pool *pgxpool.Pool, llm *agent.KieLLMClient, agentsRepo *repository.AgentsRepo) *Analyzer {
 	return &Analyzer{pool: pool, llm: llm, agentsRepo: agentsRepo}
 }
 
