@@ -34,7 +34,10 @@
 
       .kicker{font-weight:800;font-size:30px;letter-spacing:.10em;color:var(--amber-bright);text-align:center}
 
-      h1.title{font-weight:800;font-size:96px;line-height:1.06;color:#fff;text-align:center;
+      /* Thai needs a loose line-height: at 1.06 the upper vowels/tone marks of a
+         wrapped second line collide with the line above (ทับซ้อน). 1.32 + a little
+         top room clears the stacked marks. */
+      h1.title{font-weight:800;font-size:96px;line-height:1.32;padding-top:.06em;color:#fff;text-align:center;
         text-shadow:0 3px 16px rgba(0,0,0,.6)}
       h1.title .slab{color:#fff;background:var(--amber);padding:.02em .14em;border-radius:12px;
         box-decoration-break:clone;-webkit-box-decoration-break:clone}
@@ -65,7 +68,7 @@
         display:flex;align-items:center;justify-content:center;
         font-weight:800;font-size:72px;color:#fff;box-shadow:0 16px 40px rgba(255,180,84,.4)}
       .step-of{font-weight:700;font-size:30px;letter-spacing:.08em;color:var(--amber-bright)}
-      .step-title{font-weight:800;font-size:60px;line-height:1.08;color:#fff}
+      .step-title{font-weight:800;font-size:60px;line-height:1.3;color:#fff}
 
       /* bullet rows (no emoji — amber dot) */
       .rows{display:flex;flex-direction:column;gap:16px}
