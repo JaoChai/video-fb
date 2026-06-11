@@ -44,15 +44,36 @@ func NewTracker() *Tracker {
 	return &Tracker{}
 }
 
-func (t *Tracker) StartProduction(totalClips int) {
+// StartProduction atomically acquires the production gate. It returns false if a
+// production is ALREADY running, so callers must refuse to start a second one.
+// This is the single mutual-exclusion point for the render resource: two
+// pipelines at once would launch 2×renderWorkers Chrome instances and
+// oversubscribe the CPU, reintroducing the render protocolTimeout failure. Every
+// render-driving entry point (HTTP produce/retry AND the scheduler) goes through
+// here, so the invariant "at most one render at a time" holds regardless of caller.
+func (t *Tracker) StartProduction(totalClips int) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.status.Active {
+		return false
+	}
 	t.status = ProductionStatus{
 		Active:      true,
 		CurrentClip: 0,
 		TotalClips:  totalClips,
 		ErrorLogs:   nil,
 	}
+	return true
+}
+
+// SetTotalClips updates the clip count mid-run (e.g. once question generation
+// reveals the real number) without re-acquiring the gate held by StartProduction.
+// It touches only the count — StartClip drives CurrentClip, and any logs from the
+// question phase are kept.
+func (t *Tracker) SetTotalClips(totalClips int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.status.TotalClips = totalClips
 }
 
 func (t *Tracker) SetCancelFunc(cancel context.CancelFunc) {

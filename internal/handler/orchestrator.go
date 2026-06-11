@@ -48,11 +48,9 @@ func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Reque
 	})
 
 	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		h.tracker.SetCancelFunc(cancel)
-		defer cancel()
-
-		if err := h.orch.ProduceWeekly(ctx, count); err != nil {
+		// ProduceWeekly owns the production gate AND its cancellation registration,
+		// so the handler just kicks it off with a base context.
+		if err := h.orch.ProduceWeekly(context.Background(), count); err != nil {
 			log.Printf("Weekly production failed: %v", err)
 			h.tracker.AddErrorLog(err.Error())
 		}
@@ -85,11 +83,7 @@ func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request
 	})
 
 	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		h.tracker.SetCancelFunc(cancel)
-		defer cancel()
-
-		if err := h.orch.RetryAllFailed(ctx, 2); err != nil {
+		if err := h.orch.RetryAllFailed(context.Background(), 2); err != nil {
 			log.Printf("Retry all failed: %v", err)
 			h.tracker.AddErrorLog(err.Error())
 		}

@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -135,21 +136,24 @@ func (s *Scheduler) produceAndPublish(ctx context.Context) error {
 		return fmt.Errorf("circuit breaker open: %d consecutive failures", failCount)
 	}
 
-	failed, err := s.clipsRepo.ListFailed(ctx, maxClipRetries)
-	if err != nil {
-		log.Printf("Scheduler: list failed clips error: %v", err)
-	}
-	for _, clip := range failed {
-		log.Printf("Scheduler: retrying failed clip %s (attempt %d)", clip.ID, clip.RetryCount+1)
-		if err := s.orchestrator.RetryClip(ctx, &clip); err != nil {
-			log.Printf("Scheduler: retry clip %s failed again: %v", clip.ID, err)
-		} else {
-			log.Printf("Scheduler: retry clip %s succeeded!", clip.ID)
+	// Route retries through RetryAllFailed so they pass the same production gate as
+	// everything else — the scheduler must never render concurrently with a manual
+	// /produce or /retry (two pipelines = 2×renderWorkers Chrome = CPU oversubscription).
+	// If a manual production already holds the gate, skip this tick entirely.
+	if err := s.orchestrator.RetryAllFailed(ctx, maxClipRetries); err != nil {
+		if errors.Is(err, orchestrator.ErrProductionRunning) {
+			log.Println("Scheduler: a production is already running, skipping this tick")
+			return nil
 		}
+		log.Printf("Scheduler: retry failed clips: %v", err)
 	}
 
 	log.Println("Scheduler: producing 1 new clip...")
 	if err := s.orchestrator.ProduceWeekly(ctx, 1); err != nil {
+		if errors.Is(err, orchestrator.ErrProductionRunning) {
+			log.Println("Scheduler: a production is already running, skipping produce")
+			return nil
+		}
 		return fmt.Errorf("produce: %w", err)
 	}
 

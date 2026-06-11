@@ -91,6 +91,11 @@ func New(
 	}
 }
 
+// ErrProductionRunning is returned when a production/render is already in
+// progress. The render pipeline shares one Chrome/CPU budget, so every entry
+// point refuses to start a second concurrent run rather than oversubscribe it.
+var ErrProductionRunning = errors.New("production already in progress")
+
 func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
 
@@ -121,9 +126,18 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 	log.Printf("Producing %d clips — category: %s, format: %s", count, category, format.DisplayName)
 
+	if !o.tracker.StartProduction(1) {
+		return ErrProductionRunning
+	}
 	defer o.tracker.FinishProduction()
 
-	o.tracker.StartProduction(1)
+	// Register cancellation here — tied to the gate, so only the run that won
+	// StartProduction can be stopped, and a refused concurrent caller can't clobber
+	// the active run's cancel func (which a handler-level SetCancelFunc could).
+	ctx, cancel := context.WithCancel(ctx)
+	o.tracker.SetCancelFunc(cancel)
+	defer cancel()
+
 	o.tracker.StartClip(1, "Generating questions...")
 	o.tracker.StartStep("question")
 
@@ -168,7 +182,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get image agent config: %w", err)
 	}
 
-	o.tracker.StartProduction(len(questions))
+	o.tracker.SetTotalClips(len(questions))
 	for i, q := range questions {
 		if ctx.Err() != nil {
 			log.Printf("Production cancelled, stopping at clip %d/%d", i+1, len(questions))
@@ -340,8 +354,14 @@ func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error
 		return nil
 	}
 
-	o.tracker.StartProduction(len(failed))
+	if !o.tracker.StartProduction(len(failed)) {
+		return ErrProductionRunning
+	}
 	defer o.tracker.FinishProduction()
+
+	ctx, cancel := context.WithCancel(ctx)
+	o.tracker.SetCancelFunc(cancel)
+	defer cancel()
 
 	for i, clip := range failed {
 		if ctx.Err() != nil {
