@@ -55,14 +55,27 @@ type MediaItem struct {
 	URL  string `json:"url"`
 }
 
+// TikTokSettings is the top-level tiktokSettings object Zernio requires for a
+// TikTok post. content_preview_confirmed and express_consent_given MUST be true
+// or TikTok rejects the post (a TikTok legal requirement, not optional).
+type TikTokSettings struct {
+	PrivacyLevel            string `json:"privacy_level"` // PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY
+	AllowComment            bool   `json:"allow_comment"`
+	AllowDuet               bool   `json:"allow_duet"`
+	AllowStitch             bool   `json:"allow_stitch"`
+	ContentPreviewConfirmed bool   `json:"content_preview_confirmed"`
+	ExpressConsentGiven     bool   `json:"express_consent_given"`
+}
+
 type PostRequest struct {
-	Title      string           `json:"title,omitempty"`
-	Content    string           `json:"content"`
-	Platforms  []PlatformTarget `json:"platforms"`
-	MediaItems []MediaItem      `json:"mediaItems,omitempty"`
-	IsDraft    bool             `json:"isDraft,omitempty"`
-	PublishNow bool             `json:"publishNow,omitempty"`
-	Visibility string           `json:"visibility,omitempty"`
+	Title          string           `json:"title,omitempty"`
+	Content        string           `json:"content"`
+	Platforms      []PlatformTarget `json:"platforms"`
+	MediaItems     []MediaItem      `json:"mediaItems,omitempty"`
+	IsDraft        bool             `json:"isDraft,omitempty"`
+	PublishNow     bool             `json:"publishNow,omitempty"`
+	Visibility     string           `json:"visibility,omitempty"`
+	TikTokSettings *TikTokSettings  `json:"tiktokSettings,omitempty"`
 }
 
 type PostResponse struct {

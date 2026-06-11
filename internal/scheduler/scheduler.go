@@ -176,6 +176,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 	switch action {
 	case "publish_daily":
 		return s.publisher.PublishReady
+	case "publish_tiktok":
+		return s.publisher.PublishTikTok
 	case "produce_and_publish":
 		return s.produceAndPublish
 	case "analyze_and_improve":

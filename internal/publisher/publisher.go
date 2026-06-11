@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/repository"
@@ -178,6 +180,87 @@ func (p *Publisher) recordPublished(ctx context.Context, clipID, mainPostID, sho
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// PublishTikTok posts the 9:16 video of the newest not-yet-posted clip to TikTok
+// (newest-first so fresh content goes up first). TikTok-only: it does NOT touch
+// YouTube or clip.status — it just records zernio_tiktok_post_id so the clip is
+// not re-posted. One clip per call (mirrors PublishReady's drip).
+func (p *Publisher) PublishTikTok(ctx context.Context) error {
+	var ttAccountID string
+	if err := p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_tiktok_account_id'`).Scan(&ttAccountID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("read zernio_tiktok_account_id setting: %w", err)
+	}
+	if ttAccountID == "" {
+		log.Printf("PublishTikTok: no zernio_tiktok_account_id configured, skipping")
+		return nil
+	}
+
+	var clipID, title string
+	var description, video916, clipTitle *string
+	err := p.pool.QueryRow(ctx,
+		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_9_16_url, c.title
+		 FROM clips c JOIN clip_metadata cm ON c.id = cm.clip_id
+		 WHERE c.video_9_16_url IS NOT NULL AND c.video_9_16_url <> ''
+		   AND c.status IN ('ready','published')
+		   AND (cm.zernio_tiktok_post_id IS NULL OR cm.zernio_tiktok_post_id = '')
+		 ORDER BY c.created_at DESC LIMIT 1`).
+		Scan(&clipID, &title, &description, &video916, &clipTitle)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("PublishTikTok: no clip pending for TikTok")
+			return nil
+		}
+		return fmt.Errorf("query clip for tiktok: %w", err)
+	}
+
+	if isContactInfo(title) && clipTitle != nil && *clipTitle != "" {
+		log.Printf("TikTok title validation: '%s' looks like contact info, using clip question instead", title)
+		title = *clipTitle
+	}
+	desc := ""
+	if description != nil {
+		desc = *description
+	}
+
+	result, err := p.zernio.Post(ctx, PostRequest{
+		Title:      title,
+		Content:    title + "\n\n" + desc,
+		Platforms:  []PlatformTarget{{Platform: "tiktok", AccountID: ttAccountID}},
+		MediaItems: []MediaItem{{Type: "video", URL: *video916}},
+		PublishNow: true,
+		TikTokSettings: &TikTokSettings{
+			PrivacyLevel:            "PUBLIC_TO_EVERYONE",
+			AllowComment:            true,
+			AllowDuet:               true,
+			AllowStitch:             true,
+			ContentPreviewConfirmed: true,
+			ExpressConsentGiven:     true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("post tiktok for clip %s: %w", clipID, err)
+	}
+
+	// The TikTok post already happened and isn't idempotent; the selection query is
+	// newest-first, so a failed record would re-post THIS clip every run (duplicate)
+	// and block newer clips. Retry the (idempotent) record write before giving up.
+	var recErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if _, recErr = p.pool.Exec(ctx,
+			`UPDATE clip_metadata SET zernio_tiktok_post_id = $2 WHERE clip_id = $1`,
+			clipID, result.Post.ID); recErr == nil {
+			break
+		}
+		log.Printf("PublishTikTok: record tiktok_post_id attempt %d/3 for clip %s failed: %v", attempt, clipID, recErr)
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	}
+	if recErr != nil {
+		log.Printf("CRITICAL clip %s posted to TikTok (%s) but recording tiktok_post_id FAILED after retries: %v — may be re-posted next run", clipID, result.Post.ID, recErr)
+		return nil
+	}
+	log.Printf("Posted to TikTok for clip %s → %s", clipID, result.Post.ID)
+	return nil
 }
 
 type postRef struct {

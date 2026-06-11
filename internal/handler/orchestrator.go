@@ -72,6 +72,15 @@ func (h *OrchestratorHandler) TriggerPublish(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Publishing ready clips"})
 }
 
+func (h *OrchestratorHandler) TriggerPublishTikTok(w http.ResponseWriter, r *http.Request) {
+	go func() {
+		if err := h.pub.PublishTikTok(context.Background()); err != nil {
+			log.Printf("Manual TikTok publish failed: %v", err)
+		}
+	}()
+	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "Publishing latest clip to TikTok"})
+}
+
 func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request) {
 	if s := h.tracker.GetStatus(); s.Active {
 		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
