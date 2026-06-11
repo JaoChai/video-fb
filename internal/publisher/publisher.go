@@ -58,10 +58,6 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			return fmt.Errorf("scan clip: %w", err)
 		}
 
-		if video169 == nil {
-			continue
-		}
-
 		if isContactInfo(title) {
 			var clipTitle string
 			if err := p.pool.QueryRow(ctx, `SELECT title FROM clips WHERE id = $1`, clipID).Scan(&clipTitle); err == nil && clipTitle != "" {
@@ -84,23 +80,30 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			continue
 		}
 
-		// Post 16:9 (YouTube regular)
-		// Zernio uses Content's first line as YouTube title
-		result169, err := p.zernio.Post(ctx, PostRequest{
-			Title:      title,
-			Content:    title + "\n\n" + desc,
-			Platforms:  platforms,
-			MediaItems: []MediaItem{{Type: "video", URL: *video169}},
-			Visibility: VisibilityPrivate,
-			PublishNow: true,
-		})
-		if err != nil {
-			log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
-			continue
-		}
-		log.Printf("Posted 16:9 private for clip %s → %s", clipID, result169.Post.ID)
+		// Post whatever formats this clip actually has. The hyperframes pipeline
+		// produces 9:16 only; the legacy pipeline produced 16:9 (+ a 9:16 Short).
+		// Publish each format that exists rather than requiring 16:9.
+		var mainPostID, shortsPostID string
 
-		// Post 9:16 (YouTube Shorts)
+		// 16:9 (YouTube regular), if present. Zernio uses Content's first line as the title.
+		if video169 != nil && *video169 != "" {
+			result169, err := p.zernio.Post(ctx, PostRequest{
+				Title:      title,
+				Content:    title + "\n\n" + desc,
+				Platforms:  platforms,
+				MediaItems: []MediaItem{{Type: "video", URL: *video169}},
+				Visibility: VisibilityPrivate,
+				PublishNow: true,
+			})
+			if err != nil {
+				log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
+				continue
+			}
+			log.Printf("Posted 16:9 private for clip %s → %s", clipID, result169.Post.ID)
+			mainPostID = result169.Post.ID
+		}
+
+		// 9:16 (YouTube Shorts), if present.
 		if video916 != nil && *video916 != "" {
 			shortsTitle := title
 			if utf8.RuneCountInString(shortsTitle) > 60 {
@@ -121,25 +124,60 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
 			} else {
 				log.Printf("Posted 9:16 Shorts private for clip %s → %s", clipID, result916.Post.ID)
-				p.pool.Exec(ctx,
-					`UPDATE clip_metadata SET zernio_shorts_post_id = $2 WHERE clip_id = $1`,
-					clipID, result916.Post.ID)
+				shortsPostID = result916.Post.ID
 			}
 		}
 
-		status := "published"
-		p.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &status})
+		// Nothing posted (no usable video, or every post failed) → leave the clip
+		// 'ready' so a later run retries it instead of marking an empty publish.
+		if mainPostID == "" && shortsPostID == "" {
+			log.Printf("No video published for clip %s, leaving as ready", clipID)
+			continue
+		}
 
-		p.pool.Exec(ctx,
-			`UPDATE clip_metadata SET zernio_post_id = $2 WHERE clip_id = $1`,
-			clipID, result169.Post.ID)
+		// Persist status + post ids atomically. The YouTube post already happened,
+		// so a silent DB failure here would leave the clip 'ready' and re-post it
+		// (duplicate upload) on the next run — log loudly if the commit fails.
+		if err := p.recordPublished(ctx, clipID, mainPostID, shortsPostID); err != nil {
+			log.Printf("CRITICAL clip %s posted to YouTube (main=%q shorts=%q) but DB commit FAILED: %v — will be re-published next run", clipID, mainPostID, shortsPostID, err)
+			continue
+		}
 
-		log.Printf("Published clip %s via Zernio", clipID)
+		log.Printf("Published clip %s via Zernio (main=%q shorts=%q)", clipID, mainPostID, shortsPostID)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate ready clips: %w", err)
 	}
 	return nil
+}
+
+// recordPublished marks the clip 'published' and records its Zernio post ids in a
+// single transaction, so a partial write can't leave the clip 'published' without
+// ids (orphaned from analytics) or 'ready' with ids (re-posted next run).
+func (p *Publisher) recordPublished(ctx context.Context, clipID, mainPostID, shortsPostID string) error {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE clips SET status = 'published', updated_at = NOW() WHERE id = $1`, clipID); err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
+	if mainPostID != "" {
+		if _, err := tx.Exec(ctx,
+			`UPDATE clip_metadata SET zernio_post_id = $2 WHERE clip_id = $1`, clipID, mainPostID); err != nil {
+			return fmt.Errorf("set zernio_post_id: %w", err)
+		}
+	}
+	if shortsPostID != "" {
+		if _, err := tx.Exec(ctx,
+			`UPDATE clip_metadata SET zernio_shorts_post_id = $2 WHERE clip_id = $1`, clipID, shortsPostID); err != nil {
+			return fmt.Errorf("set zernio_shorts_post_id: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 type postRef struct {
