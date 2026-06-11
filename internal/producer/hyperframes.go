@@ -20,9 +20,10 @@ type HyperframesRenderer struct {
 }
 
 func NewHyperframesRenderer() *HyperframesRenderer {
-	// 10m headroom: multi-scene / landscape renders are heavier than the original
-	// single-scene 9:16 (a 16:9 render with a CSS background timed out at 6m).
-	return &HyperframesRenderer{timeout: 10 * time.Minute}
+	// 20m headroom: fewer render workers (see renderWorkers) trade parallelism for
+	// CPU-per-worker, so wall-clock is longer; the earlier 10m was tuned for 6
+	// workers (a 16:9 render with a CSS background timed out at 6m back then).
+	return &HyperframesRenderer{timeout: 20 * time.Minute}
 }
 
 func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...string) error {
@@ -84,13 +85,15 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
 	return h.run(ctx, dir, "inspect")
 }
 
-// renderWorkers parallelizes frame capture across Chrome instances. The Railway
-// container has ~8GB RAM (an earlier comment wrongly assumed 32GB). Each Chrome
-// worker is memory-heavy: 12 workers OOM-killed the heavier 16:9 multi-scene
-// render (peaked ~7.6GB then SIGKILL), which silently fell back to a static image.
-// 6 workers + standard/24fps (below) fits 8GB with headroom and still finishes
-// within the timeout. Raise this only if the container's RAM is actually raised.
-const renderWorkers = "6"
+// renderWorkers parallelizes frame capture across Chrome instances on the ~8GB /
+// ~8 vCPU Railway container. History: 12 workers OOM-killed the 16:9 render
+// (~7.6GB then SIGKILL); 6 fixed the OOM but then OVERSUBSCRIBED the CPU — a
+// single Chrome capture starved >5m and blew hyperframes' 300s protocolTimeout
+// (memory peaked only ~2.5GB, so this was CPU contention, not RAM). 3 gives each
+// worker enough CPU to finish a frame in seconds; it sits below hyperframes'
+// default of 4, trading wall-clock for reliability on this constrained box. Raise
+// only if the container's CPU is actually raised.
+const renderWorkers = "3"
 
 // Render produces an MP4 at outputPath from the composition in dir. Quality is
 // standard/24fps (not high/30) so the memory-heavy multi-scene render fits the
