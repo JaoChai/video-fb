@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +48,50 @@ func buildClaudeBody(model, system, user string, temp float64, maxTokens int) ([
 		Stream:      false,
 		Temperature: temp,
 		Messages:    []kieClaudeMessage{{Role: "user", Content: user}},
+	})
+}
+
+// kieClaudeVisionMessage mirrors kieClaudeMessage but Content is an array of
+// blocks (text + image) instead of a plain string, as the Anthropic Messages
+// API requires for vision.
+type kieClaudeVisionMessage struct {
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
+}
+
+// kieClaudeVisionRequest mirrors kieClaudeRequest with vision messages.
+type kieClaudeVisionRequest struct {
+	Model       string                   `json:"model"`
+	System      string                   `json:"system,omitempty"`
+	MaxTokens   int                      `json:"max_tokens"`
+	Stream      bool                     `json:"stream"`
+	Temperature float64                  `json:"temperature,omitempty"`
+	Messages    []kieClaudeVisionMessage `json:"messages"`
+}
+
+// buildClaudeVisionBody builds a Claude Messages body whose single user turn
+// carries the text prompt followed by one base64 image block per frame. All
+// frames are treated as image/png (ExtractFrameAt writes PNG).
+func buildClaudeVisionBody(model, system, user string, temp float64, images [][]byte, maxTokens int) ([]byte, error) {
+	content := make([]any, 0, len(images)+1)
+	content = append(content, map[string]any{"type": "text", "text": user})
+	for _, img := range images {
+		content = append(content, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": "image/png",
+				"data":       base64.StdEncoding.EncodeToString(img),
+			},
+		})
+	}
+	return json.Marshal(kieClaudeVisionRequest{
+		Model:       model,
+		System:      system,
+		MaxTokens:   maxTokens,
+		Stream:      false,
+		Temperature: temp,
+		Messages:    []kieClaudeVisionMessage{{Role: "user", Content: content}},
 	})
 }
 
@@ -307,6 +352,68 @@ func (c *KieLLMClient) GenerateJSON(ctx context.Context, model, system, user str
 		cleaned := extractJSON(text)
 		if err := json.Unmarshal([]byte(cleaned), target); err != nil {
 			lastErr = fmt.Errorf("parse JSON from KieLLM: %w\nraw: %s", err, text[:min(len(text), 300)])
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+// GenerateVisionJSON sends a vision request (one text prompt + N PNG frames) to
+// the Claude proxy and unmarshals the (fence-stripped) JSON reply into target.
+// Vision is Claude-only; a non claude-* model is rejected. Retries with lower
+// temperature on JSON parse failure, like GenerateJSON.
+func (c *KieLLMClient) GenerateVisionJSON(ctx context.Context, model, system, user string, temp float64, images [][]byte, target any) error {
+	if provider, err := providerForModel(model); err != nil {
+		return err
+	} else if provider != "claude" {
+		return fmt.Errorf("vision requires a claude-* model, got %q", model)
+	}
+	apiKey, err := c.getAPIKey(ctx)
+	if err != nil {
+		return err
+	}
+
+	const maxRetries = 2
+	var lastErr error
+	for attempt := range maxRetries + 1 {
+		t := temp
+		if attempt > 0 {
+			t = max(0, temp-0.2*float64(attempt))
+			log.Printf("KieLLM vision JSON retry %d/%d (temperature: %.2f)", attempt, maxRetries, t)
+		}
+
+		reqBody, err := buildClaudeVisionBody(model, system, user, t, images, kieLLMMaxTokens)
+		if err != nil {
+			return fmt.Errorf("build claude vision request: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST", kieClaudeAPI, bytes.NewReader(reqBody))
+		if err != nil {
+			return fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("send request: %w", err)
+		}
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("kie claude vision HTTP %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+		}
+
+		text, err := parseClaudeText(respBody)
+		if err != nil {
+			return err
+		}
+		cleaned := extractJSON(text)
+		if err := json.Unmarshal([]byte(cleaned), target); err != nil {
+			lastErr = fmt.Errorf("parse vision JSON from KieLLM: %w\nraw: %s", err, text[:min(len(text), 300)])
 			continue
 		}
 		return nil
