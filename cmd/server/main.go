@@ -80,6 +80,7 @@ func main() {
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine, researchAgent)
 	imageAgent := agent.NewImageAgent(llm)
 	sceneAgent := agent.NewSceneAgent(llm)
+	criticAgent := agent.NewCriticAgent(llm)
 
 	kie := producer.NewKieClient(pool, producer.DefaultKieConfig())
 	ffmpeg := producer.NewFFmpegAssembler(cfg.FFmpegPath, "/tmp/fonts/NotoSansThai-Bold.ttf")
@@ -98,13 +99,14 @@ func main() {
 
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
+	critiquesRepo := repository.NewCritiquesRepo(pool)
 	themesRepo := repository.NewThemesRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
 
-	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, prod,
-		clipsRepo, scenesRepo, themesRepo, agentsRepo, settingsRepo, formatsRepo, tracker)
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, criticAgent, prod,
+		clipsRepo, scenesRepo, critiquesRepo, themesRepo, agentsRepo, settingsRepo, formatsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
