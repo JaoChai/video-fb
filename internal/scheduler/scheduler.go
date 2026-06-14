@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/analyzer"
+	"github.com/jaochai/video-fb/internal/learner"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/preflight"
 	"github.com/jaochai/video-fb/internal/publisher"
@@ -31,9 +32,10 @@ type Scheduler struct {
 	orchestrator  *orchestrator.Orchestrator
 	schedulesRepo *repository.SchedulesRepo
 	clipsRepo     *repository.ClipsRepo
+	learner       *learner.Learner
 }
 
-func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo) *Scheduler {
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo, lrn *learner.Learner) *Scheduler {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
 		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
@@ -45,6 +47,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 			orchestrator:  orch,
 			schedulesRepo: schedRepo,
 			clipsRepo:     clipsRepo,
+			learner:       lrn,
 		}
 	}
 	return &Scheduler{
@@ -55,6 +58,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 		orchestrator:  orch,
 		schedulesRepo: schedRepo,
 		clipsRepo:     clipsRepo,
+		learner:       lrn,
 	}
 }
 
@@ -184,6 +188,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.analyzer.AnalyzeAndImprove
 	case "fetch_analytics":
 		return s.publisher.FetchAnalytics
+	case "learn":
+		return s.learner.RunOnce
 	default:
 		return nil
 	}

@@ -53,7 +53,7 @@ func (r *CritiquesRepo) LowScorePatterns(ctx context.Context, sinceDays, topN in
 	}
 	var p ScorePatterns
 
-	// Per-dimension averages + count over the window.
+	// Per-dimension averages + count over the window (applied rows only).
 	err := r.pool.QueryRow(ctx, `
 SELECT
   COUNT(*)                                                       AS n,
@@ -62,7 +62,8 @@ SELECT
   COALESCE(AVG((score->>'brand_fit')::numeric), 0)              AS avg_brand_fit,
   COALESCE(AVG((score->>'overall')::numeric),   0)              AS avg_overall
 FROM clip_critiques
-WHERE created_at >= NOW() - make_interval(days => $1)`,
+WHERE created_at >= NOW() - make_interval(days => $1)
+  AND applied = TRUE`,
 		sinceDays,
 	).Scan(&p.N, &p.AvgHook, &p.AvgClarity, &p.AvgBrandFit, &p.AvgOverall)
 	if err != nil {
@@ -73,7 +74,7 @@ WHERE created_at >= NOW() - make_interval(days => $1)`,
 		return p, nil
 	}
 
-	// Most common changes[] field+reason pairs over the same window.
+	// Most common changes[] field+reason pairs over the same window (applied rows only).
 	rows, err := r.pool.Query(ctx, `
 SELECT
   c->>'field'  AS field,
@@ -82,6 +83,7 @@ SELECT
 FROM clip_critiques cc,
      LATERAL jsonb_array_elements(cc.changes) AS c
 WHERE cc.created_at >= NOW() - make_interval(days => $1)
+  AND cc.applied = TRUE
   AND c->>'field' IS NOT NULL
 GROUP BY c->>'field', c->>'reason'
 ORDER BY cnt DESC, field ASC

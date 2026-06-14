@@ -97,17 +97,33 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		return nil
 	}
 
+	// Fetch the full patterns once; each agent then operates on a filtered copy.
+	patterns, err := l.critiques.LowScorePatterns(ctx, windowDays, topIssuesN)
+	if err != nil {
+		return fmt.Errorf("learner: aggregate failed: %w", err)
+	}
+
 	for _, name := range allowedAgents {
-		patterns, err := l.critiques.LowScorePatterns(ctx, windowDays, topIssuesN)
-		if err != nil {
-			log.Printf("learner: [%s] aggregate failed (skip): %v", name, err)
+		// Filter TopIssues to only those owned by this agent.
+		var ownedIssues []repository.FieldIssue
+		for _, fi := range patterns.TopIssues {
+			if agentForField(fi.Field) == name {
+				ownedIssues = append(ownedIssues, fi)
+			}
+		}
+		if len(ownedIssues) == 0 {
+			log.Printf("learner: %s has no attributable issues, skipping", name)
 			continue
 		}
 
-		ok, lowDim, lowVal := strongSignal(patterns)
+		// Build a per-agent ScorePatterns with the filtered issue list.
+		agentPatterns := patterns
+		agentPatterns.TopIssues = ownedIssues
+
+		ok, lowDim, lowVal := strongSignal(agentPatterns)
 		if !ok {
 			log.Printf("learner: [%s] skip — weak signal (n=%d weakest=%s avg=%.2f; need n>=%d and avg<%.1f)",
-				name, patterns.N, lowDim, lowVal, minCritiques, lowScoreThreshold)
+				name, agentPatterns.N, lowDim, lowVal, minCritiques, lowScoreThreshold)
 			continue
 		}
 
@@ -120,7 +136,7 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		in := agent.LearnInput{
 			AgentName:     name,
 			CurrentSkills: target.Skills,
-			Patterns:      formatPatterns(patterns),
+			Patterns:      formatPatterns(agentPatterns),
 			WindowDays:    windowDays,
 		}
 		out, err := l.llmAgent.Propose(ctx, in, learnerCfg)
@@ -137,7 +153,7 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 
 		// Audit FIRST (append-only, revertable), then apply. If the audit write
 		// fails we do NOT apply — the change must always be recorded.
-		if err := l.audit.Record(ctx, name, target.Skills, out.NewSkills, out.Rationale, patterns.N); err != nil {
+		if err := l.audit.Record(ctx, name, target.Skills, out.NewSkills, out.Rationale, agentPatterns.N); err != nil {
 			log.Printf("learner: [%s] audit write failed — NOT applying: %v", name, err)
 			continue
 		}
@@ -146,7 +162,7 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 			continue
 		}
 		log.Printf("learner: [%s] APPLIED new skills (weakest=%s avg=%.2f n=%d) — rationale: %s",
-			name, lowDim, lowVal, patterns.N, out.Rationale)
+			name, lowDim, lowVal, agentPatterns.N, out.Rationale)
 	}
 	return nil
 }
