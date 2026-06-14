@@ -107,6 +107,15 @@ func TestReconcile_UnknownSceneNumber_FailsSafe(t *testing.T) {
 	}
 }
 
+func TestReconcile_EmptyInput_FailsSafe(t *testing.T) {
+	in := CriticInput{Scenes: nil, Metadata: CriticMetadata{YoutubeTitle: "เดิม"}}
+	out := CriticOutput{Scenes: nil, Score: goodScore()}
+	got := reconcileCritique(in, out)
+	if got.Applied {
+		t.Fatal("Applied = true, want false on empty input scenes")
+	}
+}
+
 func TestCriticOutputParsesSchema(t *testing.T) {
 	raw := `{
 	  "scenes": [ { "scene_number": 1, "voice_text": "hi", "image_prompt": "p" } ],

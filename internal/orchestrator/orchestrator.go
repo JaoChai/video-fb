@@ -310,11 +310,15 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		script.YoutubeTitle = res.Metadata.YoutubeTitle
 		script.YoutubeDescription = res.Metadata.YoutubeDescription
 		script.YoutubeTags = res.Metadata.YoutubeTags
+		// Re-enforce title length + brand suffix on the critic-revised metadata.
+		validateScript(script)
 		if scoreJSON, mErr := json.Marshal(res.Score); mErr == nil {
 			changesJSON, _ := json.Marshal(res.Changes)
 			if pErr := o.critiquesRepo.Create(ctx, clipID, scoreJSON, changesJSON, res.Applied); pErr != nil {
 				log.Printf("critic: persist critique failed (non-fatal): %v", pErr)
 			}
+		} else {
+			log.Printf("critic: marshal score failed, critique not persisted (non-fatal): %v", mErr)
 		}
 		o.tracker.CompleteStep("critic")
 	}

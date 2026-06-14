@@ -80,7 +80,7 @@ func reconcileCritique(in CriticInput, out CriticOutput) CriticResult {
 		Applied:  false,
 	}
 
-	if len(out.Scenes) != len(in.Scenes) || !scoreInRange(out.Score) {
+	if len(in.Scenes) == 0 || len(out.Scenes) != len(in.Scenes) || !scoreInRange(out.Score) {
 		return fail
 	}
 
