@@ -72,8 +72,8 @@ func TestValidateScriptTitleLength(t *testing.T) {
 	s := &agent.GeneratedScript{YoutubeTitle: longTitle}
 	validateScript(s)
 
-	if l := len([]rune(s.YoutubeTitle)); l > 70 {
-		t.Errorf("title length = %d runes, want <= 70", l)
+	if l := len([]rune(s.YoutubeTitle)); l > 90 {
+		t.Errorf("title length = %d runes, want <= 90", l)
 	}
 	if !strings.HasSuffix(s.YoutubeTitle, suffix) {
 		t.Errorf("title %q must end with exactly one brand suffix", s.YoutubeTitle)
@@ -82,7 +82,28 @@ func TestValidateScriptTitleLength(t *testing.T) {
 		t.Errorf("title %q must contain brand exactly once", s.YoutubeTitle)
 	}
 	core := strings.TrimSuffix(s.YoutubeTitle, suffix)
+	// A truncated title ends with an ellipsis, not a mid-word fragment.
+	if !strings.HasSuffix(core, "…") {
+		t.Errorf("truncated title core %q must end with an ellipsis", core)
+	}
 	if strings.HasSuffix(core, "{") || strings.HasSuffix(core, "(") || strings.HasSuffix(core, "|") {
 		t.Errorf("title core %q has dangling separator", core)
+	}
+}
+
+// A full Thai title that fits within the 90-rune cap must pass through whole —
+// no truncation, no ellipsis. This is the case that used to be cut mid-word
+// under the old 70-rune cap (e.g. "...กระทบทั้งพอร์ต" → "...กระทบท").
+func TestValidateScriptTitleFitsUnderCap(t *testing.T) {
+	const suffix = " | Ads Vance"
+	full := "BM Agency โดนล็อคเพราะลูกค้าคนเดียว — แก้ยังไงไม่ให้กระทบทั้งพอร์ต"
+	s := &agent.GeneratedScript{YoutubeTitle: full}
+	validateScript(s)
+
+	if want := full + suffix; s.YoutubeTitle != want {
+		t.Errorf("title was altered:\n got %q\nwant %q", s.YoutubeTitle, want)
+	}
+	if strings.Contains(s.YoutubeTitle, "…") {
+		t.Errorf("title %q should not be truncated", s.YoutubeTitle)
 	}
 }

@@ -248,7 +248,10 @@ var brandTailRe = regexp.MustCompile(`(?i)\s*[|({\[]?\s*ads\s*vance\s*[)}\]]?\s*
 
 func validateScript(script *agent.GeneratedScript) {
 	const suffix = " | Ads Vance"
-	const maxLen = 70
+	// YouTube's hard title limit is 100 runes; 90 leaves margin for the suffix
+	// while letting most full Thai titles through untouched (truncation cuts Thai
+	// mid-word since there are no spaces, so we avoid it whenever possible).
+	const maxLen = 90
 	// Trailing chars left dangling after brand removal / mid-title truncation:
 	// whitespace, pipe, hyphen, and unmatched opening brackets (their content was cut).
 	const trimCutset = " |-({["
@@ -266,7 +269,11 @@ func validateScript(script *agent.GeneratedScript) {
 
 	maxContent := maxLen - len([]rune(suffix))
 	if titleRunes := []rune(title); len(titleRunes) > maxContent {
-		title = strings.TrimRight(strings.TrimSpace(string(titleRunes[:maxContent])), trimCutset)
+		// Reserve one rune for an ellipsis so the cut reads as intentional, never
+		// a mid-word fragment (Thai has no spaces, so a word-boundary cut isn't
+		// reliable — the ellipsis is the safe, language-agnostic signal).
+		cut := strings.TrimRight(strings.TrimSpace(string(titleRunes[:maxContent-1])), trimCutset)
+		title = cut + "…"
 		log.Printf("Warning: youtube_title truncated to fit %d chars", maxLen)
 	}
 
