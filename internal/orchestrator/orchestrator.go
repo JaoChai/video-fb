@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -62,10 +64,12 @@ type Orchestrator struct {
 	imageAgent    *agent.ImageAgent
 	sceneAgent    *agent.SceneAgent
 	criticAgent   *agent.CriticAgent
+	visualQAAgent *agent.VisualQAAgent
 	producer      *producer.Producer
 	clipsRepo     *repository.ClipsRepo
 	scenesRepo    *repository.ScenesRepo
 	critiquesRepo *repository.CritiquesRepo
+	visualQARepo  *repository.VisualQARepo
 	themesRepo    *repository.ThemesRepo
 	agentsRepo    *repository.AgentsRepo
 	tracker       *progress.Tracker
@@ -77,10 +81,12 @@ func New(
 	ia *agent.ImageAgent,
 	sca *agent.SceneAgent,
 	ca *agent.CriticAgent,
+	vqa *agent.VisualQAAgent,
 	prod *producer.Producer,
 	clips *repository.ClipsRepo,
 	scenes *repository.ScenesRepo,
 	critiques *repository.CritiquesRepo,
+	visualqa *repository.VisualQARepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
 	settings *repository.SettingsRepo,
@@ -89,8 +95,8 @@ func New(
 ) *Orchestrator {
 	return &Orchestrator{
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
-		sceneAgent: sca, criticAgent: ca,
-		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques,
+		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa,
+		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
 }
@@ -370,15 +376,38 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
 
-	readyStatus := "ready"
+	// ── Visual QA: look at the rendered frames; block auto-publish on a
+	//    confident visual defect. Optional gate; disabled/absent ⇒ 'ready'.
+	//    Fail-safe is fail-OPEN: infra errors never block (see VisualQAAgent). ──
+	status := "ready"
+	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
+		o.tracker.StartStep("visual_qa")
+		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)
+		qaRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
+			Question: q.Question,
+			Frames:   frames,
+		}, qaCfg)
+		if wErr := o.visualQARepo.Create(ctx, clipID, qaRes.Passed, agent.MarshalVerdicts(qaRes.Verdicts)); wErr != nil {
+			log.Printf("visualqa: persist result failed (non-fatal): %v", wErr)
+		}
+		if !qaRes.Passed {
+			status = "needs_review"
+			log.Printf("visualqa: clip %s FAILED — status=needs_review (publish blocked); verdicts=%s",
+				clipID, string(agent.MarshalVerdicts(qaRes.Verdicts)))
+		}
+		o.tracker.CompleteStep("visual_qa")
+	}
+
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
-		Status:       &readyStatus,
+		Status:       &status,
 		Video916URL:  &result.Video916URL,
 		ThumbnailURL: &result.ThumbnailURL,
 		VoiceScript:  &narration,
 		AnswerScript: &narration,
 	})
-	log.Printf("Clip ready (hyperframes): %s", clipID)
+	if status == "ready" {
+		log.Printf("Clip ready (hyperframes): %s", clipID)
+	}
 	return nil
 }
 
@@ -581,4 +610,49 @@ func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) e
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &status})
 	o.clipsRepo.IncrementRetry(ctx, clipID, err.Error())
 	return err
+}
+
+// sceneMidTimestamps returns the midpoint timestamp (seconds) of each scene's
+// window, reconstructed from cumulative DurationSeconds. Pure — the exactness
+// only matters enough to land inside the scene.
+func sceneMidTimestamps(scenes []agent.GeneratedScene) []float64 {
+	mids := make([]float64, len(scenes))
+	cursor := 0.0
+	for i, s := range scenes {
+		d := s.DurationSeconds
+		if d < 0 {
+			d = 0
+		}
+		mids[i] = cursor + d/2
+		cursor += d
+	}
+	return mids
+}
+
+// extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
+// it with the scene's text. A per-scene extraction failure is logged and that
+// frame is dropped (Visual QA fails open on missing frames).
+func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
+	mids := sceneMidTimestamps(scenes)
+	frames := make([]agent.QAFrame, 0, len(scenes))
+	for i, s := range scenes {
+		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
+		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
+			log.Printf("visualqa: clip %s scene %d frame extract failed (skip): %v", clipID, s.SceneNumber, err)
+			continue
+		}
+		png, err := os.ReadFile(outPath)
+		os.Remove(outPath) // bytes are in memory now; don't leave QA frame PNGs on disk
+		if err != nil {
+			log.Printf("visualqa: clip %s scene %d frame read failed (skip): %v", clipID, s.SceneNumber, err)
+			continue
+		}
+		frames = append(frames, agent.QAFrame{
+			SceneNumber:  s.SceneNumber,
+			PNG:          png,
+			OnScreenText: s.OnScreenText,
+			VoiceText:    s.VoiceText,
+		})
+	}
+	return frames
 }

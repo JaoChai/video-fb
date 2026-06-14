@@ -111,3 +111,21 @@ func (f *FFmpegAssembler) ExtractThumbnail(videoPath, outPath string) error {
 	}
 	return nil
 }
+
+// ExtractFrameAt writes a single PNG frame from videoPath at tsSeconds into the
+// timeline. It is the generalized form of ExtractThumbnail (which is fixed at
+// 1.5s). Used by Visual QA to grab one representative frame per scene. A
+// negative tsSeconds is clamped to 0.
+func (f *FFmpegAssembler) ExtractFrameAt(videoPath, outPath string, tsSeconds float64) error {
+	if tsSeconds < 0 {
+		tsSeconds = 0
+	}
+	os.MkdirAll(filepath.Dir(outPath), 0755)
+	args := []string{"-ss", fmt.Sprintf("%.3f", tsSeconds), "-i", videoPath, "-frames:v", "1", "-update", "1", "-y", outPath}
+	cmd := exec.Command(f.ffmpegPath, args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg extract frame at %.3fs failed: %w", tsSeconds, err)
+	}
+	return nil
+}
