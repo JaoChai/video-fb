@@ -61,9 +61,11 @@ type Orchestrator struct {
 	scriptAgent   *agent.ScriptAgent
 	imageAgent    *agent.ImageAgent
 	sceneAgent    *agent.SceneAgent
+	criticAgent   *agent.CriticAgent
 	producer      *producer.Producer
 	clipsRepo     *repository.ClipsRepo
 	scenesRepo    *repository.ScenesRepo
+	critiquesRepo *repository.CritiquesRepo
 	themesRepo    *repository.ThemesRepo
 	agentsRepo    *repository.AgentsRepo
 	tracker       *progress.Tracker
@@ -74,9 +76,11 @@ func New(
 	sa *agent.ScriptAgent,
 	ia *agent.ImageAgent,
 	sca *agent.SceneAgent,
+	ca *agent.CriticAgent,
 	prod *producer.Producer,
 	clips *repository.ClipsRepo,
 	scenes *repository.ScenesRepo,
+	critiques *repository.CritiquesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
 	settings *repository.SettingsRepo,
@@ -85,8 +89,8 @@ func New(
 ) *Orchestrator {
 	return &Orchestrator{
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
-		sceneAgent: sca,
-		producer:   prod, clipsRepo: clips, scenesRepo: scenes,
+		sceneAgent: sca, criticAgent: ca,
+		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques,
 		themesRepo: themes, agentsRepo: agents, tracker: tracker,
 	}
 }
@@ -286,11 +290,40 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
 	}
+	o.tracker.CompleteStep("scene")
+
+	// ── Content Critic: review + revise content before render. Optional gate;
+	//    on disable/error/anomaly it returns the original content unchanged. ──
+	if criticCfg, cErr := o.agentsRepo.GetByName(ctx, "critic"); cErr == nil && criticCfg.Enabled {
+		o.tracker.StartStep("critic")
+		res := o.criticAgent.Review(ctx, agent.CriticInput{
+			Question:  q.Question,
+			Narration: narration,
+			Scenes:    scenes,
+			Metadata: agent.CriticMetadata{
+				YoutubeTitle:       script.YoutubeTitle,
+				YoutubeDescription: script.YoutubeDescription,
+				YoutubeTags:        script.YoutubeTags,
+			},
+		}, criticCfg)
+		scenes = res.Scenes
+		script.YoutubeTitle = res.Metadata.YoutubeTitle
+		script.YoutubeDescription = res.Metadata.YoutubeDescription
+		script.YoutubeTags = res.Metadata.YoutubeTags
+		if scoreJSON, mErr := json.Marshal(res.Score); mErr == nil {
+			changesJSON, _ := json.Marshal(res.Changes)
+			if pErr := o.critiquesRepo.Create(ctx, clipID, scoreJSON, changesJSON, res.Applied); pErr != nil {
+				log.Printf("critic: persist critique failed (non-fatal): %v", pErr)
+			}
+		}
+		o.tracker.CompleteStep("critic")
+	}
+
 	// Sanitize each scene's narration for TTS (brand aliases, strip URLs/@handles).
+	// Runs after the critic so any rewritten voice_text is cleaned too.
 	for i := range scenes {
 		scenes[i].VoiceText = sanitizeVoiceText(scenes[i].VoiceText, brandAliases)
 	}
-	o.tracker.CompleteStep("scene")
 
 	// Persist scenes with the 2b layout/caption fields.
 	for _, scene := range scenes {
