@@ -19,6 +19,7 @@ import (
 	"github.com/jaochai/video-fb/internal/config"
 	"github.com/jaochai/video-fb/internal/database"
 	"github.com/jaochai/video-fb/internal/handler"
+	"github.com/jaochai/video-fb/internal/learner"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/producer"
 	"github.com/jaochai/video-fb/internal/progress"
@@ -36,6 +37,7 @@ func main() {
 	produceFlag := flag.Int("produce", 0, "Produce N clips")
 	publishFlag := flag.Bool("publish", false, "Publish ready clips")
 	analyticsFlag := flag.Bool("analytics", false, "Fetch analytics for published clips")
+	learnFlag := flag.Bool("learn", false, "Run the learning loop once (auto-tune upstream agent skills from critiques)")
 	flag.Parse()
 
 	cfg := config.Load()
@@ -100,6 +102,9 @@ func main() {
 	clipsRepo := repository.NewClipsRepo(pool)
 	scenesRepo := repository.NewScenesRepo(pool)
 	critiquesRepo := repository.NewCritiquesRepo(pool)
+	skillRevisionsRepo := repository.NewSkillRevisionsRepo(pool)
+	learnerAgent := agent.NewLearnerAgent(llm)
+	learnerSvc := learner.New(agentsRepo, critiquesRepo, learnerAgent, skillRevisionsRepo)
 	themesRepo := repository.NewThemesRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
@@ -128,6 +133,13 @@ func main() {
 	if *analyticsFlag {
 		if err := pub.FetchAnalytics(ctx); err != nil {
 			log.Fatalf("Analytics failed: %v", err)
+		}
+		return
+	}
+
+	if *learnFlag {
+		if err := learnerSvc.RunOnce(ctx); err != nil {
+			log.Fatalf("Learning loop failed: %v", err)
 		}
 		return
 	}
