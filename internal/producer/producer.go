@@ -54,10 +54,15 @@ func (p *Producer) getVoice(ctx context.Context) string {
 }
 
 type ProduceResult struct {
-	Video169URL  string
-	Video916URL  string
-	ThumbnailURL string
+	Video169URL       string
+	Video916URL       string
+	ThumbnailURL      string
+	LocalVideo916Path string
 }
+
+// FFmpeg exposes the assembler so callers (Visual QA) can extract frames from a
+// rendered MP4 without re-rendering.
+func (p *Producer) FFmpeg() *FFmpegAssembler { return p.ffmpeg }
 
 func (p *Producer) Produce(ctx context.Context, clipID string, scenes []agent.GeneratedScene, imagePrompts []agent.SceneImagePrompts, voiceScript string) (*ProduceResult, error) {
 	clipDir := filepath.Join(p.workDir, clipID)
@@ -340,5 +345,5 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 	}
 	p.tracker.CompleteStep("upload")
 
-	return &ProduceResult{Video916URL: video916URL, ThumbnailURL: thumbnailURL}, nil
+	return &ProduceResult{Video916URL: video916URL, ThumbnailURL: thumbnailURL, LocalVideo916Path: mp4Path}, nil
 }
