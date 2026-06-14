@@ -642,6 +642,7 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 			continue
 		}
 		png, err := os.ReadFile(outPath)
+		os.Remove(outPath) // bytes are in memory now; don't leave QA frame PNGs on disk
 		if err != nil {
 			log.Printf("visualqa: clip %s scene %d frame read failed (skip): %v", clipID, s.SceneNumber, err)
 			continue
