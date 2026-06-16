@@ -108,6 +108,24 @@ func (r *ClipsRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ResetStaleProducing marks every clip stuck in 'producing' as failed. Production
+// runs as a detached in-process goroutine (see OrchestratorHandler.TriggerWeekly),
+// so a restart/crash/deploy mid-production orphans its clip in 'producing' forever
+// — the goroutine dies before it can set 'ready'/'failed'. Called once at startup,
+// where any 'producing' clip is necessarily stale. Returns the number reset.
+func (r *ClipsRepo) ResetStaleProducing(ctx context.Context) (int64, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE clips
+		 SET status = 'failed',
+		     fail_reason = 'การผลิตถูกขัดจังหวะ (เซิร์ฟเวอร์รีสตาร์ท) — กด Retry เพื่อลองใหม่',
+		     updated_at = NOW()
+		 WHERE status = 'producing'`)
+	if err != nil {
+		return 0, fmt.Errorf("reset stale producing clips: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (r *ClipsRepo) ListFailed(ctx context.Context, maxRetries int) ([]models.Clip, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+clipColumns+` FROM clips

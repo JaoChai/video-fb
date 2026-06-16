@@ -59,6 +59,15 @@ func main() {
 		return
 	}
 
+	// Production runs as a detached goroutine, so a restart mid-production orphans
+	// its clip in 'producing' forever. Any 'producing' clip at boot is stale — fail
+	// it so it shows up as retryable instead of stuck.
+	if n, err := repository.NewClipsRepo(pool).ResetStaleProducing(ctx); err != nil {
+		log.Printf("Reset stale producing clips warning: %v", err)
+	} else if n > 0 {
+		log.Printf("Reset %d stale 'producing' clip(s) to 'failed' (interrupted by restart)", n)
+	}
+
 	ragEngine := rag.NewEngine(pool)
 
 	if *embedFlag {
