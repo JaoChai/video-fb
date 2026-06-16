@@ -38,6 +38,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 
 	visualQA := handler.NewVisualQAHandler(repository.NewVisualQARepo(pool))
 	r.Get("/api/v1/clips/{clipId}/visual-qa", visualQA.GetByClip)
+	r.Get("/api/v1/visual-qa/stats", visualQA.Stats)
 
 	scenes := handler.NewScenesHandler(repository.NewScenesRepo(pool))
 	r.Route("/api/v1/clips/{clipId}/scenes", func(r chi.Router) {

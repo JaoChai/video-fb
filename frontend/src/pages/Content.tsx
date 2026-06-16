@@ -14,6 +14,7 @@ import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
 import { ReviewDialog } from '../components/ReviewDialog';
+import { QAStatsCard } from '../components/QAStatsCard';
 import { cn } from '../lib/utils';
 
 interface Clip {
@@ -244,6 +245,8 @@ export default function ContentPage() {
       />
 
       <ProductionProgress />
+
+      <QAStatsCard />
 
       {clips && clips.length > 0 && (
         <div className="flex flex-col gap-3 mb-4">

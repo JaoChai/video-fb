@@ -28,3 +28,13 @@ func (h *VisualQAHandler) GetByClip(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, models.APIResponse{Data: qa})
 }
+
+// Stats returns the all-time Visual QA tally for the Content page summary card.
+func (h *VisualQAHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.repo.Stats(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Data: stats})
+}

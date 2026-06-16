@@ -43,3 +43,18 @@ func (r *VisualQARepo) GetLatestByClipID(ctx context.Context, clipID string) (*m
 	}
 	return &qa, nil
 }
+
+// Stats returns the all-time Visual QA tally (total runs, passed, blocked).
+// Rows persist after their clip is deleted, so blocked counts stay accurate.
+func (r *VisualQARepo) Stats(ctx context.Context) (models.VisualQAStats, error) {
+	var s models.VisualQAStats
+	err := r.pool.QueryRow(ctx,
+		`SELECT count(*),
+		        count(*) FILTER (WHERE passed),
+		        count(*) FILTER (WHERE NOT passed)
+		 FROM visual_qa`).Scan(&s.Total, &s.Passed, &s.Blocked)
+	if err != nil {
+		return s, fmt.Errorf("visual_qa stats: %w", err)
+	}
+	return s, nil
+}

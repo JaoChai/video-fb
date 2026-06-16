@@ -54,6 +54,15 @@ type VisualQA struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// VisualQAStats is the aggregate Visual QA tally shown on the Content page:
+// how many QA runs happened and how many blocked a clip (passed=false). Survives
+// clip deletion (clip_id FK is ON DELETE SET NULL).
+type VisualQAStats struct {
+	Total   int `json:"total"`
+	Passed  int `json:"passed"`
+	Blocked int `json:"blocked"`
+}
+
 type ClipMetadata struct {
 	ClipID         string   `json:"clip_id"`
 	YoutubeTitle   *string  `json:"youtube_title"`
