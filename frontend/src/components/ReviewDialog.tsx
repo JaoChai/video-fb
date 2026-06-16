@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../api';
 import { Button } from './ui/button';
 import { useToast } from './ui/toaster';
-import { CheckCircle2, X, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, X, Loader2, AlertTriangle, ShieldCheck, VideoOff } from 'lucide-react';
 
 interface SceneVerdict {
   scene_number: number;
@@ -31,6 +31,7 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
   const queryClient = useQueryClient();
   const { success, error: showError } = useToast();
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -110,15 +111,21 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
         <div className="p-4 grid gap-4 sm:grid-cols-[auto_1fr]">
           {/* Video preview */}
           <div className="sm:w-[220px]">
-            {clip.video_9_16_url ? (
+            {clip.video_9_16_url && !videoError ? (
               <video
                 src={clip.video_9_16_url}
                 controls
+                onError={() => setVideoError(true)}
                 className="w-full rounded-lg bg-black aspect-[9/16]"
               />
             ) : (
-              <div className="w-full aspect-[9/16] rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground text-center p-4">
-                ยังไม่มีไฟล์วิดีโอ
+              <div className="w-full aspect-[9/16] rounded-lg bg-muted flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground text-center p-4">
+                <VideoOff className="size-5 opacity-50" />
+                {clip.video_9_16_url ? (
+                  <span>วิดีโอหมดอายุแล้ว<br />(ไฟล์ชั่วคราวถูกลบ — ใช้ผลตรวจด้านขวาตัดสินได้)</span>
+                ) : (
+                  <span>ยังไม่มีไฟล์วิดีโอ</span>
+                )}
               </div>
             )}
           </div>
