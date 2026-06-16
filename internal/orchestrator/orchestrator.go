@@ -107,6 +107,17 @@ func New(
 var ErrProductionRunning = errors.New("production already in progress")
 
 func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
+	// Pre-flight: don't kick off an expensive run with no kie credits. Fail-open
+	// on a check error (don't block production on a flaky meta-check) — only abort
+	// when we positively know the balance is empty.
+	if credits, err := o.producer.KieCredits(ctx); err != nil {
+		log.Printf("kie credit pre-check skipped (non-fatal): %v", err)
+	} else if credits <= 0 {
+		return fmt.Errorf("kie เครดิตหมด (เหลือ %d) — เติมเครดิตที่ kie.ai ก่อนผลิต", credits)
+	} else {
+		log.Printf("kie credits OK: %d", credits)
+	}
+
 	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
 
 	categories, err := o.settingsRepo.GetCategories(ctx)

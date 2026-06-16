@@ -24,6 +24,7 @@ type KieConfig struct {
 	VoiceTaskTimeout time.Duration
 	PollInterval     time.Duration
 	MaxRetries       int
+	ImageMaxRetries  int // image gen is non-fatal (css fallback) → fail fast, don't grind 5×
 	HTTPTimeout      time.Duration
 	UploadTimeout    time.Duration
 }
@@ -34,6 +35,7 @@ func DefaultKieConfig() KieConfig {
 		VoiceTaskTimeout: 300 * time.Second,
 		PollInterval:     3 * time.Second,
 		MaxRetries:       5,
+		ImageMaxRetries:  1,
 		HTTPTimeout:      30 * time.Second,
 		UploadTimeout:    5 * time.Minute,
 	}
@@ -90,7 +92,7 @@ type kieStatusResponse struct {
 }
 
 func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outputPath string) error {
-	return k.retryableCall(ctx, "generate-image", func() error {
+	return k.retryableCallN(ctx, "generate-image", k.cfg.ImageMaxRetries, func() error {
 		taskID, err := k.createTask(ctx, "gpt-image-2-text-to-image", map[string]any{
 			"prompt":       prompt,
 			"aspect_ratio": aspectRatio,
@@ -270,11 +272,15 @@ func retryableCall(ctx context.Context, operation string, fn func() error) error
 }
 
 func (k *KieClient) retryableCall(ctx context.Context, operation string, fn func() error) error {
+	return k.retryableCallN(ctx, operation, k.cfg.MaxRetries, fn)
+}
+
+func (k *KieClient) retryableCallN(ctx context.Context, operation string, maxRetries int, fn func() error) error {
 	var lastErr error
-	for attempt := 0; attempt <= k.cfg.MaxRetries; attempt++ {
+	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(attempt) * 30 * time.Second
-			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, k.cfg.MaxRetries, backoff, lastErr)
+			log.Printf("[retry] %s attempt %d/%d after %v (error: %v)", operation, attempt, maxRetries, backoff, lastErr)
 			timer := time.NewTimer(backoff)
 			select {
 			case <-ctx.Done():
@@ -296,7 +302,7 @@ func (k *KieClient) retryableCall(ctx context.Context, operation string, fn func
 			return lastErr
 		}
 	}
-	return fmt.Errorf("%s failed after %d retries: %w", operation, k.cfg.MaxRetries, lastErr)
+	return fmt.Errorf("%s failed after %d retries: %w", operation, maxRetries, lastErr)
 }
 
 func (k *KieClient) downloadFile(ctx context.Context, url, outputPath string) error {
@@ -434,6 +440,43 @@ func (k *KieClient) GetDownloadURL(ctx context.Context, fileURL string) (string,
 	}
 	if result.Code != 200 {
 		return "", fmt.Errorf("download url failed: %s (code: %d)", result.Msg, result.Code)
+	}
+	return result.Data, nil
+}
+
+type kieCreditResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data int    `json:"data"`
+}
+
+// GetCredits returns the kie.ai account's remaining credit balance via
+// GET /api/v1/chat/credit. Used as a cheap pre-flight before a production run.
+func (k *KieClient) GetCredits(ctx context.Context) (int, error) {
+	apiKey, err := k.getAPIKey(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", kieAPI+"/chat/credit", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := k.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("check kie credits: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var result kieCreditResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return 0, fmt.Errorf("parse credit response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
+	}
+	if result.Code != 200 {
+		return 0, fmt.Errorf("kie credit check failed: %s (code: %d)", result.Msg, result.Code)
 	}
 	return result.Data, nil
 }

@@ -39,6 +39,12 @@ func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClien
 	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
+// KieCredits returns the kie.ai account credit balance — a cheap pre-flight the
+// orchestrator runs before a production run.
+func (p *Producer) KieCredits(ctx context.Context) (int, error) {
+	return p.kie.GetCredits(ctx)
+}
+
 func (p *Producer) getVoice(ctx context.Context) string {
 	var dbVoice string
 	if err := p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'elevenlabs_voice'`).Scan(&dbVoice); err == nil && dbVoice != "" {
@@ -256,16 +262,21 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 
 	// 2) per-scene gpt-image-2 backgrounds (kie.ai). A missing/failed image is
 	//    non-fatal — BuildScenes downgrades that scene to a css background.
+	//    Circuit breaker: once one image fails (kie degraded), skip gen for ALL
+	//    remaining scenes (css) instead of grinding through retries one by one —
+	//    turns a "kie is down" run from ~hours into ~minutes.
 	bgPaths := map[int]string{}
+	imageDegraded := false
 	for _, s := range scenes {
 		if strings.TrimSpace(s.ImagePrompt) == "" {
 			continue
 		}
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
-		if !fileExists(bgFile) {
+		if !fileExists(bgFile) && !imageDegraded {
 			prompt := buildScenePrompt(s.ImagePrompt, "9:16")
 			if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
-				log.Printf("AssembleHyperframes916: scene %d image gen failed, using css: %v", s.SceneNumber, genErr)
+				log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
+				imageDegraded = true
 				continue
 			}
 		}
