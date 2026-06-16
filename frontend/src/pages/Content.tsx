@@ -9,24 +9,27 @@ import { Input } from '../components/ui/input';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
-import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
+import { ReviewDialog } from '../components/ReviewDialog';
 import { cn } from '../lib/utils';
 
 interface Clip {
   id: string; title: string; question: string; questioner_name: string;
   category: string; status: string; created_at: string;
   fail_reason?: string; retry_count: number;
+  video_9_16_url?: string | null;
 }
 
-type StatusFilter = 'all' | 'published' | 'ready' | 'failed' | 'producing';
+type StatusFilter = 'all' | 'published' | 'ready' | 'failed' | 'producing' | 'needs_review';
 
 const ITEMS_PER_PAGE = 10;
 
 const FILTER_TABS: { key: StatusFilter; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'all', label: 'All', icon: LayoutDashboard },
+  { key: 'needs_review', label: 'ต้องรีวิว', icon: ClipboardCheck },
   { key: 'published', label: 'Published', icon: CheckCircle2 },
   { key: 'ready', label: 'Ready', icon: Zap },
   { key: 'failed', label: 'Failed', icon: AlertTriangle },
@@ -68,6 +71,7 @@ export default function ContentPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [reviewClip, setReviewClip] = useState<Clip | null>(null);
 
   const { data: prodStatus } = useQuery({
     queryKey: ['production-status'],
@@ -84,8 +88,8 @@ export default function ContentPage() {
   });
 
   const statusCounts = useMemo(() => {
-    if (!clips) return { all: 0, published: 0, ready: 0, failed: 0, producing: 0, retryable: 0 };
-    const counts = { all: clips.length, published: 0, ready: 0, failed: 0, producing: 0, retryable: 0 };
+    if (!clips) return { all: 0, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0 };
+    const counts = { all: clips.length, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0 };
     for (const c of clips) {
       if (c.status === 'published') counts.published++;
       else if (c.status === 'ready') counts.ready++;
@@ -93,6 +97,7 @@ export default function ContentPage() {
         counts.failed++;
         if (c.retry_count < 2) counts.retryable++;
       } else if (c.status === 'producing') counts.producing++;
+      else if (c.status === 'needs_review') counts.needs_review++;
     }
     return counts;
   }, [clips]);
@@ -323,13 +328,24 @@ export default function ContentPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paged.map(clip => (
-                <TableRow key={clip.id}>
+              {paged.map(clip => {
+                const reviewable = clip.status === 'needs_review';
+                return (
+                <TableRow
+                  key={clip.id}
+                  onClick={reviewable ? () => setReviewClip(clip) : undefined}
+                  className={cn(reviewable && 'cursor-pointer hover:bg-muted/50')}
+                >
                   <TableCell className="pl-4 py-3">
                     <div className="text-sm font-medium leading-snug line-clamp-1">{clip.title}</div>
                     {clip.status === 'failed' && clip.fail_reason && (
                       <div className="text-xs text-destructive mt-0.5 opacity-80 line-clamp-1">
                         {clip.fail_reason}
+                      </div>
+                    )}
+                    {reviewable && (
+                      <div className="text-xs text-amber-600 mt-0.5 font-medium">
+                        คลิกเพื่อรีวิว →
                       </div>
                     )}
                     <div className="sm:hidden text-xs text-muted-foreground mt-0.5">
@@ -359,7 +375,7 @@ export default function ContentPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleDelete(clip)}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(clip); }}
                       disabled={deletingId === clip.id}
                       title="Delete clip"
                       className="size-8 text-muted-foreground hover:text-destructive"
@@ -372,7 +388,8 @@ export default function ContentPage() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
 
@@ -419,6 +436,10 @@ export default function ContentPage() {
             </div>
           )}
         </>
+      )}
+
+      {reviewClip && (
+        <ReviewDialog clip={reviewClip} onClose={() => setReviewClip(null)} />
       )}
     </div>
   );

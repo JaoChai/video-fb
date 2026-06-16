@@ -43,6 +43,17 @@ type Scene struct {
 	CaptionStyle    string          `json:"caption_style"`
 }
 
+// VisualQA is one persisted Visual QA run. Issues is the raw per-scene verdict
+// array ([{scene_number, ok, issues}]) the frontend renders to explain why a
+// clip landed in status='needs_review'.
+type VisualQA struct {
+	ID        string          `json:"id"`
+	ClipID    string          `json:"clip_id"`
+	Passed    bool            `json:"passed"`
+	Issues    json.RawMessage `json:"issues"`
+	CreatedAt time.Time       `json:"created_at"`
+}
+
 type ClipMetadata struct {
 	ClipID         string   `json:"clip_id"`
 	YoutubeTitle   *string  `json:"youtube_title"`
