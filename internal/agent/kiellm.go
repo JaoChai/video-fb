@@ -21,8 +21,10 @@ func providerForModel(model string) (string, error) {
 		return "claude", nil
 	case strings.HasPrefix(model, "gemini-"):
 		return "gemini", nil
+	case strings.HasPrefix(model, "gpt-"):
+		return "gpt5", nil
 	default:
-		return "", fmt.Errorf("unknown model provider for %q (expected claude-* or gemini-*)", model)
+		return "", fmt.Errorf("unknown model provider for %q (expected claude-*, gemini-* or gpt-*)", model)
 	}
 }
 
@@ -246,10 +248,83 @@ func parseGeminiSSE(body []byte) []kieGeminiResponse {
 	return chunks
 }
 
+// gpt-5-4 uses the OpenAI Responses API shape (NOT chat completions): the prompt
+// goes in an `input` array of messages whose content is typed blocks, and the
+// reply text lives in output[](type=message).content[](type=output_text).text.
+type kieGPT5Block struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type kieGPT5Message struct {
+	Role    string         `json:"role"`
+	Content []kieGPT5Block `json:"content"`
+}
+
+type kieGPT5Request struct {
+	Model  string           `json:"model"`
+	Stream bool             `json:"stream"`
+	Input  []kieGPT5Message `json:"input"`
+}
+
+// buildGPT5Body builds a non-streaming Responses request. gpt-5-4 takes no
+// temperature (it's a reasoning model), so temp is intentionally dropped.
+func buildGPT5Body(model, system, user string) ([]byte, error) {
+	input := make([]kieGPT5Message, 0, 2)
+	if system != "" {
+		input = append(input, kieGPT5Message{Role: "system", Content: []kieGPT5Block{{Type: "input_text", Text: system}}})
+	}
+	input = append(input, kieGPT5Message{Role: "user", Content: []kieGPT5Block{{Type: "input_text", Text: user}}})
+	return json.Marshal(kieGPT5Request{Model: model, Stream: false, Input: input})
+}
+
+type kieGPT5Response struct {
+	Output []struct {
+		Type    string `json:"type"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"output"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func parseGPT5Text(body []byte) (string, error) {
+	var r kieGPT5Response
+	if err := json.Unmarshal(body, &r); err != nil {
+		return "", fmt.Errorf("parse gpt-5 response: %w", err)
+	}
+	if r.Error != nil {
+		return "", fmt.Errorf("gpt-5 error: %s", r.Error.Message)
+	}
+	var sb strings.Builder
+	for _, o := range r.Output {
+		if o.Type != "message" {
+			continue
+		}
+		for _, c := range o.Content {
+			if c.Type == "output_text" {
+				sb.WriteString(c.Text)
+			}
+		}
+	}
+	out := sb.String()
+	if out == "" {
+		return "", fmt.Errorf("no text in gpt-5 response")
+	}
+	return out, nil
+}
+
 const (
 	kieClaudeAPI    = "https://api.kie.ai/claude/v1/messages"
 	kieGeminiAPIFmt = "https://api.kie.ai/gemini/v1/models/%s:streamGenerateContent"
-	kieLLMMaxTokens = 8000
+	kieGPT5API      = "https://api.kie.ai/codex/v1/responses"
+	// kieGPT5FallbackModel is the model the flaky kie.ai Claude proxy falls back
+	// to on a retryable failure (network error / HTTP 5xx).
+	kieGPT5FallbackModel = "gpt-5-4"
+	kieLLMMaxTokens      = 8000
 )
 
 type KieLLMClient struct {
@@ -293,6 +368,30 @@ func (c *KieLLMClient) generate(ctx context.Context, model, system, user string,
 		return "", err
 	}
 
+	text, retryable, err := c.doKieRequest(ctx, apiKey, provider, model, system, user, temp, search)
+	if err == nil {
+		return text, nil
+	}
+
+	// The kie.ai Claude proxy is flaky (intermittent HTTP 500 "Network error").
+	// On a retryable failure, fall back once to gpt-5-4 so a transient proxy
+	// outage doesn't fail the whole clip. Gemini/gpt-5 callers don't fall back.
+	if provider == "claude" && retryable {
+		log.Printf("KieLLM: claude %q failed (%v) — falling back to %s", model, err, kieGPT5FallbackModel)
+		fbText, _, fbErr := c.doKieRequest(ctx, apiKey, "gpt5", kieGPT5FallbackModel, system, user, temp, false)
+		if fbErr == nil {
+			return fbText, nil
+		}
+		return "", fmt.Errorf("claude failed (%v); %s fallback also failed: %w", err, kieGPT5FallbackModel, fbErr)
+	}
+	return "", err
+}
+
+// doKieRequest performs one kie.ai call for the given provider and returns the
+// parsed text. The retryable bool is true when the failure is worth a fallback:
+// a transport error or an HTTP 5xx (vs. a 4xx / parse error, which won't improve
+// on retry).
+func (c *KieLLMClient) doKieRequest(ctx context.Context, apiKey, provider, model, system, user string, temp float64, search bool) (text string, retryable bool, err error) {
 	var url string
 	var reqBody []byte
 	switch provider {
@@ -302,36 +401,44 @@ func (c *KieLLMClient) generate(ctx context.Context, model, system, user string,
 	case "gemini":
 		url = fmt.Sprintf(kieGeminiAPIFmt, model)
 		reqBody, err = buildGeminiBody(system, user, temp, search)
+	case "gpt5":
+		url = kieGPT5API
+		reqBody, err = buildGPT5Body(model, system, user)
 	}
 	if err != nil {
-		return "", fmt.Errorf("build %s request: %w", provider, err)
+		return "", false, fmt.Errorf("build %s request: %w", provider, err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
 	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
+		return "", false, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("send request: %w", err)
+		return "", true, fmt.Errorf("send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read response: %w", err)
+		return "", true, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("kie %s HTTP %d: %s", provider, resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+		return "", resp.StatusCode >= 500, fmt.Errorf("kie %s HTTP %d: %s", provider, resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
 	}
 
-	if provider == "claude" {
-		return parseClaudeText(respBody)
+	switch provider {
+	case "claude":
+		text, err = parseClaudeText(respBody)
+	case "gemini":
+		text, err = parseGeminiText(respBody)
+	case "gpt5":
+		text, err = parseGPT5Text(respBody)
 	}
-	return parseGeminiText(respBody)
+	return text, false, err
 }
 
 // GenerateJSON calls Generate and unmarshals the (fence-stripped) result into

@@ -15,6 +15,7 @@ func TestProviderForModel(t *testing.T) {
 	}{
 		{"claude sonnet", "claude-sonnet-4-6", "claude", false},
 		{"gemini flash", "gemini-3-5-flash", "gemini", false},
+		{"gpt5 fallback", "gpt-5-4", "gpt5", false},
 		{"unknown", "openai/gpt-4.1", "", true},
 		{"empty", "", "", true},
 	}
@@ -187,5 +188,59 @@ func TestParseGeminiText(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildGPT5Body(t *testing.T) {
+	body, err := buildGPT5Body("gpt-5-4", "SYS", "USER")
+	if err != nil {
+		t.Fatalf("buildGPT5Body err: %v", err)
+	}
+	var parsed kieGPT5Request
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed.Model != "gpt-5-4" || parsed.Stream {
+		t.Errorf("model=%q stream=%v, want gpt-5-4 / false", parsed.Model, parsed.Stream)
+	}
+	if len(parsed.Input) != 2 {
+		t.Fatalf("input len = %d, want 2 (system + user)", len(parsed.Input))
+	}
+	if parsed.Input[0].Role != "system" || parsed.Input[0].Content[0].Type != "input_text" || parsed.Input[0].Content[0].Text != "SYS" {
+		t.Errorf("system msg = %+v", parsed.Input[0])
+	}
+	if parsed.Input[1].Role != "user" || parsed.Input[1].Content[0].Text != "USER" {
+		t.Errorf("user msg = %+v", parsed.Input[1])
+	}
+}
+
+func TestBuildGPT5BodyNoSystem(t *testing.T) {
+	body, _ := buildGPT5Body("gpt-5-4", "", "USER")
+	var parsed kieGPT5Request
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(parsed.Input) != 1 || parsed.Input[0].Role != "user" {
+		t.Errorf("expected only a user message, got %+v", parsed.Input)
+	}
+}
+
+func TestParseGPT5Text(t *testing.T) {
+	body := []byte(`{"output":[{"type":"reasoning","summary":[]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hello world"}],"status":"completed"}],"status":"completed"}`)
+	got, err := parseGPT5Text(body)
+	if err != nil {
+		t.Fatalf("parseGPT5Text err: %v", err)
+	}
+	if got != "hello world" {
+		t.Errorf("got %q, want %q", got, "hello world")
+	}
+}
+
+func TestParseGPT5TextError(t *testing.T) {
+	if _, err := parseGPT5Text([]byte(`{"error":{"message":"boom"}}`)); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Errorf("expected error containing 'boom', got %v", err)
+	}
+	if _, err := parseGPT5Text([]byte(`{"output":[]}`)); err == nil {
+		t.Errorf("expected error on empty output")
 	}
 }
