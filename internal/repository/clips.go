@@ -157,6 +157,17 @@ func (r *ClipsRepo) IncrementRetry(ctx context.Context, id, reason string) error
 	return nil
 }
 
+// ClearFailReason wipes a stale fail_reason once a clip has successfully
+// produced a video (status ready or needs_review), so a recovered clip doesn't
+// keep showing the error that failed it.
+func (r *ClipsRepo) ClearFailReason(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE clips SET fail_reason = NULL WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("clear fail_reason for clip %s: %w", id, err)
+	}
+	return nil
+}
+
 func (r *ClipsRepo) DeleteOldFailed(ctx context.Context, maxRetries int) (int, error) {
 	result, err := r.pool.Exec(ctx,
 		`DELETE FROM clips WHERE status = 'failed' AND retry_count >= $1

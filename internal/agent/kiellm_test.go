@@ -244,3 +244,34 @@ func TestParseGPT5TextError(t *testing.T) {
 		t.Errorf("expected error on empty output")
 	}
 }
+
+func TestBuildGPT5VisionBody(t *testing.T) {
+	imgs := [][]byte{[]byte("PNGDATA1"), []byte("PNGDATA2")}
+	body, err := buildGPT5VisionBody("gpt-5-4", "SYS", "look", imgs)
+	if err != nil {
+		t.Fatalf("buildGPT5VisionBody err: %v", err)
+	}
+	var parsed kieGPT5Request
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(parsed.Input) != 2 {
+		t.Fatalf("input len = %d, want 2 (system + user)", len(parsed.Input))
+	}
+	user := parsed.Input[1]
+	if user.Role != "user" {
+		t.Fatalf("want user role, got %q", user.Role)
+	}
+	// 1 text block + 2 image blocks
+	if len(user.Content) != 3 {
+		t.Fatalf("user content blocks = %d, want 3", len(user.Content))
+	}
+	if user.Content[0].Type != "input_text" || user.Content[0].Text != "look" {
+		t.Errorf("block0 = %+v", user.Content[0])
+	}
+	for i := 1; i <= 2; i++ {
+		if user.Content[i].Type != "input_image" || !strings.HasPrefix(user.Content[i].ImageURL, "data:image/png;base64,") {
+			t.Errorf("image block %d = %+v", i, user.Content[i])
+		}
+	}
+}

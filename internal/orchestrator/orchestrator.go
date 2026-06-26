@@ -423,6 +423,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		VoiceScript:  &narration,
 		AnswerScript: &narration,
 	})
+	o.clipsRepo.ClearFailReason(ctx, clipID)
 	if status == "ready" {
 		log.Printf("Clip ready (hyperframes): %s", clipID)
 	}
@@ -556,6 +557,7 @@ func (o *Orchestrator) runProduction(ctx context.Context, clipID string, scenes 
 		AnswerScript: &voiceScript,
 		VoiceScript:  &voiceScript,
 	})
+	o.clipsRepo.ClearFailReason(ctx, clipID)
 
 	log.Printf("Clip ready (resumed): %s", clipID)
 	return nil

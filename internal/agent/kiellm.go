@@ -252,8 +252,9 @@ func parseGeminiSSE(body []byte) []kieGeminiResponse {
 // goes in an `input` array of messages whose content is typed blocks, and the
 // reply text lives in output[](type=message).content[](type=output_text).text.
 type kieGPT5Block struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 type kieGPT5Message struct {
@@ -275,6 +276,26 @@ func buildGPT5Body(model, system, user string) ([]byte, error) {
 		input = append(input, kieGPT5Message{Role: "system", Content: []kieGPT5Block{{Type: "input_text", Text: system}}})
 	}
 	input = append(input, kieGPT5Message{Role: "user", Content: []kieGPT5Block{{Type: "input_text", Text: user}}})
+	return json.Marshal(kieGPT5Request{Model: model, Stream: false, Input: input})
+}
+
+// buildGPT5VisionBody is buildGPT5Body with N PNG frames appended to the user
+// turn as input_image blocks. Frames are inlined as base64 data URIs (the
+// Responses API accepts a data: URL in image_url), matching buildClaudeVisionBody.
+func buildGPT5VisionBody(model, system, user string, images [][]byte) ([]byte, error) {
+	content := make([]kieGPT5Block, 0, len(images)+1)
+	content = append(content, kieGPT5Block{Type: "input_text", Text: user})
+	for _, img := range images {
+		content = append(content, kieGPT5Block{
+			Type:     "input_image",
+			ImageURL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(img),
+		})
+	}
+	input := make([]kieGPT5Message, 0, 2)
+	if system != "" {
+		input = append(input, kieGPT5Message{Role: "system", Content: []kieGPT5Block{{Type: "input_text", Text: system}}})
+	}
+	input = append(input, kieGPT5Message{Role: "user", Content: content})
 	return json.Marshal(kieGPT5Request{Model: model, Stream: false, Input: input})
 }
 
@@ -409,25 +430,9 @@ func (c *KieLLMClient) doKieRequest(ctx context.Context, apiKey, provider, model
 		return "", false, fmt.Errorf("build %s request: %w", provider, err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
+	respBody, retryable, err := c.postKie(ctx, apiKey, url, provider, reqBody)
 	if err != nil {
-		return "", false, fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", true, fmt.Errorf("send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", true, fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", resp.StatusCode >= 500, fmt.Errorf("kie %s HTTP %d: %s", provider, resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+		return "", retryable, err
 	}
 
 	switch provider {
@@ -439,6 +444,34 @@ func (c *KieLLMClient) doKieRequest(ctx context.Context, apiKey, provider, model
 		text, err = parseGPT5Text(respBody)
 	}
 	return text, false, err
+}
+
+// postKie sends one prepared body to a kie.ai endpoint and returns the raw
+// response. retryable is true for a transport error or HTTP 5xx (worth a
+// fallback) and false for 4xx (which won't improve on retry). label names the
+// provider for the error message (e.g. "claude", "claude vision").
+func (c *KieLLMClient) postKie(ctx context.Context, apiKey, url, label string, reqBody []byte) (respBody []byte, retryable bool, err error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, false, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, true, fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err = io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, true, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, resp.StatusCode >= 500, fmt.Errorf("kie %s HTTP %d: %s", label, resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+	}
+	return respBody, false, nil
 }
 
 // GenerateJSON calls Generate and unmarshals the (fence-stripped) result into
@@ -490,31 +523,7 @@ func (c *KieLLMClient) GenerateVisionJSON(ctx context.Context, model, system, us
 			log.Printf("KieLLM vision JSON retry %d/%d (temperature: %.2f)", attempt, maxRetries, t)
 		}
 
-		reqBody, err := buildClaudeVisionBody(model, system, user, t, images, kieLLMMaxTokens)
-		if err != nil {
-			return fmt.Errorf("build claude vision request: %w", err)
-		}
-		req, err := http.NewRequestWithContext(ctx, "POST", kieClaudeAPI, bytes.NewReader(reqBody))
-		if err != nil {
-			return fmt.Errorf("create request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-
-		resp, err := c.client.Do(req)
-		if err != nil {
-			return fmt.Errorf("send request: %w", err)
-		}
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return fmt.Errorf("read response: %w", err)
-		}
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("kie claude vision HTTP %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
-		}
-
-		text, err := parseClaudeText(respBody)
+		text, err := c.visionGenerate(ctx, apiKey, model, system, user, t, images)
 		if err != nil {
 			return err
 		}
@@ -526,4 +535,54 @@ func (c *KieLLMClient) GenerateVisionJSON(ctx context.Context, model, system, us
 		return nil
 	}
 	return lastErr
+}
+
+// visionGenerate runs one Claude vision call and, like generate(), falls back
+// once to gpt-5-4 on a retryable failure (the same flaky kie.ai proxy serves
+// vision). Without this, Visual QA fails open on a 500 and rubber-stamps frames.
+func (c *KieLLMClient) visionGenerate(ctx context.Context, apiKey, model, system, user string, temp float64, images [][]byte) (string, error) {
+	text, retryable, err := c.doVisionRequest(ctx, apiKey, "claude", model, system, user, temp, images)
+	if err == nil {
+		return text, nil
+	}
+	if retryable {
+		log.Printf("KieLLM: claude vision %q failed (%v) — falling back to %s", model, err, kieGPT5FallbackModel)
+		fbText, _, fbErr := c.doVisionRequest(ctx, apiKey, "gpt5", kieGPT5FallbackModel, system, user, temp, images)
+		if fbErr == nil {
+			return fbText, nil
+		}
+		return "", fmt.Errorf("claude vision failed (%v); %s vision fallback also failed: %w", err, kieGPT5FallbackModel, fbErr)
+	}
+	return "", err
+}
+
+// doVisionRequest is the vision twin of doKieRequest: one request for the given
+// provider, returning the parsed text and whether the failure is worth a fallback.
+func (c *KieLLMClient) doVisionRequest(ctx context.Context, apiKey, provider, model, system, user string, temp float64, images [][]byte) (text string, retryable bool, err error) {
+	var url string
+	var reqBody []byte
+	switch provider {
+	case "claude":
+		url = kieClaudeAPI
+		reqBody, err = buildClaudeVisionBody(model, system, user, temp, images, kieLLMMaxTokens)
+	case "gpt5":
+		url = kieGPT5API
+		reqBody, err = buildGPT5VisionBody(model, system, user, images)
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("build %s vision request: %w", provider, err)
+	}
+
+	respBody, retryable, err := c.postKie(ctx, apiKey, url, provider+" vision", reqBody)
+	if err != nil {
+		return "", retryable, err
+	}
+
+	switch provider {
+	case "claude":
+		text, err = parseClaudeText(respBody)
+	case "gpt5":
+		text, err = parseGPT5Text(respBody)
+	}
+	return text, false, err
 }
