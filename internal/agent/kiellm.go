@@ -394,16 +394,18 @@ func (c *KieLLMClient) generate(ctx context.Context, model, system, user string,
 		return text, nil
 	}
 
-	// The kie.ai Claude proxy is flaky (intermittent HTTP 500 "Network error").
-	// On a retryable failure, fall back once to gpt-5-4 so a transient proxy
-	// outage doesn't fail the whole clip. Gemini/gpt-5 callers don't fall back.
-	if provider == "claude" && retryable {
-		log.Printf("KieLLM: claude %q failed (%v) — falling back to %s", model, err, kieGPT5FallbackModel)
+	// The kie.ai proxies are flaky — Claude returns HTTP 500 "Network error",
+	// Gemini returns HTTP 524 gateway timeouts. On a retryable failure for either,
+	// fall back once to gpt-5-4 so a transient proxy outage doesn't fail the whole
+	// clip. (gpt-5-4 has no googleSearch, so a search=true research fallback loses
+	// grounding but still answers — acceptable since research is non-fatal.)
+	if (provider == "claude" || provider == "gemini") && retryable {
+		log.Printf("KieLLM: %s %q failed (%v) — falling back to %s", provider, model, err, kieGPT5FallbackModel)
 		fbText, _, fbErr := c.doKieRequest(ctx, apiKey, "gpt5", kieGPT5FallbackModel, system, user, temp, false)
 		if fbErr == nil {
 			return fbText, nil
 		}
-		return "", fmt.Errorf("claude failed (%v); %s fallback also failed: %w", err, kieGPT5FallbackModel, fbErr)
+		return "", fmt.Errorf("%s failed (%v); %s fallback also failed: %w", provider, err, kieGPT5FallbackModel, fbErr)
 	}
 	return "", err
 }
