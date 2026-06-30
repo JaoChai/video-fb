@@ -122,6 +122,29 @@ func TestRenderCompositionScenes_CaptionStyleInJSON(t *testing.T) {
 	}
 }
 
+func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
+	preset := PresetByKey("teal-coral")
+	params := ScenesParams{
+		AspectRatio:     "9:16",
+		BrandName:       BrandName,
+		BrandCSS:        preset.BrandCSS(),
+		Palette:         preset.Palette,
+		VoiceSrc:        "assets/voice.wav",
+		DurationSeconds: 6,
+		Scenes:          []SceneSpec{{Content: SceneContent{}}},
+	}
+	html, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(string(html), preset.Palette.Navy) {
+		t.Errorf("rendered HTML missing preset navy %q", preset.Palette.Navy)
+	}
+	if strings.Contains(string(html), Brand.Navy) && preset.Palette.Navy != Brand.Navy {
+		t.Errorf("rendered HTML leaked hardcoded Brand navy")
+	}
+}
+
 func TestRenderCompositionScenes_StyleB(t *testing.T) {
 	params := ScenesParams{
 		AspectRatio: "9:16", BrandName: "ADS VANCE", CategoryLabel: "การเงิน",

@@ -65,12 +65,21 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		return nil, fmt.Errorf("marshal segments: %w", err)
 	}
 
+	pal := p.Palette
+	if pal == (BrandColors{}) {
+		pal = Brand
+	}
+	brandCSS := p.BrandCSS
+	if brandCSS == "" {
+		brandCSS = Brand.CSSVars()
+	}
+
 	// Sanitize each scene's LLM-chosen accent color before it reaches the
 	// template's inline CSS (copy first — don't mutate the caller's slice).
 	sanitizedScenes := make([]SceneSpec, len(p.Scenes))
 	copy(sanitizedScenes, p.Scenes)
 	for i := range sanitizedScenes {
-		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, Brand.Orange)
+		sanitizedScenes[i].AccentColor = sanitizeHexColor(sanitizedScenes[i].AccentColor, pal.Orange)
 	}
 
 	// Structured, render-ready content for the template's in-page DOM builder.
@@ -96,7 +105,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	data := scenesTemplateData{
 		Width:           width,
 		Height:          height,
-		BrandCSS:        template.CSS(Brand.CSSVars()),
+		BrandCSS:        template.CSS(brandCSS),
 		BrandName:       p.BrandName,
 		CategoryLabel:   p.CategoryLabel,
 		QuestionerName:  p.QuestionerName,

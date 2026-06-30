@@ -249,7 +249,7 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 // buildScenePrompt composes a complete AI image-generation prompt from three
 // locked blocks:
 //
-//  1. Style anchor — Brand.ImageStyleAnchor(), shared across all scenes so every
+//  1. Style anchor — preset.ImageAnchor, shared across all scenes so every
 //     clip has a cohesive visual identity.
 //  2. Subject — the caller-supplied concept (e.g. "a Facebook Ads Manager
 //     dashboard showing a rising conversion graph"). Falls back to
@@ -257,18 +257,16 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 //  3. Composition — instructs the image model to preserve the safe zone for text
 //     overlay and produce absolutely no text, letters, or logos in the image.
 //
-// The function is deterministic: same (concept, aspect) always yields the same
-// string. It is placed in brand.go because it is purely brand-prompt composition,
-// building on ImageStyleAnchor and SafeZone which live here.
-func buildScenePrompt(concept, aspect string) string {
+// The function is deterministic: same (concept, aspect, preset) always yields the
+// same string. It is placed in brand.go because it is purely brand-prompt
+// composition, building on ImageAnchor and SafeZone which live here.
+func buildScenePrompt(concept, aspect string, preset StylePreset) string {
 	subject := strings.TrimSpace(concept)
 	if subject == "" {
 		subject = genericSceneSubject
 	}
-
-	sz := Brand.SafeZone(aspect)
-
-	return Brand.ImageStyleAnchor() + " " +
+	sz := preset.Palette.SafeZone(aspect)
+	return preset.ImageAnchor + " " +
 		"Subject: " + subject + ". " +
 		"Composition: " + sz.NegativeSpace + ". " +
 		"Keep the image uncluttered with generous negative space. " +

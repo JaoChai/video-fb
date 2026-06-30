@@ -389,7 +389,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	})
 
 	// ── Assemble the multi-scene 9:16 video + thumbnail + upload ──
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes)
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, producer.PresetByKey("signature"))
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
