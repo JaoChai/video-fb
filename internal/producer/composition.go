@@ -27,6 +27,10 @@ type scenesTemplateData struct {
 	Scenes          []SceneSpec
 	SegmentsJSON    template.JS
 	ScenesJSON      template.JS
+
+	AmbientSrc         string
+	AudioMotion        bool
+	TransitionCuesJSON template.JS
 }
 
 //go:embed templates/*.html.tmpl
@@ -63,6 +67,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	segsJSON, err := json.Marshal(p.Segments)
 	if err != nil {
 		return nil, fmt.Errorf("marshal segments: %w", err)
+	}
+
+	cuesJSON, err := json.Marshal(p.TransitionCues)
+	if err != nil {
+		return nil, fmt.Errorf("marshal transition cues: %w", err)
 	}
 
 	pal := p.Palette
@@ -103,23 +112,26 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 	}
 
 	data := scenesTemplateData{
-		Width:           width,
-		Height:          height,
-		BrandCSS:        template.CSS(brandCSS),
-		BrandName:       p.BrandName,
-		CategoryLabel:   p.CategoryLabel,
-		QuestionerName:  p.QuestionerName,
-		Kicker:          p.Kicker,
-		VoiceSrc:        p.VoiceSrc,
-		DurationSeconds: p.DurationSeconds,
-		IntroMascot:     p.IntroMascot,
-		OutroMascot:     p.OutroMascot,
-		CTAText:         p.CTAText,
-		OutroStartSec:   outroStart,
-		OutroDurSec:     p.DurationSeconds - outroStart,
-		Scenes:          sanitizedScenes,
-		SegmentsJSON:    template.JS(segsJSON),
-		ScenesJSON:      template.JS(scenesJSON),
+		Width:              width,
+		Height:             height,
+		BrandCSS:           template.CSS(brandCSS),
+		BrandName:          p.BrandName,
+		CategoryLabel:      p.CategoryLabel,
+		QuestionerName:     p.QuestionerName,
+		Kicker:             p.Kicker,
+		VoiceSrc:           p.VoiceSrc,
+		DurationSeconds:    p.DurationSeconds,
+		IntroMascot:        p.IntroMascot,
+		OutroMascot:        p.OutroMascot,
+		CTAText:            p.CTAText,
+		OutroStartSec:      outroStart,
+		OutroDurSec:        p.DurationSeconds - outroStart,
+		Scenes:             sanitizedScenes,
+		SegmentsJSON:       template.JS(segsJSON),
+		ScenesJSON:         template.JS(scenesJSON),
+		AmbientSrc:         p.AmbientSrc,
+		AudioMotion:        p.AudioMotion,
+		TransitionCuesJSON: template.JS(cuesJSON),
 	}
 
 	const name = "layout_multi_scene.html.tmpl"

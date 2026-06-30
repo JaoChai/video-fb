@@ -58,6 +58,44 @@ func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir
 	}
 	params.VoiceSrc = "assets/voice.wav"
 
+	// Ambient bed: copy the prepared duration-matched file into the project.
+	if params.AmbientLocalPath != "" {
+		if err := copyFile(params.AmbientLocalPath, filepath.Join(assetsDir, "ambient.mp3")); err != nil {
+			return "", fmt.Errorf("copy ambient: %w", err)
+		}
+		params.AmbientSrc = "assets/ambient.mp3"
+	}
+
+	// Transition SFX: copy each referenced embedded file into assets/sfx/ and set
+	// its project-relative Src. Mutate a local copy of the slice.
+	if len(params.TransitionCues) > 0 {
+		sfxDst := filepath.Join(assetsDir, "sfx")
+		if err := os.MkdirAll(sfxDst, 0o755); err != nil {
+			return "", fmt.Errorf("mkdir sfx: %w", err)
+		}
+		cues := make([]TransitionCue, len(params.TransitionCues))
+		copy(cues, params.TransitionCues)
+		copied := map[string]bool{}
+		for i := range cues {
+			name := cues[i].Name
+			if name == "" {
+				continue
+			}
+			if !copied[name] {
+				data, err := audioAssetsFS.ReadFile(sfxDir + "/" + name)
+				if err != nil {
+					return "", fmt.Errorf("read embedded sfx %s: %w", name, err)
+				}
+				if err := os.WriteFile(filepath.Join(sfxDst, name), data, 0o644); err != nil {
+					return "", fmt.Errorf("write sfx %s: %w", name, err)
+				}
+				copied[name] = true
+			}
+			cues[i].Src = "assets/sfx/" + name
+		}
+		params.TransitionCues = cues
+	}
+
 	// Mutate a local copy of the scenes slice so we don't clobber the caller's data.
 	scenes := make([]SceneSpec, len(params.Scenes))
 	copy(scenes, params.Scenes)
