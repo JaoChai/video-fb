@@ -50,3 +50,22 @@ func TestRenderOmitsAudioWhenAbsent(t *testing.T) {
 		t.Error("ambient tag present when AmbientSrc empty")
 	}
 }
+
+func TestRenderMotionFlag(t *testing.T) {
+	on := baseAudioParams()
+	on.AudioMotion = true
+	h, err := RenderCompositionScenes(on)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(h), "const MOTION_UP = true") {
+		t.Error("MOTION_UP=true not emitted when AudioMotion on")
+	}
+	off, err := RenderCompositionScenes(baseAudioParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(off), "const MOTION_UP = false") {
+		t.Error("MOTION_UP=false not emitted when AudioMotion off")
+	}
+}
