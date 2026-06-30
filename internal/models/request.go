@@ -23,6 +23,7 @@ type UpdateClipRequest struct {
 	Video916URL    *string `json:"video_9_16_url"`
 	ThumbnailURL   *string `json:"thumbnail_url"`
 	PublishDate    *string `json:"publish_date"`
+	StylePreset    *string `json:"style_preset"`
 }
 
 type CreateSceneRequest struct {
