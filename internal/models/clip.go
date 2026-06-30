@@ -112,6 +112,14 @@ type ClipPerformance struct {
 	WatchTimeSeconds float64 `json:"watch_time_seconds"`
 }
 
+// PresetScore is one style preset's measured retention over a recent window,
+// used to bias preset selection toward better-performing looks.
+type PresetScore struct {
+	Preset       string  `json:"preset"`
+	AvgRetention float64 `json:"avg_retention"` // mean of latest-per-clip retention_rate, 0..1
+	N            int     `json:"n"`             // number of distinct clips counted
+}
+
 type SegmentedTotals struct {
 	PostType         string  `json:"post_type"`
 	Views            int     `json:"views"`

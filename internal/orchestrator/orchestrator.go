@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -72,6 +73,7 @@ type Orchestrator struct {
 	visualQARepo  *repository.VisualQARepo
 	themesRepo    *repository.ThemesRepo
 	agentsRepo    *repository.AgentsRepo
+	analyticsRepo *repository.AnalyticsRepo
 	tracker       *progress.Tracker
 }
 
@@ -89,6 +91,7 @@ func New(
 	visualqa *repository.VisualQARepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
+	analytics *repository.AnalyticsRepo,
 	settings *repository.SettingsRepo,
 	formats *repository.FormatsRepo,
 	tracker *progress.Tracker,
@@ -97,7 +100,7 @@ func New(
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
-		themesRepo: themes, agentsRepo: agents, tracker: tracker,
+		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics, tracker: tracker,
 	}
 }
 
@@ -228,8 +231,19 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
 	preset := producer.PresetByKey("signature")
 	if producer.StylePresetsEnabled() {
-		last, _ := o.clipsRepo.LastStylePreset(ctx) // best-effort; "" → no avoid
+		last, _ := o.clipsRepo.LastStylePreset(ctx)
 		preset = producer.PickPreset(last)
+		if producer.StylePresetsPerformanceEnabled() {
+			scores, err := o.analyticsRepo.PresetRetention(ctx, producer.DefaultWindowDays)
+			if err != nil {
+				log.Printf("preset perf: scores unavailable (%v); uniform pick %s", err, preset.Key)
+			} else {
+				preset = producer.PickPresetWeighted(last, scores,
+					producer.DefaultEpsilon, producer.DefaultMinClips, rand.Intn)
+				log.Printf("preset perf: picked %s (window=%dd, %d preset scores)",
+					preset.Key, producer.DefaultWindowDays, len(scores))
+			}
+		}
 	}
 
 	today := time.Now().Format("2006-01-02")
