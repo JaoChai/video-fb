@@ -129,3 +129,30 @@ func (f *FFmpegAssembler) ExtractFrameAt(videoPath, outPath string, tsSeconds fl
 	}
 	return nil
 }
+
+// BuildAmbientBed loops srcPath to at least durationSec, trims to exactly
+// durationSec, and applies a 1.5s tail fade so the bed ends cleanly under the
+// outro. Output is an mp3 at outPath. Used for the per-clip background ambient.
+func (f *FFmpegAssembler) BuildAmbientBed(srcPath, outPath string, durationSec float64) error {
+	if durationSec <= 0 {
+		return fmt.Errorf("durationSec must be > 0, got %v", durationSec)
+	}
+	os.MkdirAll(filepath.Dir(outPath), 0755)
+	fadeStart := durationSec - 1.5
+	if fadeStart < 0 {
+		fadeStart = 0
+	}
+	args := []string{
+		"-stream_loop", "-1", "-i", srcPath,
+		"-t", fmt.Sprintf("%.3f", durationSec),
+		"-af", fmt.Sprintf("afade=t=out:st=%.3f:d=1.5", fadeStart),
+		"-ar", "44100", "-b:a", "128k",
+		"-y", outPath,
+	}
+	cmd := exec.Command(f.ffmpegPath, args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ffmpeg ambient bed failed: %w", err)
+	}
+	return nil
+}
