@@ -226,6 +226,12 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 }
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+	preset := producer.PresetByKey("signature")
+	if producer.StylePresetsEnabled() {
+		last, _ := o.clipsRepo.LastStylePreset(ctx) // best-effort; "" → no avoid
+		preset = producer.PickPreset(last)
+	}
+
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
 		Title:          q.Question,
@@ -240,9 +246,9 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	}
 
 	status := "producing"
-	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
+	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status, StylePreset: &preset.Key})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
 // Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
@@ -291,7 +297,14 @@ func validateScript(script *agent.GeneratedScript) {
 	script.YoutubeTitle = title + suffix
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+	// Derive a per-clip theme so text agents describe the same colors that get
+	// rendered. When the flag is off clipTheme == theme — no behavior change.
+	clipTheme := theme
+	if producer.StylePresetsEnabled() {
+		clipTheme = preset.AsTheme(theme)
+	}
+
 	o.tracker.StartStep("script")
 	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, scriptCfg)
 	if err != nil {
@@ -309,7 +322,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
 	}
 	narration := scriptNarration(script)
-	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, theme, sceneCfg)
+	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, clipTheme, sceneCfg)
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
@@ -389,7 +402,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	})
 
 	// ── Assemble the multi-scene 9:16 video + thumbnail + upload ──
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, producer.PresetByKey("signature"))
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -502,7 +515,10 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	}
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, scriptCfg, imageCfg, brandAliases, format, persona)
+	// Retried clips keep their original visual identity. PresetByKey falls back to
+	// "signature" if the stored key is empty (pre-flag clips have no stored preset).
+	retryPreset := producer.PresetByKey(clip.StylePreset)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
 func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {
