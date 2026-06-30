@@ -20,7 +20,8 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
-	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format`
+	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format,
+	production_stage`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -30,6 +31,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.Video169URL, &c.Video916URL, &c.ThumbnailURL,
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
 		&c.FailReason, &c.RetryCount, &c.StylePreset, &c.ContentFormat,
+		&c.ProductionStage,
 	)
 	return c, err
 }
@@ -90,6 +92,7 @@ func (r *ClipsRepo) Update(ctx context.Context, id string, req models.UpdateClip
 			thumbnail_url = COALESCE($11, thumbnail_url),
 			publish_date = COALESCE($12::date, publish_date),
 			style_preset = COALESCE($13, style_preset),
+			production_stage = COALESCE($14, production_stage),
 			updated_at = NOW()
 		 WHERE id = $1
 		 RETURNING `+clipColumns,
@@ -97,6 +100,7 @@ func (r *ClipsRepo) Update(ctx context.Context, id string, req models.UpdateClip
 		req.AnswerScript, req.VoiceScript, req.Category, req.Status,
 		req.Video169URL, req.Video916URL, req.ThumbnailURL, req.PublishDate,
 		req.StylePreset,
+		req.ProductionStage,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("update clip %s: %w", id, err)
@@ -130,11 +134,12 @@ func (r *ClipsRepo) ResetStaleProducing(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-func (r *ClipsRepo) ListFailed(ctx context.Context, maxRetries int) ([]models.Clip, error) {
+func (r *ClipsRepo) ListFailed(ctx context.Context, maxRetries int, cooldownMinutes int) ([]models.Clip, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+clipColumns+` FROM clips
 		 WHERE status = 'failed' AND retry_count < $1
-		 ORDER BY created_at ASC LIMIT 5`, maxRetries)
+		   AND updated_at < NOW() - make_interval(mins => $2)
+		 ORDER BY created_at ASC LIMIT 5`, maxRetries, cooldownMinutes)
 	if err != nil {
 		return nil, fmt.Errorf("query failed clips: %w", err)
 	}

@@ -12,18 +12,19 @@ type CreateClipRequest struct {
 }
 
 type UpdateClipRequest struct {
-	Title          *string `json:"title"`
-	Question       *string `json:"question"`
-	QuestionerName *string `json:"questioner_name"`
-	AnswerScript   *string `json:"answer_script"`
-	VoiceScript    *string `json:"voice_script"`
-	Category       *string `json:"category"`
-	Status         *string `json:"status"`
-	Video169URL    *string `json:"video_16_9_url"`
-	Video916URL    *string `json:"video_9_16_url"`
-	ThumbnailURL   *string `json:"thumbnail_url"`
-	PublishDate    *string `json:"publish_date"`
-	StylePreset    *string `json:"style_preset"`
+	Title           *string `json:"title"`
+	Question        *string `json:"question"`
+	QuestionerName  *string `json:"questioner_name"`
+	AnswerScript    *string `json:"answer_script"`
+	VoiceScript     *string `json:"voice_script"`
+	Category        *string `json:"category"`
+	Status          *string `json:"status"`
+	Video169URL     *string `json:"video_16_9_url"`
+	Video916URL     *string `json:"video_9_16_url"`
+	ThumbnailURL    *string `json:"thumbnail_url"`
+	PublishDate     *string `json:"publish_date"`
+	StylePreset     *string `json:"style_preset"`
+	ProductionStage *string `json:"production_stage"`
 }
 
 type CreateSceneRequest struct {
