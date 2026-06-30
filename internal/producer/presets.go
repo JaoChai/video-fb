@@ -97,9 +97,71 @@ var Presets = []StylePreset{
 	},
 }
 
+// Performance-weighted selection tuning (spec defaults; callers pass them in).
+const (
+	DefaultEpsilon    = 0.30
+	DefaultMinClips   = 3
+	DefaultWindowDays = 30
+)
+
 // StylePresetsEnabled reports whether per-clip preset selection is on. Off ⇒
 // callers use the signature preset, reproducing today's exact look.
 func StylePresetsEnabled() bool { return os.Getenv("STYLE_PRESETS_ENABLED") == "true" }
+
+// StylePresetsPerformanceEnabled reports whether per-clip selection should be biased
+// by measured retention (epsilon-greedy). Requires STYLE_PRESETS_ENABLED as well;
+// off ⇒ uniform avoid-last selection.
+func StylePresetsPerformanceEnabled() bool {
+	return os.Getenv("STYLE_PRESETS_PERFORMANCE_ENABLED") == "true"
+}
+
+// PickPresetWeighted chooses a preset with epsilon-greedy over retention scores,
+// always excluding lastKey (the avoid-last rule). rng(n) must return an int in [0,n);
+// pass rand.Intn in production. rng is consumed in a fixed order: first rng(100) for
+// the explore/exploit coin, then — only when exploring or when no eligible exploit
+// target exists — rng(len(candidates)) for the uniform pick.
+//
+//   - explore (prob epsilon) OR no candidate with N >= minClips: uniform among candidates.
+//   - exploit: the candidate with the highest AvgRetention among those with N >= minClips.
+//
+// Candidates with N < minClips are "unknown": never chosen by exploit, only reachable
+// via an explore roll — so new/under-sampled presets never starve.
+func PickPresetWeighted(lastKey string, scores []models.PresetScore, epsilon float64, minClips int, rng func(int) int) StylePreset {
+	candidates := make([]StylePreset, 0, len(Presets))
+	for _, p := range Presets {
+		if p.Key != lastKey {
+			candidates = append(candidates, p)
+		}
+	}
+	if len(candidates) == 0 {
+		return Presets[0]
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+
+	scoreByKey := make(map[string]models.PresetScore, len(scores))
+	for _, s := range scores {
+		scoreByKey[s.Preset] = s
+	}
+
+	bestIdx := -1
+	for i := range candidates {
+		s, ok := scoreByKey[candidates[i].Key]
+		if !ok || s.N < minClips {
+			continue
+		}
+		if bestIdx == -1 || s.AvgRetention > scoreByKey[candidates[bestIdx].Key].AvgRetention {
+			bestIdx = i
+		}
+	}
+
+	explore := rng(100) < int(epsilon*100)
+	if bestIdx == -1 || explore {
+		return candidates[rng(len(candidates))]
+	}
+	return candidates[bestIdx]
+}
 
 // PresetByKey returns the preset with key, or the signature preset (Presets[0])
 // when key is unknown/empty. Never panics.
