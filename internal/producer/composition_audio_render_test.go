@@ -33,11 +33,14 @@ func TestRenderIncludesAmbientAndCues(t *testing.T) {
 	if !strings.Contains(s, `data-track-index="3"`) {
 		t.Error("ambient track index missing")
 	}
-	if !strings.Contains(s, "assets/sfx/whoosh1.mp3") {
-		t.Error("transition cue not in cues JSON")
+	if !strings.Contains(s, `id="sfx0"`) {
+		t.Error("static SFX audio tag id missing")
 	}
-	if !strings.Contains(s, `a.id = "sfx"`) {
-		t.Error("SFX audio elements must get a unique id (else silent — Task 0 finding)")
+	if !strings.Contains(s, `src="assets/sfx/whoosh1.mp3"`) {
+		t.Error("static SFX audio src missing")
+	}
+	if !strings.Contains(s, `data-track-index="20"`) {
+		t.Error("static SFX audio track-index missing (expected 20 for first cue)")
 	}
 }
 
