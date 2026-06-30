@@ -10,6 +10,7 @@ import {
   Bot,
   History,
   Settings,
+  Palette,
   Moon,
   Sun,
   Menu,
@@ -28,6 +29,7 @@ export const CONFIG_NAV = [
   { to: ROUTES.AGENTS, label: "Agents", icon: Bot },
   { to: ROUTES.PROMPT_HISTORY, label: "Prompt History", icon: History },
   { to: ROUTES.SETTINGS, label: "Settings", icon: Settings },
+  { to: ROUTES.THEME, label: "Theme", icon: Palette },
 ]
 
 export function Sidebar() {

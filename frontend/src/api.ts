@@ -31,3 +31,27 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
 
 export const stopProduction = () => apiFetch('/api/v1/orchestrator/stop', { method: 'POST' });
 export const publishTikTok = () => apiFetch('/api/v1/orchestrator/publish-tiktok', { method: 'POST' });
+
+export interface BrandTheme {
+  id: string;
+  name: string;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  font_name: string;
+  logo_url: string | null;
+  mascot_description: string | null;
+  image_style: string | null;
+  active: boolean;
+}
+
+export interface PresetsResponse {
+  presets: { key: string; display_name: string; primary_color: string; accent_color: string }[];
+  style_presets_enabled: boolean;
+  performance_enabled: boolean;
+}
+
+export const getActiveTheme = () => apiFetch<BrandTheme>('/api/v1/themes/active');
+export const updateTheme = (id: string, body: Partial<BrandTheme>) =>
+  apiFetch<BrandTheme>(`/api/v1/themes/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const getPresets = () => apiFetch<PresetsResponse>('/api/v1/presets');

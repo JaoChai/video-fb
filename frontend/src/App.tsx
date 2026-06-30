@@ -12,6 +12,7 @@ import SchedulesPage from "./pages/Schedules"
 import AnalyticsPage from "./pages/Analytics"
 import SettingsPage from "./pages/Settings"
 import PromptHistoryPage from "./pages/PromptHistory"
+import ThemePage from "./pages/Theme"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,7 @@ export default function App() {
                     <Route path={ROUTES.AGENTS} element={<AgentsPage />} />
                     <Route path={ROUTES.PROMPT_HISTORY} element={<PromptHistoryPage />} />
                     <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
+                    <Route path={ROUTES.THEME} element={<ThemePage />} />
                   </Routes>
                 </ErrorBoundary>
               </main>
