@@ -261,7 +261,7 @@ func (r *AnalyticsRepo) PresetRetention(ctx context.Context, windowDays int) ([]
 	}
 	defer rows.Close()
 
-	var out []models.PresetScore
+	out := []models.PresetScore{} // non-nil so an empty result marshals to [] not null
 	for rows.Next() {
 		var s models.PresetScore
 		if err := rows.Scan(&s.Preset, &s.AvgRetention, &s.N); err != nil {

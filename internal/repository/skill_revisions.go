@@ -25,7 +25,7 @@ func (r *SkillRevisionsRepo) List(ctx context.Context, limit int) ([]models.Skil
 		return nil, fmt.Errorf("list skill revisions: %w", err)
 	}
 	defer rows.Close()
-	var out []models.SkillRevision
+	out := []models.SkillRevision{} // non-nil so an empty result marshals to [] not null
 	for rows.Next() {
 		var s models.SkillRevision
 		if err := rows.Scan(&s.AgentName, &s.Rationale, &s.CritiqueWindow, &s.CreatedAt); err != nil {

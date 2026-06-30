@@ -48,10 +48,13 @@ export default function PromptHistoryPage() {
     queryFn: () => apiFetch<HistoryEntry[]>('/api/v1/agents/prompt-history'),
   })
 
-  const { data: revisions = [] } = useQuery({
+  const { data: revisionsData } = useQuery({
     queryKey: ['skill-revisions'],
     queryFn: getSkillRevisions,
   })
+  // Normalize null → [] : a list endpoint can return JSON null (Go nil slice),
+  // which the `= []` destructuring default does NOT cover (it only catches undefined).
+  const revisions = revisionsData ?? []
 
   const initialAgent = searchParams.get('agent') ?? 'all'
   const [filterAgent, setFilterAgent] = useState<string>(initialAgent)
