@@ -85,6 +85,12 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	r.Get("/api/v1/clips/{clipId}/analytics", analytics.ListByClip)
 	r.Post("/api/v1/analytics/fetch", analytics.Trigger)
 
+	presets := handler.NewPresetsHandler(repository.NewAnalyticsRepo(pool))
+	r.Route("/api/v1/presets", func(r chi.Router) {
+		r.Get("/", presets.List)
+		r.Get("/performance", presets.Performance)
+	})
+
 	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))
 	r.Route("/api/v1/settings", func(r chi.Router) {
 		r.Get("/", settings.Get)
