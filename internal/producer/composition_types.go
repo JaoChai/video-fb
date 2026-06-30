@@ -71,6 +71,15 @@ type ContentChip struct {
 	T string `json:"t"`
 }
 
+// TransitionCue is one scene-transition sound effect placement. Name is the
+// embedded SFX base name (input); Src is the project-relative asset path the
+// builder fills in; AtSec is the timeline start in seconds.
+type TransitionCue struct {
+	Name  string  `json:"-"`
+	Src   string  `json:"src"`
+	AtSec float64 `json:"at"`
+}
+
 // ScenesParams is the full input for the multi-scene template.
 type ScenesParams struct {
 	AspectRatio     string // "9:16" | "16:9"
@@ -90,4 +99,11 @@ type ScenesParams struct {
 	// RenderCompositionScenes falls back to the package-global Brand (today's look).
 	Palette  BrandColors
 	BrandCSS string
+
+	// Audio + motion upgrade (gated by AUDIO_MOTION_ENABLED). All zero ⇒ today's
+	// voice-only, current-motion output.
+	AmbientLocalPath string          // absolute path to a prepared ambient.mp3 (input; builder copies it)
+	AmbientSrc       string          // project-relative path; set by BuildScenes
+	TransitionCues   []TransitionCue // scene-transition SFX placements
+	AudioMotion      bool            // enable upgraded GSAP transitions
 }

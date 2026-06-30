@@ -9,13 +9,19 @@ import (
 	"testing"
 )
 
-func TestBuildScenes(t *testing.T) {
-	// Create a temp fonts dir with a dummy .ttf so copyDir succeeds without
-	// depending on the on-disk PoC directory (which may not exist in CI).
-	fontsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(fontsDir, "dummy.ttf"), []byte("dummy font"), 0o644); err != nil {
+// testFontsDir returns a temp dir with a dummy .ttf so copyDir succeeds without
+// depending on the on-disk PoC directory (which may not exist in CI).
+func testFontsDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dummy.ttf"), []byte("dummy font"), 0o644); err != nil {
 		t.Fatalf("create dummy font: %v", err)
 	}
+	return dir
+}
+
+func TestBuildScenes(t *testing.T) {
+	fontsDir := testFontsDir(t)
 
 	// Create a temp voice file.
 	voiceDir := t.TempDir()
@@ -120,5 +126,46 @@ func TestBuildScenes(t *testing.T) {
 	}
 	if params.Scenes[0].BackgroundMode != "css" {
 		t.Error("BuildScenes mutated caller's params.Scenes")
+	}
+}
+
+func TestBuildScenesCopiesAudio(t *testing.T) {
+	projectDir := t.TempDir()
+	// A throwaway voice + ambient source file.
+	clipDir := t.TempDir()
+	voice := filepath.Join(clipDir, "voice.wav")
+	if err := os.WriteFile(voice, []byte("RIFFfake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	amb := filepath.Join(clipDir, "ambient.mp3")
+	if err := os.WriteFile(amb, []byte("ID3fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sfx := SfxTransitionFiles()
+	if len(sfx) == 0 {
+		t.Skip("no sfx embedded")
+	}
+	params := ScenesParams{
+		AspectRatio:      "9:16",
+		BrandName:        "Ads Vance",
+		DurationSeconds:  10,
+		VoiceSrc:         "assets/voice.wav",
+		AmbientLocalPath: amb,
+		TransitionCues:   []TransitionCue{{Name: sfx[0], AtSec: 3.2}},
+		AudioMotion:      true,
+		Scenes: []SceneSpec{{
+			SceneNumber: 1, StartSec: 0, EndSec: 10, BackgroundMode: "css",
+			Content: SceneContent{SceneNumber: 1, Start: 0, End: 10, Layout: "hero", Title: "Hi"},
+		}},
+	}
+	b := NewCompositionBuilder(testFontsDir(t))
+	if _, err := b.BuildScenes(params, "clipX", projectDir, voice, nil); err != nil {
+		t.Fatalf("BuildScenes: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "assets", "ambient.mp3")); err != nil {
+		t.Errorf("ambient.mp3 not copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "assets", "sfx", sfx[0])); err != nil {
+		t.Errorf("sfx %s not copied: %v", sfx[0], err)
 	}
 }

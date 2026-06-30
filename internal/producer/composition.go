@@ -27,6 +27,10 @@ type scenesTemplateData struct {
 	Scenes          []SceneSpec
 	SegmentsJSON    template.JS
 	ScenesJSON      template.JS
+
+	AmbientSrc     string
+	AudioMotion    bool
+	TransitionCues []TransitionCue
 }
 
 //go:embed templates/*.html.tmpl
@@ -120,6 +124,9 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Scenes:          sanitizedScenes,
 		SegmentsJSON:    template.JS(segsJSON),
 		ScenesJSON:      template.JS(scenesJSON),
+		AmbientSrc:      p.AmbientSrc,
+		AudioMotion:     p.AudioMotion,
+		TransitionCues:  p.TransitionCues,
 	}
 
 	const name = "layout_multi_scene.html.tmpl"

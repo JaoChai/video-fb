@@ -1,0 +1,74 @@
+package producer
+
+import (
+	"strings"
+	"testing"
+)
+
+func baseAudioParams() ScenesParams {
+	return ScenesParams{
+		AspectRatio:     "9:16",
+		BrandName:       "Ads Vance",
+		DurationSeconds: 10,
+		VoiceSrc:        "assets/voice.wav",
+		Scenes: []SceneSpec{{
+			SceneNumber: 1, StartSec: 0, EndSec: 10, BackgroundMode: "css",
+			Content: SceneContent{SceneNumber: 1, Start: 0, End: 10, Layout: "hero", Title: "Hi"},
+		}},
+	}
+}
+
+func TestRenderIncludesAmbientAndCues(t *testing.T) {
+	p := baseAudioParams()
+	p.AmbientSrc = "assets/ambient.mp3"
+	p.TransitionCues = []TransitionCue{{Src: "assets/sfx/whoosh1.mp3", AtSec: 3.2}}
+	html, err := RenderCompositionScenes(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(html)
+	if !strings.Contains(s, `src="assets/ambient.mp3"`) {
+		t.Error("ambient audio tag missing")
+	}
+	if !strings.Contains(s, `data-track-index="3"`) {
+		t.Error("ambient track index missing")
+	}
+	if !strings.Contains(s, `id="sfx0"`) {
+		t.Error("static SFX audio tag id missing")
+	}
+	if !strings.Contains(s, `src="assets/sfx/whoosh1.mp3"`) {
+		t.Error("static SFX audio src missing")
+	}
+	if !strings.Contains(s, `data-track-index="30"`) {
+		t.Error("static SFX audio track-index missing (expected 30 for first cue)")
+	}
+}
+
+func TestRenderOmitsAudioWhenAbsent(t *testing.T) {
+	html, err := RenderCompositionScenes(baseAudioParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(html), "assets/ambient.mp3") {
+		t.Error("ambient tag present when AmbientSrc empty")
+	}
+}
+
+func TestRenderMotionFlag(t *testing.T) {
+	on := baseAudioParams()
+	on.AudioMotion = true
+	h, err := RenderCompositionScenes(on)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(h), "const MOTION_UP = true") {
+		t.Error("MOTION_UP=true not emitted when AudioMotion on")
+	}
+	off, err := RenderCompositionScenes(baseAudioParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(off), "const MOTION_UP = false") {
+		t.Error("MOTION_UP=false not emitted when AudioMotion off")
+	}
+}

@@ -124,11 +124,15 @@
       <div id="capStage" class="clip cap-stage" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="9" data-layout-allow-overflow></div>
 
       <audio id="vo" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="5" src="{{.VoiceSrc}}" data-volume="1"></audio>
+      {{if .AmbientSrc}}<audio id="amb" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="3" src="{{.AmbientSrc}}" data-volume="0.15"></audio>{{end}}
+      {{range $i, $cue := .TransitionCues}}<audio id="sfx{{$i}}" data-start="{{$cue.AtSec}}" data-duration="1.0" data-track-index="{{addInt 30 $i}}" src="{{$cue.Src}}" data-volume="0.5"></audio>
+      {{end}}
     </div>
 
     <script>
       const tl = gsap.timeline({ paused: true });
       const TOTAL = {{.DurationSeconds}};
+      const MOTION_UP = {{if .AudioMotion}}true{{else}}false{{end}};
 
       // ── Scene content (cleaned: NO emoji, real slots) ──
       const SCENES = {{.ScenesJSON}};
@@ -198,11 +202,23 @@
         const bg=sceneEl.querySelector(".scene-bg");
         const span=Math.max(0.4,sc.end-inAt);
 
-        tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55,ease:"power2.out"},inAt);
-        if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
+        if (MOTION_UP) {
+          // Upgraded: incoming scene slides up + scales in while fading; bg ken-burns.
+          tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:0.6,ease:"power3.out"},inAt);
+          if(bg) tl.fromTo(bg,{scale:1.04},{scale:1.10,duration:span,ease:"none"},inAt);
+          if(content){
+            tl.fromTo(content,{y:60,opacity:0},{y:0,opacity:1,duration:0.65,ease:"power3.out"},sc.start+0.08);
+          }
+        } else {
+          // Current behavior (unchanged).
+          tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55,ease:"power2.out"},inAt);
+          if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
+          if(content){
+            tl.fromTo(content,{y:46,opacity:0},{y:0,opacity:1,duration:0.6,ease:"power3.out"},sc.start+0.1);
+          }
+        }
 
         if(content){
-          tl.fromTo(content,{y:46,opacity:0},{y:0,opacity:1,duration:0.6,ease:"power3.out"},sc.start+0.1);
           const kids=content.children;
           for(let j=0;j<kids.length;j++){
             const isStat=kids[j].querySelector&&kids[j].querySelector(".stat");
