@@ -163,7 +163,7 @@ Expected: FAIL (undefined: StylePreset, Presets, PickPreset, …).
 package producer
 
 import (
-	"hash/fnv"
+	"math/rand"
 	"os"
 
 	"github.com/jaochai/video-fb/internal/models"
@@ -273,11 +273,12 @@ func PresetByKey(key string) StylePreset {
 	return Presets[0]
 }
 
-// PickPreset chooses a preset for the next clip, avoiding lastKey when more than
-// one preset exists so two clips in a row never share a look. Selection is
-// deterministic per call input (no Math.random — that is banned in this codebase
-// and would also break render-journal resumes): it folds lastKey through FNV and
-// indexes the remaining presets, which is enough variety for ~3 clips/day.
+// PickPreset chooses a preset at random for the next clip, excluding lastKey when
+// more than one preset exists so two clips in a row never share a look. Real
+// randomness (math/rand, auto-seeded on Go 1.20+) is correct here: this is
+// server-side Go, NOT the hyperframes render JS where non-determinism is banned —
+// the orchestrator already uses time.Now(). Random (not hash-deterministic)
+// selection ensures all presets get used over time instead of settling into a cycle.
 func PickPreset(lastKey string) StylePreset {
 	if len(Presets) == 1 {
 		return Presets[0]
@@ -292,9 +293,7 @@ func PickPreset(lastKey string) StylePreset {
 	if len(candidates) == 0 {
 		return Presets[0]
 	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(lastKey + "|salt-v1"))
-	return candidates[int(h.Sum32())%len(candidates)]
+	return candidates[rand.Intn(len(candidates))]
 }
 
 // BrandCSS renders the :root CSS custom-property block for this preset's palette
