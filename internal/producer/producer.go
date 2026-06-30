@@ -361,7 +361,11 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 					} else {
 						log.Printf("AssembleHyperframes916: ambient bed prep failed (continuing without): %v", berr)
 					}
+				} else {
+					log.Printf("AssembleHyperframes916: ambient write failed (continuing without): %v", werr)
 				}
+			} else {
+				log.Printf("AssembleHyperframes916: ambient embed read failed (continuing without): %v", rerr)
 			}
 		}
 
