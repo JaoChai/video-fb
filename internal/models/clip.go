@@ -6,24 +6,25 @@ import (
 )
 
 type Clip struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	Question       string    `json:"question"`
-	QuestionerName string    `json:"questioner_name"`
-	AnswerScript   string    `json:"answer_script"`
-	VoiceScript    string    `json:"voice_script"`
-	Category       string    `json:"category"`
-	Status         string    `json:"status"`
-	Video169URL    *string   `json:"video_16_9_url"`
-	Video916URL    *string   `json:"video_9_16_url"`
-	ThumbnailURL   *string   `json:"thumbnail_url"`
-	PublishDate    *string   `json:"publish_date"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	FailReason     *string   `json:"fail_reason,omitempty"`
-	RetryCount     int       `json:"retry_count"`
-	StylePreset    string    `json:"style_preset"`
-	ContentFormat  string    `json:"content_format"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	Question        string    `json:"question"`
+	QuestionerName  string    `json:"questioner_name"`
+	AnswerScript    string    `json:"answer_script"`
+	VoiceScript     string    `json:"voice_script"`
+	Category        string    `json:"category"`
+	Status          string    `json:"status"`
+	Video169URL     *string   `json:"video_16_9_url"`
+	Video916URL     *string   `json:"video_9_16_url"`
+	ThumbnailURL    *string   `json:"thumbnail_url"`
+	PublishDate     *string   `json:"publish_date"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	FailReason      *string   `json:"fail_reason,omitempty"`
+	RetryCount      int       `json:"retry_count"`
+	StylePreset     string    `json:"style_preset"`
+	ContentFormat   string    `json:"content_format"`
+	ProductionStage string    `json:"production_stage"`
 }
 
 type Scene struct {
@@ -43,6 +44,8 @@ type Scene struct {
 	EmphasisWords   json.RawMessage `json:"emphasis_words"`
 	Beat            string          `json:"beat"`
 	CaptionStyle    string          `json:"caption_style"`
+	Layout          string          `json:"layout"`
+	Content         json.RawMessage `json:"content"`
 }
 
 // VisualQA is one persisted Visual QA run. Issues is the raw per-scene verdict

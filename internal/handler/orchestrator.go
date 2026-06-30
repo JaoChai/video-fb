@@ -92,7 +92,7 @@ func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request
 	})
 
 	go func() {
-		if err := h.orch.RetryAllFailed(context.Background(), 2); err != nil {
+		if err := h.orch.RetryAllFailed(context.Background(), 2, 0); err != nil {
 			log.Printf("Retry all failed: %v", err)
 			h.tracker.AddErrorLog(err.Error())
 		}

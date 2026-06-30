@@ -271,6 +271,14 @@ const (
 	targetDurationSec = 75
 )
 
+// production_stage checkpoint values (see migration 042). A clip at
+// stageContentReady or later has scenes+metadata persisted, so a retry can skip
+// the LLM stages and resume at rendering.
+const (
+	stageContentReady = "content_ready"
+	stageRendered     = "rendered"
+)
+
 // brandTailRe matches a trailing brand mention in any form the LLM might add:
 // " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", "[Ads Vance]", " Ads Vance".
 // Matching the bare name (no delimiter) at the end is deliberate — the canonical
@@ -404,6 +412,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			EmphasisWords:   emphasis,
 			Beat:            scene.Beat,
 			CaptionStyle:    scene.CaptionStyle,
+			Layout:          scene.Layout,
+			Content:         scene.Content,
 		})
 	}
 
@@ -415,15 +425,25 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		YoutubeTags:  script.YoutubeTags,
 	})
 
-	// ── Assemble the multi-scene 9:16 video + thumbnail + upload ──
+	// Content (script/scenes/critic/metadata) is now durably persisted — checkpoint
+	// so a later failure resumes at rendering instead of regenerating content.
+	contentStage := stageContentReady
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{ProductionStage: &contentStage})
+
+	return o.renderAndFinalize(ctx, clipID, q, scenes, preset, narration)
+}
+
+// renderAndFinalize runs the media/render/upload + visual-QA tail shared by the
+// full produce path and the resume path. It assumes scenes + metadata are already
+// persisted. On render failure it fails the clip (retriable); on success it marks
+// the clip ready/needs_review and records stage=rendered.
+func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
 	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
 
-	// ── Visual QA: look at the rendered frames; block auto-publish on a
-	//    confident visual defect. Optional gate; disabled/absent ⇒ 'ready'.
-	//    Fail-safe is fail-OPEN: infra errors never block (see VisualQAAgent). ──
+	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
@@ -443,12 +463,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.CompleteStep("visual_qa")
 	}
 
+	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
-		Status:       &status,
-		Video916URL:  &result.Video916URL,
-		ThumbnailURL: &result.ThumbnailURL,
-		VoiceScript:  &narration,
-		AnswerScript: &narration,
+		Status:          &status,
+		Video916URL:     &result.Video916URL,
+		ThumbnailURL:    &result.ThumbnailURL,
+		VoiceScript:     &narration,
+		AnswerScript:    &narration,
+		ProductionStage: &renderedStage,
 	})
 	o.clipsRepo.ClearFailReason(ctx, clipID)
 	if status == "ready" {
@@ -457,8 +479,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	return nil
 }
 
-func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error {
-	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries)
+func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int, cooldownMinutes int) error {
+	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries, cooldownMinutes)
 	if err != nil {
 		return fmt.Errorf("list failed: %w", err)
 	}
@@ -494,7 +516,51 @@ func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error
 	return nil
 }
 
+// resumeAtRender reports whether a failed clip has enough persisted state
+// (scenes + metadata) to skip the LLM stages and resume at rendering.
+func resumeAtRender(stage string) bool {
+	return stage == stageContentReady || stage == stageRendered
+}
+
 func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
+	if resumeAtRender(clip.ProductionStage) {
+		return o.resumeHyperframesProduction(ctx, clip)
+	}
+	return o.retryFull(ctx, clip)
+}
+
+// resumeHyperframesProduction reuses the DB-persisted scenes (no LLM re-run) and
+// resumes at the render stage. Falls back to a full rebuild if the scenes are
+// missing (shouldn't happen for a content_ready clip).
+func (o *Orchestrator) resumeHyperframesProduction(ctx context.Context, clip *models.Clip) error {
+	scenes, err := o.scenesRepo.ListByClip(ctx, clip.ID)
+	if err != nil || len(scenes) == 0 {
+		log.Printf("resume %s: scenes unavailable (%v) — full rebuild", clip.ID, err)
+		return o.retryFull(ctx, clip)
+	}
+	log.Printf("Resuming clip %s at render stage (%d scenes, stage=%s)", clip.ID, len(scenes), clip.ProductionStage)
+
+	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
+	if err != nil {
+		return o.failClip(ctx, clip.ID, fmt.Errorf("read brand aliases: %w", err))
+	}
+	status := "producing"
+	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status})
+
+	gen := scenesToGenerated(scenes)
+	narration := buildVoiceScript(scenes, brandAliases)
+	preset := producer.PresetByKey(clip.StylePreset)
+	q := agent.GeneratedQuestion{
+		Question:       clip.Question,
+		QuestionerName: clip.QuestionerName,
+		Category:       clip.Category,
+	}
+	return o.renderAndFinalize(ctx, clip.ID, q, gen, preset, narration)
+}
+
+// retryFull rebuilds a clip from scratch (script onward). Used when the clip has
+// no resumable content checkpoint.
+func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	log.Printf("Retrying failed clip %s: %s", clip.ID, clip.Title)
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
@@ -535,80 +601,13 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona)
 }
 
-func (o *Orchestrator) resumeFromImagePrompts(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {
-	theme, err := o.themesRepo.GetActive(ctx)
-	if err != nil {
-		return o.failClip(ctx, clipID, fmt.Errorf("get theme: %w", err))
-	}
-	imageCfg, err := o.agentsRepo.GetByName(ctx, "image")
-	if err != nil {
-		return o.failClip(ctx, clipID, fmt.Errorf("get image config: %w", err))
-	}
-
-	genScenes := scenesToGenerated(scenes)
-
-	o.tracker.StartStep("image_prompts")
-	imagePrompts, err := o.imageAgent.GeneratePrompts(ctx, genScenes, theme, questionerName, imageCfg)
-	if err != nil {
-		o.tracker.FailStep("image_prompts", err)
-		return o.failClip(ctx, clipID, fmt.Errorf("image prompts: %w", err))
-	}
-	o.saveImagePrompts(ctx, clipID, imagePrompts)
-	o.tracker.CompleteStep("image_prompts")
-
-	voiceScript := buildVoiceScript(scenes, brandAliases)
-	return o.runProduction(ctx, clipID, genScenes, imagePrompts, voiceScript)
-}
-
-func (o *Orchestrator) resumeFromProduction(ctx context.Context, clipID string, scenes []models.Scene, questionerName string, brandAliases map[string]string) error {
-	imagePrompts, err := parseImagePrompts(scenes)
-	if err != nil {
-		log.Printf("Retry %s: failed to parse image prompts, regenerating: %v", clipID, err)
-		return o.resumeFromImagePrompts(ctx, clipID, scenes, questionerName, brandAliases)
-	}
-
-	genScenes := scenesToGenerated(scenes)
-	voiceScript := buildVoiceScript(scenes, brandAliases)
-	return o.runProduction(ctx, clipID, genScenes, imagePrompts, voiceScript)
-}
-
-func (o *Orchestrator) runProduction(ctx context.Context, clipID string, scenes []agent.GeneratedScene, imagePrompts []agent.SceneImagePrompts, voiceScript string) error {
-	result, err := o.producer.Produce(ctx, clipID, scenes, imagePrompts, voiceScript)
-	if err != nil {
-		return o.failClip(ctx, clipID, fmt.Errorf("produce: %w", err))
-	}
-
-	readyStatus := "ready"
-	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
-		Status:       &readyStatus,
-		Video169URL:  &result.Video169URL,
-		Video916URL:  &result.Video916URL,
-		ThumbnailURL: &result.ThumbnailURL,
-		AnswerScript: &voiceScript,
-		VoiceScript:  &voiceScript,
-	})
-	o.clipsRepo.ClearFailReason(ctx, clipID)
-
-	log.Printf("Clip ready (resumed): %s", clipID)
-	return nil
-}
-
-func (o *Orchestrator) saveImagePrompts(ctx context.Context, clipID string, prompts []agent.SceneImagePrompts) {
-	for _, p := range prompts {
-		data, err := json.Marshal(map[string]string{"169": p.ImagePrompt169, "916": p.ImagePrompt916})
-		if err != nil {
-			log.Printf("Failed to marshal image prompt for clip %s scene %d: %v", clipID, p.SceneNumber, err)
-			continue
-		}
-		if err := o.scenesRepo.UpdateImagePrompt(ctx, clipID, p.SceneNumber, string(data)); err != nil {
-			log.Printf("Failed to save image prompt for clip %s scene %d: %v", clipID, p.SceneNumber, err)
-		}
-	}
-}
-
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 	gen := make([]agent.GeneratedScene, len(scenes))
 	for i, s := range scenes {
+		var emphasis []string
+		if len(s.EmphasisWords) > 0 {
+			_ = json.Unmarshal(s.EmphasisWords, &emphasis)
+		}
 		gen[i] = agent.GeneratedScene{
 			SceneNumber:     s.SceneNumber,
 			SceneType:       s.SceneType,
@@ -616,6 +615,14 @@ func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 			VoiceText:       s.VoiceText,
 			DurationSeconds: s.DurationSeconds,
 			TextOverlays:    s.TextOverlays,
+			LayoutVariant:   s.LayoutVariant,
+			OnScreenText:    s.OnScreenText,
+			EmphasisWords:   emphasis,
+			Beat:            s.Beat,
+			CaptionStyle:    s.CaptionStyle,
+			ImagePrompt:     s.ImagePrompt,
+			Layout:          s.Layout,
+			Content:         s.Content,
 		}
 	}
 	return gen
@@ -628,31 +635,6 @@ func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) str
 		b.WriteString(" ")
 	}
 	return sanitizeVoiceText(b.String(), brandAliases)
-}
-
-func parseImagePrompts(scenes []models.Scene) ([]agent.SceneImagePrompts, error) {
-	var prompts []agent.SceneImagePrompts
-	for _, s := range scenes {
-		if s.ImagePrompt == "" {
-			return nil, fmt.Errorf("scene %d has no image prompt", s.SceneNumber)
-		}
-		var parsed map[string]string
-		if err := json.Unmarshal([]byte(s.ImagePrompt), &parsed); err != nil {
-			return nil, fmt.Errorf("scene %d: invalid image prompt JSON: %w", s.SceneNumber, err)
-		}
-		if parsed["169"] == "" || parsed["916"] == "" {
-			return nil, fmt.Errorf("scene %d: missing image prompt keys", s.SceneNumber)
-		}
-		prompts = append(prompts, agent.SceneImagePrompts{
-			SceneNumber:    s.SceneNumber,
-			ImagePrompt169: parsed["169"],
-			ImagePrompt916: parsed["916"],
-		})
-	}
-	if len(prompts) == 0 {
-		return nil, fmt.Errorf("no image prompts found")
-	}
-	return prompts, nil
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
