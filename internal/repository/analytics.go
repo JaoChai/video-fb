@@ -237,6 +237,44 @@ func (r *AnalyticsRepo) PreviousPeriodTotals(ctx context.Context, days int) (mod
 	return s, nil
 }
 
+// PresetRetention returns the mean latest retention_rate per style_preset over the
+// last windowDays, across all platforms, for published clips that carry a preset
+// and have analytics. Presets without qualifying analytics simply do not appear.
+func (r *AnalyticsRepo) PresetRetention(ctx context.Context, windowDays int) ([]models.PresetScore, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (clip_id, platform, post_type)
+				clip_id, platform, post_type, retention_rate, fetched_at
+			FROM clip_analytics
+			WHERE fetched_at >= NOW() - make_interval(days => $1)
+			ORDER BY clip_id, platform, post_type, fetched_at DESC
+		)
+		SELECT c.style_preset,
+		       COALESCE(AVG(NULLIF(l.retention_rate, 0)), 0) AS avg_ret,
+		       COUNT(DISTINCT l.clip_id) AS n
+		FROM clips c
+		JOIN latest l ON l.clip_id = c.id
+		WHERE c.style_preset <> ''
+		GROUP BY c.style_preset`, windowDays)
+	if err != nil {
+		return nil, fmt.Errorf("preset retention: %w", err)
+	}
+	defer rows.Close()
+
+	var out []models.PresetScore
+	for rows.Next() {
+		var s models.PresetScore
+		if err := rows.Scan(&s.Preset, &s.AvgRetention, &s.N); err != nil {
+			return nil, fmt.Errorf("scan preset score: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate preset scores: %w", err)
+	}
+	return out, nil
+}
+
 func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) error {
 	if a.PostType == "" {
 		a.PostType = "regular"
