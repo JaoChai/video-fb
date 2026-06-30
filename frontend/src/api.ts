@@ -28,3 +28,6 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   const json = await res.json();
   return json.data;
 }
+
+export const stopProduction = () => apiFetch('/api/v1/orchestrator/stop', { method: 'POST' });
+export const publishTikTok = () => apiFetch('/api/v1/orchestrator/publish-tiktok', { method: 'POST' });

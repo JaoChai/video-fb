@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '../api';
+import { apiFetch, stopProduction, publishTikTok } from '../api';
+import { Badge } from '../components/ui/badge';
 import ProductionProgress from '../components/ProductionProgress';
 import { PageHeader } from '../components/page-header';
 import { StatusBadge } from '../components/status-badge';
@@ -9,7 +10,7 @@ import { Input } from '../components/ui/input';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
-import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
+import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight, ClipboardCheck, Square } from 'lucide-react';
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
@@ -22,6 +23,8 @@ interface Clip {
   category: string; status: string; created_at: string;
   fail_reason?: string; retry_count: number;
   video_9_16_url?: string | null;
+  style_preset: string;
+  content_format: string;
 }
 
 type StatusFilter = 'all' | 'published' | 'ready' | 'failed' | 'producing' | 'needs_review';
@@ -33,6 +36,7 @@ const FILTER_TABS: { key: StatusFilter; label: string; icon: typeof LayoutDashbo
   { key: 'needs_review', label: 'ต้องรีวิว', icon: ClipboardCheck },
   { key: 'published', label: 'Published', icon: CheckCircle2 },
   { key: 'ready', label: 'Ready', icon: Zap },
+  { key: 'producing', label: 'Producing', icon: Film },
   { key: 'failed', label: 'Failed', icon: AlertTriangle },
 ];
 
@@ -68,6 +72,8 @@ export default function ContentPage() {
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [publishingTikTok, setPublishingTikTok] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +91,7 @@ export default function ContentPage() {
   const { data: clips, isLoading } = useQuery({
     queryKey: ['clips'],
     queryFn: () => apiFetch<Clip[]>('/api/v1/clips'),
-    refetchInterval: (isProducing || publishing) ? 5000 : false,
+    refetchInterval: (isProducing || publishing || publishingTikTok) ? 5000 : false,
   });
 
   const statusCounts = useMemo(() => {
@@ -194,12 +200,54 @@ export default function ContentPage() {
     }
   }
 
+  async function handleStop(): Promise<void> {
+    setStopping(true);
+    try {
+      await stopProduction();
+      queryClient.invalidateQueries({ queryKey: ['production-status'] });
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+      success('หยุดการผลิตแล้ว');
+    } catch (e) {
+      showError(`หยุดการผลิตล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  async function handlePublishTikTok(): Promise<void> {
+    setPublishingTikTok(true);
+    try {
+      await publishTikTok();
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+      success('เริ่ม publish TikTok แล้ว');
+    } catch (e) {
+      showError(`Publish TikTok ล้มเหลว: ${e instanceof Error ? e.message : String(e)}`);
+      setPublishingTikTok(false);
+      return;
+    }
+    setTimeout(() => setPublishingTikTok(false), 30000);
+  }
+
   return (
     <div>
       <PageHeader
         title="Content"
         actions={
-          !isProducing ? (
+          isProducing ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleStop}
+              disabled={stopping}
+            >
+              {stopping ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Square className="size-4" />
+              )}
+              {stopping ? 'Stopping...' : 'Stop Production'}
+            </Button>
+          ) : (
             <>
               <Button onClick={handleProduce} disabled={producing} size="sm">
                 {producing ? (
@@ -225,22 +273,37 @@ export default function ContentPage() {
                 </Button>
               )}
               {statusCounts.ready > 0 && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={handlePublish}
-                  disabled={publishing}
-                >
-                  {publishing ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
-                  {publishing ? 'Publishing...' : `Publish Ready (${statusCounts.ready})`}
-                </Button>
+                <>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handlePublish}
+                    disabled={publishing}
+                  >
+                    {publishing ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
+                    {publishing ? 'Publishing...' : `Publish Ready (${statusCounts.ready})`}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handlePublishTikTok}
+                    disabled={publishingTikTok}
+                  >
+                    {publishingTikTok ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Send className="size-4" />
+                    )}
+                    {publishingTikTok ? 'Publishing TikTok...' : 'Publish TikTok'}
+                  </Button>
+                </>
               )}
             </>
-          ) : undefined
+          )
         }
       />
 
@@ -352,11 +415,19 @@ export default function ContentPage() {
                       </div>
                     )}
                     <div className="sm:hidden text-xs text-muted-foreground mt-0.5">
-                      {clip.category} · {relativeTime(clip.created_at)}
+                      {clip.category}{clip.content_format ? ` · ${clip.content_format}` : ''} · {relativeTime(clip.created_at)}
                     </div>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                    {clip.category}
+                    <div>{clip.category}</div>
+                    {clip.content_format && (
+                      <div className="text-xs text-muted-foreground/70 mt-0.5">{clip.content_format}</div>
+                    )}
+                    {clip.style_preset && (
+                      <Badge variant="outline" className="mt-1 text-[10px] px-1 py-0 h-auto">
+                        {clip.style_preset}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="py-3">
                     <div className="flex items-center gap-1.5">
