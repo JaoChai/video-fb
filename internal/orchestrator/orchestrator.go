@@ -271,6 +271,14 @@ const (
 	targetDurationSec = 75
 )
 
+// production_stage checkpoint values (see migration 042). A clip at
+// stageContentReady or later has scenes+metadata persisted, so a retry can skip
+// the LLM stages and resume at rendering.
+const (
+	stageContentReady = "content_ready"
+	stageRendered     = "rendered"
+)
+
 // brandTailRe matches a trailing brand mention in any form the LLM might add:
 // " | Ads Vance", "| Ads Vance", "{Ads Vance}", "(Ads Vance)", "[Ads Vance]", " Ads Vance".
 // Matching the bare name (no delimiter) at the end is deliberate — the canonical
@@ -415,15 +423,24 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		YoutubeTags:  script.YoutubeTags,
 	})
 
-	// ── Assemble the multi-scene 9:16 video + thumbnail + upload ──
+	// Content (script/scenes/critic/metadata) is now durably persisted — checkpoint
+	// so a later failure resumes at rendering instead of regenerating content.
+	contentStage := stageContentReady
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{ProductionStage: &contentStage})
+
+	return o.renderAndFinalize(ctx, clipID, q, scenes, preset, narration)
+}
+
+// renderAndFinalize runs the media/render/upload + visual-QA tail shared by the
+// full produce path and the resume path. It assumes scenes + metadata are already
+// persisted. On render failure it fails the clip (retriable); on success it marks
+// the clip ready/needs_review and records stage=rendered.
+func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
 	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
 
-	// ── Visual QA: look at the rendered frames; block auto-publish on a
-	//    confident visual defect. Optional gate; disabled/absent ⇒ 'ready'.
-	//    Fail-safe is fail-OPEN: infra errors never block (see VisualQAAgent). ──
 	status := "ready"
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
@@ -443,12 +460,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.CompleteStep("visual_qa")
 	}
 
+	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
-		Status:       &status,
-		Video916URL:  &result.Video916URL,
-		ThumbnailURL: &result.ThumbnailURL,
-		VoiceScript:  &narration,
-		AnswerScript: &narration,
+		Status:          &status,
+		Video916URL:     &result.Video916URL,
+		ThumbnailURL:    &result.ThumbnailURL,
+		VoiceScript:     &narration,
+		AnswerScript:    &narration,
+		ProductionStage: &renderedStage,
 	})
 	o.clipsRepo.ClearFailReason(ctx, clipID)
 	if status == "ready" {
@@ -457,8 +476,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	return nil
 }
 
-func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int) error {
-	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries)
+func (o *Orchestrator) RetryAllFailed(ctx context.Context, maxRetries int, cooldownMinutes int) error {
+	failed, err := o.clipsRepo.ListFailed(ctx, maxRetries, cooldownMinutes)
 	if err != nil {
 		return fmt.Errorf("list failed: %w", err)
 	}
