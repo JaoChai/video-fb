@@ -20,7 +20,7 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
-	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset`
+	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -29,7 +29,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.AnswerScript, &c.VoiceScript, &c.Category, &c.Status,
 		&c.Video169URL, &c.Video916URL, &c.ThumbnailURL,
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
-		&c.FailReason, &c.RetryCount, &c.StylePreset,
+		&c.FailReason, &c.RetryCount, &c.StylePreset, &c.ContentFormat,
 	)
 	return c, err
 }

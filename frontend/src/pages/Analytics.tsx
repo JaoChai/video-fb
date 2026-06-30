@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
 import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, AlertTriangle } from 'lucide-react'
-import { apiFetch } from '../api'
+import { apiFetch, getPresetPerformance, type PresetScore } from '../api'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
+import { Card, CardContent } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
 import { EmptyState } from '../components/empty-state'
 import { StatCard } from '../components/analytics/stat-card'
 import { SegmentCompare } from '../components/analytics/segment-compare'
@@ -103,6 +105,11 @@ export default function AnalyticsPage() {
     queryFn: () => apiFetch<SummaryResponse>(`/api/v1/analytics/summary?range=${range}`),
   })
 
+  const { data: presetPerf } = useQuery({
+    queryKey: ['preset-performance'],
+    queryFn: getPresetPerformance,
+  })
+
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerFetch = useMutation({
     mutationFn: () => apiFetch('/api/v1/analytics/fetch', { method: 'POST' }),
@@ -126,6 +133,11 @@ export default function AnalyticsPage() {
     watch: trend.map(t => t.watch_time_seconds),
     retention: trend.map(t => t.avg_retention_rate * 100),
   }), [trend])
+
+  const sortedPresets: PresetScore[] = useMemo(
+    () => [...(presetPerf ?? [])].sort((a, b) => b.avg_retention - a.avg_retention),
+    [presetPerf],
+  )
 
   return (
     <div>
@@ -202,6 +214,38 @@ export default function AnalyticsPage() {
               <span className="text-xs text-muted-foreground">Click a row to expand platform breakdown</span>
             </div>
             <TopClipsTable clips={data?.top_clips ?? []} />
+          </div>
+
+          <div>
+            <h2 className="text-sm font-semibold mb-2">By Style Preset</h2>
+            <Card>
+              <CardContent className="pt-4">
+                {sortedPresets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-2">
+                    ยังไม่มีข้อมูลพอ — ระบบกำลังสะสม retention ต่อธีม
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Preset</TableHead>
+                        <TableHead>Retention</TableHead>
+                        <TableHead>N</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sortedPresets.map(row => (
+                        <TableRow key={row.preset}>
+                          <TableCell className="font-medium">{row.preset}</TableCell>
+                          <TableCell>{(row.avg_retention * 100).toFixed(1)}%</TableCell>
+                          <TableCell>{row.n}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}

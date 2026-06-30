@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/models"
 )
 
 type SkillRevisionsRepo struct {
@@ -12,6 +14,26 @@ type SkillRevisionsRepo struct {
 
 func NewSkillRevisionsRepo(pool *pgxpool.Pool) *SkillRevisionsRepo {
 	return &SkillRevisionsRepo{pool: pool}
+}
+
+// List returns the most recent skill revisions, newest first, capped at limit rows.
+func (r *SkillRevisionsRepo) List(ctx context.Context, limit int) ([]models.SkillRevision, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT agent_name, rationale, critique_window, created_at
+		 FROM skill_revisions ORDER BY created_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list skill revisions: %w", err)
+	}
+	defer rows.Close()
+	var out []models.SkillRevision
+	for rows.Next() {
+		var s models.SkillRevision
+		if err := rows.Scan(&s.AgentName, &s.Rationale, &s.CritiqueWindow, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan skill revision: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // Record appends one audit row capturing the full old + new skills, the

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '../api';
+import { apiFetch, getClipCritique } from '../api';
 import { Button } from './ui/button';
+import { Badge } from './ui/badge';
 import { useToast } from './ui/toaster';
 import { CheckCircle2, X, Loader2, AlertTriangle, ShieldCheck, VideoOff } from 'lucide-react';
 
@@ -27,6 +28,18 @@ export interface ReviewClip {
   video_9_16_url?: string | null;
 }
 
+function parseScoreFields(raw: unknown): [string, number][] {
+  let obj: unknown = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return []; }
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.entries(obj as Record<string, unknown>)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number');
+  }
+  return [];
+}
+
 export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { success, error: showError } = useToast();
@@ -44,6 +57,11 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
   const { data: qa, isLoading } = useQuery({
     queryKey: ['visual-qa', clip.id],
     queryFn: () => apiFetch<VisualQAResult | null>(`/api/v1/clips/${clip.id}/visual-qa`),
+  });
+
+  const { data: critique } = useQuery({
+    queryKey: ['clip-critique', clip.id],
+    queryFn: () => getClipCritique(clip.id),
   });
 
   const failedScenes = qa?.issues?.filter(v => !v.ok) ?? [];
@@ -173,6 +191,30 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
             )}
           </div>
         </div>
+
+        {/* Critic critique — best effort, renders only when data is available */}
+        {critique != null && (
+          <div className="px-4 pb-4 border-t pt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold">Content Critic</h3>
+              {critique.applied && (
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">Applied</Badge>
+              )}
+            </div>
+            {(() => {
+              const fields = parseScoreFields(critique.score);
+              return fields.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {fields.map(([k, v]) => (
+                    <span key={k} className="text-xs bg-muted rounded px-2 py-1">
+                      {k}: {v}
+                    </span>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 p-4 border-t sticky bottom-0 bg-background">

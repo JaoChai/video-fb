@@ -60,6 +60,10 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"zernio_youtube_account_id": true,
 		"categories":                true,
 		"brand_aliases":             true,
+		"audience_persona":          true,
+		"zernio_tiktok_account_id":  true,
+		"content_preview_confirmed": true,
+		"express_consent_given":     true,
 	}
 
 	for k, v := range req {

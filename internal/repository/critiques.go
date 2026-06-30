@@ -2,10 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jaochai/video-fb/internal/models"
 )
+
+
 
 type CritiquesRepo struct {
 	pool *pgxpool.Pool
@@ -13,6 +18,22 @@ type CritiquesRepo struct {
 
 func NewCritiquesRepo(pool *pgxpool.Pool) *CritiquesRepo {
 	return &CritiquesRepo{pool: pool}
+}
+
+// GetByClip returns the most recent critique for a clip, or (nil, nil) when none exists.
+func (r *CritiquesRepo) GetByClip(ctx context.Context, clipID string) (*models.ClipCritique, error) {
+	var c models.ClipCritique
+	err := r.pool.QueryRow(ctx,
+		`SELECT clip_id, score, changes, applied, created_at
+		 FROM clip_critiques WHERE clip_id = $1 ORDER BY created_at DESC LIMIT 1`, clipID).
+		Scan(&c.ClipID, &c.Score, &c.Changes, &c.Applied, &c.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get critique by clip: %w", err)
+	}
+	return &c, nil
 }
 
 // Create appends one critique row. score and changes are JSON-encoded bytes.

@@ -6,4 +6,5 @@ export const ROUTES = {
   AGENTS: '/agents',
   PROMPT_HISTORY: '/prompt-history',
   SETTINGS: '/settings',
+  THEME: '/theme',
 } as const;

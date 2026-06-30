@@ -5,6 +5,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jaochai/video-fb/internal/handler"
+	"github.com/jaochai/video-fb/internal/producer"
 	"github.com/jaochai/video-fb/internal/progress"
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/rag"
@@ -12,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher, scheduleReload func()) *chi.Mux {
+func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher, scheduleReload func(), prod *producer.Producer) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -85,6 +86,12 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	r.Get("/api/v1/clips/{clipId}/analytics", analytics.ListByClip)
 	r.Post("/api/v1/analytics/fetch", analytics.Trigger)
 
+	presets := handler.NewPresetsHandler(repository.NewAnalyticsRepo(pool))
+	r.Route("/api/v1/presets", func(r chi.Router) {
+		r.Get("/", presets.List)
+		r.Get("/performance", presets.Performance)
+	})
+
 	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))
 	r.Route("/api/v1/settings", func(r chi.Router) {
 		r.Get("/", settings.Get)
@@ -93,8 +100,17 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Get("/test-zernio", settings.TestZernio)
 	})
 
-	prod := handler.NewProductionHandler(tracker)
-	r.Get("/api/v1/production/status", prod.GetStatus)
+	prodHandler := handler.NewProductionHandler(tracker)
+	r.Get("/api/v1/production/status", prodHandler.GetStatus)
+
+	critiques := handler.NewCritiquesHandler(repository.NewCritiquesRepo(pool))
+	r.Get("/api/v1/clips/{clipId}/critique", critiques.GetByClip)
+
+	skillRevs := handler.NewSkillRevisionsHandler(repository.NewSkillRevisionsRepo(pool))
+	r.Get("/api/v1/agents/skill-revisions", skillRevs.List)
+
+	status := handler.NewStatusHandler(prod)
+	r.Get("/api/v1/status/kie-credits", status.KieCredits)
 
 	return r
 }
