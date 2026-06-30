@@ -166,7 +166,7 @@ func main() {
 		if err := sched.Reload(ctx); err != nil {
 			log.Printf("Scheduler reload failed: %v", err)
 		}
-	})
+	}, prod)
 	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
 	router.SetOrchestrator(r, orchHandler)
 
