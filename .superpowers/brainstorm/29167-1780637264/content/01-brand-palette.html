@@ -1,0 +1,64 @@
+<h2>คำถาม 1 — Palette สีของช่อง (CI)</h2>
+<p class="subtitle">วิดีโอตอนนี้ใช้ navy เกือบดำ + ส้มอมแดง แต่โลโก้จริงเป็นน้ำเงินสด + ทอง อยากให้วิดีโอยึดสีชุดไหนเป็น CI?</p>
+
+<div class="section">
+  <span class="label">ค่าสีจริงที่สุ่มจากไฟล์โลโก้</span>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+    <div style="text-align:center"><div style="width:90px;height:60px;border-radius:8px;background:#0047AF;border:1px solid #fff3"></div><small>#0047AF royal</small></div>
+    <div style="text-align:center"><div style="width:90px;height:60px;border-radius:8px;background:#F0A030;border:1px solid #fff3"></div><small>#F0A030 amber</small></div>
+    <div style="text-align:center"><div style="width:90px;height:60px;border-radius:8px;background:#0A2358;border:1px solid #fff3"></div><small>#0A2358 navy</small></div>
+    <div style="text-align:center"><div style="width:90px;height:60px;border-radius:8px;background:#FFFFFF;border:1px solid #fff3"></div><small>#FFFFFF</small></div>
+  </div>
+</div>
+
+<div class="cards">
+  <!-- Option A: brand-faithful royal blue -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;overflow:hidden">
+      <div style="aspect-ratio:9/16;max-height:340px;margin:0 auto;background:radial-gradient(120% 80% at 50% 0%,#1a5fd0 0%,#0047AF 55%,#062f78 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;font-family:sans-serif;position:relative">
+        <div style="position:absolute;top:14px;left:14px;background:#F0A030;color:#0A2358;font-weight:800;font-size:11px;padding:5px 10px;border-radius:7px">ADS VANCE</div>
+        <div style="color:#fff;font-weight:800;font-size:26px;line-height:1.1;text-align:center;text-shadow:0 2px 8px #0006">ปิดการ์ด<br><span style="color:#F0A030">ไม่ทัน?</span></div>
+        <div style="color:#cfe0ff;font-size:13px;max-width:80%;text-align:center">ทำไมบัญชีโดนแบนตอนยิงแอด</div>
+        <div style="position:absolute;bottom:42px;left:8%;right:8%;background:#06245ecc;border:1px solid #F0A03088;border-radius:12px;padding:10px;color:#fff;font-size:13px;text-align:center;font-weight:700">ระบบจับ <span style="color:#F0A030">พฤติกรรมเสี่ยง</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · สีแบรนด์จริง (royal blue + ทอง)</h3>
+      <p>ตรงกับโลโก้/CI เป๊ะ ดู premium สดใส แตกต่างจากช่องคู่แข่งที่มักใช้พื้นดำ</p>
+    </div>
+  </div>
+
+  <!-- Option B: keep current deep navy -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;overflow:hidden">
+      <div style="aspect-ratio:9/16;max-height:340px;margin:0 auto;background:radial-gradient(120% 80% at 50% 0%,#16284a 0%,#0f1d35 45%,#0a1428 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;font-family:sans-serif;position:relative">
+        <div style="position:absolute;top:14px;left:14px;background:#ff6b2b;color:#fff;font-weight:800;font-size:11px;padding:5px 10px;border-radius:7px">ADS VANCE</div>
+        <div style="color:#fff;font-weight:800;font-size:26px;line-height:1.1;text-align:center;text-shadow:0 2px 8px #0009">ปิดการ์ด<br><span style="color:#ff6b2b">ไม่ทัน?</span></div>
+        <div style="color:#aebdd4;font-size:13px;max-width:80%;text-align:center">ทำไมบัญชีโดนแบนตอนยิงแอด</div>
+        <div style="position:absolute;bottom:42px;left:8%;right:8%;background:#0a1428d2;border:1px solid #ff6b2b88;border-radius:12px;padding:10px;color:#fff;font-size:13px;text-align:center;font-weight:700">ระบบจับ <span style="color:#ff6b2b">พฤติกรรมเสี่ยง</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · คงสีเดิม (navy เข้ม + ส้มแดง)</h3>
+      <p>Contrast จัดที่สุด ตัวอักษร/caption อ่านง่ายบนมือถือ แต่ไม่ตรงโลโก้</p>
+    </div>
+  </div>
+
+  <!-- Option C: hybrid -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0;overflow:hidden">
+      <div style="aspect-ratio:9/16;max-height:340px;margin:0 auto;background:radial-gradient(120% 80% at 50% 0%,#0d3a8f 0%,#0a2c66 50%,#071d44 100%);display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;font-family:sans-serif;position:relative">
+        <div style="position:absolute;top:14px;left:14px;background:#F0A030;color:#0A2358;font-weight:800;font-size:11px;padding:5px 10px;border-radius:7px">ADS VANCE</div>
+        <div style="color:#fff;font-weight:800;font-size:26px;line-height:1.1;text-align:center;text-shadow:0 2px 8px #0008">ปิดการ์ด<br><span style="color:#F0A030">ไม่ทัน?</span></div>
+        <div style="color:#bcd2ff;font-size:13px;max-width:80%;text-align:center">ทำไมบัญชีโดนแบนตอนยิงแอด</div>
+        <div style="position:absolute;bottom:42px;left:8%;right:8%;background:#06204acc;border:1px solid #F0A03088;border-radius:12px;padding:10px;color:#fff;font-size:13px;text-align:center;font-weight:700">ระบบจับ <span style="color:#F0A030">พฤติกรรมเสี่ยง</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Hybrid (น้ำเงินเข้มกลางๆ + ทอง)</h3>
+      <p>พื้นน้ำเงินแบรนด์แต่เข้มลงนิด เพื่อให้ caption อ่านง่าย + badge/accent เป็นทอง — สมดุลระหว่าง CI กับ readability</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:18px">คลิกเลือกการ์ดที่ชอบ แล้วพิมพ์บอกในแชตได้เลยครับ (ความเห็นเพิ่มเติมก็ได้ เช่น "ชอบ A แต่พื้นสดไป")</p>

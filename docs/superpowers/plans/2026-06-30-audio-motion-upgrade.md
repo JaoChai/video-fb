@@ -17,6 +17,7 @@
 - Hyperframes render JS must stay deterministic — no `Math.random()`/`Date.now()` in template JS (the lint gate `non_deterministic_code` falls a render back to a static image). All randomness happens server-side in Go.
 - Ambient volume under voice: `data-volume="0.15"`. Voice stays `data-volume="1"`.
 - Audio track indices must not collide with existing ones: root composition, badges=2, voice=5, progress=7, captions=9, scenes=10+i. Use **ambient=3**, **transition SFX=4**.
+- **Every `<audio>` element MUST have a unique `id`** — verified in the Task 0 spike: the Hyperframes renderer discovers media by `id`, and an audio element without one renders SILENT (lint `media_missing_id`). Ambient uses `id="amb"`; each JS-created SFX element uses `id="sfx<index>"`.
 - Commit after every task. Run `gofmt`/`go build ./...` before each commit.
 
 ---
@@ -717,6 +718,9 @@ func TestRenderIncludesAmbientAndCues(t *testing.T) {
 	if !strings.Contains(s, "assets/sfx/whoosh1.mp3") {
 		t.Error("transition cue not in cues JSON")
 	}
+	if !strings.Contains(s, `a.id = "sfx"`) {
+		t.Error("SFX audio elements must get a unique id (else silent — Task 0 finding)")
+	}
 }
 
 func TestRenderOmitsAudioWhenAbsent(t *testing.T) {
@@ -750,8 +754,9 @@ In the same template, in the `<script>` block, after `const SEGMENTS = {{.Segmen
 ```javascript
       // ── transition SFX cues (server-picked; appended as engine audio tracks) ──
       const CUES = {{.TransitionCuesJSON}};
-      (CUES || []).forEach((cue) => {
+      (CUES || []).forEach((cue, ci) => {
         const a = document.createElement("audio");
+        a.id = "sfx" + ci;                 // REQUIRED: no id ⇒ silent (Task 0 finding)
         a.setAttribute("data-start", cue.at);
         a.setAttribute("data-duration", "1.0");
         a.setAttribute("data-track-index", 4);
@@ -761,7 +766,7 @@ In the same template, in the `<script>` block, after `const SEGMENTS = {{.Segmen
       });
 ```
 
-> `root` is already defined at line 138 (`const root = document.getElementById("root");`), which precedes this insertion point. `{{.TransitionCuesJSON}}` renders `null` when there are no cues, so `(CUES || [])` is safe.
+> `root` is already defined at line 138 (`const root = document.getElementById("root");`), which precedes this insertion point. `{{.TransitionCuesJSON}}` renders `null` when there are no cues, so `(CUES || [])` is safe. Each SFX audio element gets a unique `id` (`sfx0`, `sfx1`, …) — without it the renderer treats the element as undiscoverable and the SFX is silent (Task 0 spike finding).
 
 - [ ] **Step 5: Run tests to verify they pass**
 
