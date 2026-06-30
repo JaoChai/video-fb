@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,6 +216,42 @@ func fileExists(path string) bool {
 	return stat.Size() > 0
 }
 
+// buildTransitionCues places one SFX per scene boundary (scene 2..N), firing
+// 0.2s before the incoming scene's start so the whoosh leads the visual cut.
+// names[i] is used for boundary i; extra names/specs are ignored. Returns nil
+// when there are <2 scenes or no names.
+func buildTransitionCues(specs []SceneSpec, names []string) []TransitionCue {
+	if len(specs) < 2 || len(names) == 0 {
+		return nil
+	}
+	var cues []TransitionCue
+	for i := 1; i < len(specs); i++ {
+		if i-1 >= len(names) {
+			break
+		}
+		at := specs[i].StartSec - 0.2
+		if at < 0 {
+			at = 0
+		}
+		cues = append(cues, TransitionCue{Name: names[i-1], AtSec: at})
+	}
+	return cues
+}
+
+func (p *Producer) lastAmbient(ctx context.Context) string {
+	var v string
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'last_ambient'`).Scan(&v)
+	return v
+}
+
+func (p *Producer) saveLastAmbient(ctx context.Context, name string) {
+	if _, err := p.pool.Exec(ctx,
+		`INSERT INTO settings (key, value) VALUES ('last_ambient', $1)
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, name); err != nil {
+		log.Printf("saveLastAmbient: %v", err)
+	}
+}
+
 // hyperframesDeps bundles the multi-scene render engine; set via EnableHyperframes.
 type hyperframesDeps struct {
 	builder  *CompositionBuilder
@@ -305,6 +342,32 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		Segments:        segments,
 		Palette:         preset.Palette,
 		BrandCSS:        preset.BrandCSS(),
+	}
+
+	if AudioMotionEnabled() {
+		params.AudioMotion = true
+
+		// Ambient bed: avoid-last pick, extracted from embed, looped to clip length.
+		lastAmb := p.lastAmbient(ctx)
+		ambName := PickAmbient(lastAmb, rand.Intn)
+		if ambName != "" && total > 0 {
+			rawAmb := filepath.Join(clipDir, "ambient-src.mp3")
+			if data, rerr := audioAssetsFS.ReadFile(ambientDir + "/" + ambName); rerr == nil {
+				if werr := os.WriteFile(rawAmb, data, 0o644); werr == nil {
+					preparedAmb := filepath.Join(clipDir, "ambient.mp3")
+					if berr := p.ffmpeg.BuildAmbientBed(rawAmb, preparedAmb, total); berr == nil {
+						params.AmbientLocalPath = preparedAmb
+						p.saveLastAmbient(ctx, ambName)
+					} else {
+						log.Printf("AssembleHyperframes916: ambient bed prep failed (continuing without): %v", berr)
+					}
+				}
+			}
+		}
+
+		// Transition SFX: one per scene boundary.
+		sfxNames := PickTransitionSFX(len(specs)-1, rand.Intn)
+		params.TransitionCues = buildTransitionCues(specs, sfxNames)
 	}
 
 	// 4) build the project dir and render the MP4.
