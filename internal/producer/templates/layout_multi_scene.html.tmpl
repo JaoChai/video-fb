@@ -124,6 +124,7 @@
       <div id="capStage" class="clip cap-stage" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="9" data-layout-allow-overflow></div>
 
       <audio id="vo" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="5" src="{{.VoiceSrc}}" data-volume="1"></audio>
+      {{if .AmbientSrc}}<audio id="amb" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="3" src="{{.AmbientSrc}}" data-volume="0.15"></audio>{{end}}
     </div>
 
     <script>
@@ -150,6 +151,19 @@
       });
 
       const SEGMENTS = {{.SegmentsJSON}};
+
+      // ── transition SFX cues (server-picked; appended as engine audio tracks) ──
+      const CUES = {{.TransitionCuesJSON}};
+      (CUES || []).forEach((cue, ci) => {
+        const a = document.createElement("audio");
+        a.id = "sfx" + ci;                 // REQUIRED: no id ⇒ silent (Task 0 finding)
+        a.setAttribute("data-start", cue.at);
+        a.setAttribute("data-duration", "1.0");
+        a.setAttribute("data-track-index", 4);
+        a.setAttribute("data-volume", "0.5");
+        a.setAttribute("src", cue.src);
+        root.appendChild(a);
+      });
 
       function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
       function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
