@@ -122,7 +122,7 @@ func main() {
 	formatsRepo := repository.NewFormatsRepo(pool)
 
 	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, criticAgent, visualQAAgent, prod,
-		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, themesRepo, agentsRepo, settingsRepo, formatsRepo, tracker)
+		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo, tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
