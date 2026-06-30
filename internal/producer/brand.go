@@ -170,8 +170,11 @@ var Type = TypeTokens{
 
 // ── CSSVars ───────────────────────────────────────────────────────────────────
 
-// CSSVars returns a CSS :root block of custom properties for all brand color,
-// motion, and type tokens.
+// CSSVars returns the :root block using the package default font (Type).
+// Kept for callers/tests that don't vary the font.
+func (b BrandColors) CSSVars() string { return b.cssVars(Type) }
+
+// cssVars renders the :root block for this palette with an explicit font.
 //
 // Color var names EXACTLY match the names referenced in
 // layout_multi_scene.html.tmpl (which injects this block via {{ .BrandCSS }}),
@@ -180,7 +183,7 @@ var Type = TypeTokens{
 // Motion and type vars are additive (prefixed --ease-*, --dur-*, --font-*).
 //
 // The output is deterministic; it contains no newline at the end of the block.
-func (b BrandColors) CSSVars() string {
+func (b BrandColors) cssVars(t TypeTokens) string {
 	return fmt.Sprintf(`:root {
   /* ── Brand colors (navy scale) ── */
   --navy-deep: %s;
@@ -224,8 +227,8 @@ func (b BrandColors) CSSVars() string {
 		b.Win, b.Warn,
 		Motion.EaseOut, Motion.EaseInOut, Motion.EaseIn, Motion.EaseSpring,
 		formatDur(Motion.DurFast), formatDur(Motion.DurNormal), formatDur(Motion.DurSlow),
-		Type.Family,
-		Type.WeightRegular, Type.WeightSemiBold, Type.WeightBold, Type.WeightExtraBold,
+		t.Family,
+		t.WeightRegular, t.WeightSemiBold, t.WeightBold, t.WeightExtraBold,
 	)
 }
 
