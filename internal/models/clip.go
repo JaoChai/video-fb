@@ -44,6 +44,8 @@ type Scene struct {
 	EmphasisWords   json.RawMessage `json:"emphasis_words"`
 	Beat            string          `json:"beat"`
 	CaptionStyle    string          `json:"caption_style"`
+	Layout          string          `json:"layout"`
+	Content         json.RawMessage `json:"content"`
 }
 
 // VisualQA is one persisted Visual QA run. Issues is the raw per-scene verdict

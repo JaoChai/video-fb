@@ -412,6 +412,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			EmphasisWords:   emphasis,
 			Beat:            scene.Beat,
 			CaptionStyle:    scene.CaptionStyle,
+			Layout:          scene.Layout,
+			Content:         scene.Content,
 		})
 	}
 
@@ -602,6 +604,10 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 	gen := make([]agent.GeneratedScene, len(scenes))
 	for i, s := range scenes {
+		var emphasis []string
+		if len(s.EmphasisWords) > 0 {
+			_ = json.Unmarshal(s.EmphasisWords, &emphasis)
+		}
 		gen[i] = agent.GeneratedScene{
 			SceneNumber:     s.SceneNumber,
 			SceneType:       s.SceneType,
@@ -609,6 +615,14 @@ func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
 			VoiceText:       s.VoiceText,
 			DurationSeconds: s.DurationSeconds,
 			TextOverlays:    s.TextOverlays,
+			LayoutVariant:   s.LayoutVariant,
+			OnScreenText:    s.OnScreenText,
+			EmphasisWords:   emphasis,
+			Beat:            s.Beat,
+			CaptionStyle:    s.CaptionStyle,
+			ImagePrompt:     s.ImagePrompt,
+			Layout:          s.Layout,
+			Content:         s.Content,
 		}
 	}
 	return gen
