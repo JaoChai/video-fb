@@ -53,7 +53,7 @@ export interface PresetsResponse {
 
 export const getActiveTheme = () => apiFetch<BrandTheme>('/api/v1/themes/active');
 export const updateTheme = (id: string, body: Partial<BrandTheme>) =>
-  apiFetch<BrandTheme>(`/api/v1/themes/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  apiFetch<void>(`/api/v1/themes/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
 export const getPresets = () => apiFetch<PresetsResponse>('/api/v1/presets');
 
 export interface PresetScore {
@@ -73,7 +73,7 @@ export interface ClipCritique {
 export interface SkillRevision {
   agent_name: string;
   rationale: string;
-  critique_window: string;
+  critique_window: number;
   created_at: string;
 }
 
