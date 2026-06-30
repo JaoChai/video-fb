@@ -39,8 +39,8 @@ func TestRenderIncludesAmbientAndCues(t *testing.T) {
 	if !strings.Contains(s, `src="assets/sfx/whoosh1.mp3"`) {
 		t.Error("static SFX audio src missing")
 	}
-	if !strings.Contains(s, `data-track-index="20"`) {
-		t.Error("static SFX audio track-index missing (expected 20 for first cue)")
+	if !strings.Contains(s, `data-track-index="30"`) {
+		t.Error("static SFX audio track-index missing (expected 30 for first cue)")
 	}
 }
 

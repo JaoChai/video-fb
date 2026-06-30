@@ -125,7 +125,7 @@
 
       <audio id="vo" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="5" src="{{.VoiceSrc}}" data-volume="1"></audio>
       {{if .AmbientSrc}}<audio id="amb" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="3" src="{{.AmbientSrc}}" data-volume="0.15"></audio>{{end}}
-      {{range $i, $cue := .TransitionCues}}<audio id="sfx{{$i}}" data-start="{{$cue.AtSec}}" data-duration="1.0" data-track-index="{{addInt 20 $i}}" src="{{$cue.Src}}" data-volume="0.5"></audio>
+      {{range $i, $cue := .TransitionCues}}<audio id="sfx{{$i}}" data-start="{{$cue.AtSec}}" data-duration="1.0" data-track-index="{{addInt 30 $i}}" src="{{$cue.Src}}" data-volume="0.5"></audio>
       {{end}}
     </div>
 
