@@ -126,6 +126,7 @@ func (r *ClipsRepo) ResetStaleProducing(ctx context.Context) (int64, error) {
 		`UPDATE clips
 		 SET status = 'failed',
 		     fail_reason = 'การผลิตถูกขัดจังหวะ (เซิร์ฟเวอร์รีสตาร์ท) — กด Retry เพื่อลองใหม่',
+		     retry_count = retry_count + 1,
 		     updated_at = NOW()
 		 WHERE status = 'producing'`)
 	if err != nil {
