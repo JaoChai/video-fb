@@ -23,6 +23,7 @@ type Clip struct {
 	FailReason     *string   `json:"fail_reason,omitempty"`
 	RetryCount     int       `json:"retry_count"`
 	StylePreset    string    `json:"style_preset"`
+	ContentFormat  string    `json:"content_format"`
 }
 
 type Scene struct {
