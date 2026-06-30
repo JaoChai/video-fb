@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	maxClipRetries      = 2
-	circuitBreakerLimit = 3
+	maxClipRetries       = 2
+	retryCooldownMinutes = 10
+	circuitBreakerLimit  = 3
 )
 
 type Scheduler struct {
@@ -144,7 +145,7 @@ func (s *Scheduler) produceAndPublish(ctx context.Context) error {
 	// everything else — the scheduler must never render concurrently with a manual
 	// /produce or /retry (two pipelines = 2×renderWorkers Chrome = CPU oversubscription).
 	// If a manual production already holds the gate, skip this tick entirely.
-	if err := s.orchestrator.RetryAllFailed(ctx, maxClipRetries); err != nil {
+	if err := s.orchestrator.RetryAllFailed(ctx, maxClipRetries, retryCooldownMinutes); err != nil {
 		if errors.Is(err, orchestrator.ErrProductionRunning) {
 			log.Println("Scheduler: a production is already running, skipping this tick")
 			return nil
@@ -176,6 +177,25 @@ func (s *Scheduler) produceAndPublish(ctx context.Context) error {
 	return nil
 }
 
+// retryFailed resumes/retries failed clips on a fast cadence (every 15 min). It
+// never produces a new clip. The production gate ensures it skips when a produce
+// tick is already rendering. Cooldown gives a flaky upstream time to recover.
+func (s *Scheduler) retryFailed(ctx context.Context) error {
+	if err := s.orchestrator.RetryAllFailed(ctx, maxClipRetries, retryCooldownMinutes); err != nil {
+		if errors.Is(err, orchestrator.ErrProductionRunning) {
+			log.Println("Scheduler: production running, skipping retry tick")
+			return nil
+		}
+		return fmt.Errorf("retry failed clips: %w", err)
+	}
+	if deleted, err := s.clipsRepo.DeleteOldFailed(ctx, maxClipRetries); err != nil {
+		log.Printf("Scheduler: retry cleanup error: %v", err)
+	} else if deleted > 0 {
+		log.Printf("Scheduler: cleaned up %d unrecoverable clips", deleted)
+	}
+	return nil
+}
+
 func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 	switch action {
 	case "publish_daily":
@@ -190,6 +210,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.publisher.FetchAnalytics
 	case "learn":
 		return s.learner.RunOnce
+	case "retry_failed":
+		return s.retryFailed
 	default:
 		return nil
 	}
