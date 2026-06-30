@@ -170,8 +170,11 @@ var Type = TypeTokens{
 
 // ── CSSVars ───────────────────────────────────────────────────────────────────
 
-// CSSVars returns a CSS :root block of custom properties for all brand color,
-// motion, and type tokens.
+// CSSVars returns the :root block using the package default font (Type).
+// Kept for callers/tests that don't vary the font.
+func (b BrandColors) CSSVars() string { return b.cssVars(Type) }
+
+// cssVars renders the :root block for this palette with an explicit font.
 //
 // Color var names EXACTLY match the names referenced in
 // layout_multi_scene.html.tmpl (which injects this block via {{ .BrandCSS }}),
@@ -180,7 +183,7 @@ var Type = TypeTokens{
 // Motion and type vars are additive (prefixed --ease-*, --dur-*, --font-*).
 //
 // The output is deterministic; it contains no newline at the end of the block.
-func (b BrandColors) CSSVars() string {
+func (b BrandColors) cssVars(t TypeTokens) string {
 	return fmt.Sprintf(`:root {
   /* ── Brand colors (navy scale) ── */
   --navy-deep: %s;
@@ -224,8 +227,8 @@ func (b BrandColors) CSSVars() string {
 		b.Win, b.Warn,
 		Motion.EaseOut, Motion.EaseInOut, Motion.EaseIn, Motion.EaseSpring,
 		formatDur(Motion.DurFast), formatDur(Motion.DurNormal), formatDur(Motion.DurSlow),
-		Type.Family,
-		Type.WeightRegular, Type.WeightSemiBold, Type.WeightBold, Type.WeightExtraBold,
+		t.Family,
+		t.WeightRegular, t.WeightSemiBold, t.WeightBold, t.WeightExtraBold,
 	)
 }
 
@@ -246,7 +249,7 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 // buildScenePrompt composes a complete AI image-generation prompt from three
 // locked blocks:
 //
-//  1. Style anchor — Brand.ImageStyleAnchor(), shared across all scenes so every
+//  1. Style anchor — preset.ImageAnchor, shared across all scenes so every
 //     clip has a cohesive visual identity.
 //  2. Subject — the caller-supplied concept (e.g. "a Facebook Ads Manager
 //     dashboard showing a rising conversion graph"). Falls back to
@@ -254,18 +257,16 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 //  3. Composition — instructs the image model to preserve the safe zone for text
 //     overlay and produce absolutely no text, letters, or logos in the image.
 //
-// The function is deterministic: same (concept, aspect) always yields the same
-// string. It is placed in brand.go because it is purely brand-prompt composition,
-// building on ImageStyleAnchor and SafeZone which live here.
-func buildScenePrompt(concept, aspect string) string {
+// The function is deterministic: same (concept, aspect, preset) always yields the
+// same string. It is placed in brand.go because it is purely brand-prompt
+// composition, building on ImageAnchor and SafeZone which live here.
+func buildScenePrompt(concept, aspect string, preset StylePreset) string {
 	subject := strings.TrimSpace(concept)
 	if subject == "" {
 		subject = genericSceneSubject
 	}
-
-	sz := Brand.SafeZone(aspect)
-
-	return Brand.ImageStyleAnchor() + " " +
+	sz := preset.Palette.SafeZone(aspect)
+	return preset.ImageAnchor + " " +
 		"Subject: " + subject + ". " +
 		"Composition: " + sz.NegativeSpace + ". " +
 		"Keep the image uncluttered with generous negative space. " +

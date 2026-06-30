@@ -85,4 +85,9 @@ type ScenesParams struct {
 	CTAText         string // call-to-action line shown under the outro mascot ("" = none)
 	Scenes          []SceneSpec
 	Segments        []TranscriptSegment
+
+	// Palette + BrandCSS drive per-clip style presets. When zero/empty,
+	// RenderCompositionScenes falls back to the package-global Brand (today's look).
+	Palette  BrandColors
+	BrandCSS string
 }

@@ -240,7 +240,7 @@ func (p *Producer) EnableHyperframes(fontsDir string) {
 // css) → GeneratedScene→SceneSpec → fill the multi-scene template → render.
 // Upload / thumbnail / clip-status are the caller's job (orchestrator).
 // Requires EnableHyperframes to have been called.
-func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene) (string, error) {
+func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (string, error) {
 	if p.hf == nil {
 		return "", fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")
 	}
@@ -273,7 +273,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		}
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 		if !fileExists(bgFile) && !imageDegraded {
-			prompt := buildScenePrompt(s.ImagePrompt, "9:16")
+			prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset)
 			if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
 				log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
 				imageDegraded = true
@@ -303,6 +303,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		DurationSeconds: total,
 		Scenes:          specs,
 		Segments:        segments,
+		Palette:         preset.Palette,
+		BrandCSS:        preset.BrandCSS(),
 	}
 
 	// 4) build the project dir and render the MP4.
@@ -327,9 +329,9 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 // from the first frame, uploads both to kie.ai, and returns their URLs. It is the
 // multi-scene counterpart to the static Produce. Requires EnableHyperframes and a
 // non-nil tracker (the production path always provides one).
-func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene) (*ProduceResult, error) {
+func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*ProduceResult, error) {
 	p.tracker.StartStep("assembly")
-	mp4Path, err := p.AssembleHyperframes916(ctx, clipID, scenes)
+	mp4Path, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset)
 	if err != nil {
 		p.tracker.FailStep("assembly", err)
 		return nil, fmt.Errorf("assemble hyperframes: %w", err)

@@ -22,6 +22,7 @@ type Clip struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 	FailReason     *string   `json:"fail_reason,omitempty"`
 	RetryCount     int       `json:"retry_count"`
+	StylePreset    string    `json:"style_preset"`
 }
 
 type Scene struct {
