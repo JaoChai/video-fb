@@ -94,14 +94,14 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				Content:    title + "\n\n" + desc,
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video169}},
-				Visibility: VisibilityPrivate,
+				Visibility: VisibilityPublic,
 				PublishNow: true,
 			})
 			if err != nil {
 				log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
 				continue
 			}
-			log.Printf("Posted 16:9 private for clip %s → %s", clipID, result169.Post.ID)
+			log.Printf("Posted 16:9 public for clip %s → %s", clipID, result169.Post.ID)
 			mainPostID = result169.Post.ID
 		}
 
@@ -119,13 +119,13 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				Content:    shortsTitle + "\n\n" + desc,
 				Platforms:  platforms,
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
-				Visibility: VisibilityPrivate,
+				Visibility: VisibilityPublic,
 				PublishNow: true,
 			})
 			if err != nil {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
 			} else {
-				log.Printf("Posted 9:16 Shorts private for clip %s → %s", clipID, result916.Post.ID)
+				log.Printf("Posted 9:16 Shorts public for clip %s → %s", clipID, result916.Post.ID)
 				shortsPostID = result916.Post.ID
 			}
 		}

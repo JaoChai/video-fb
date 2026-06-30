@@ -18,6 +18,7 @@ import (
 const zernioAPI = "https://zernio.com/api/v1"
 
 const VisibilityPrivate = "private"
+const VisibilityPublic = "public"
 
 type ZernioClient struct {
 	fallbackKey string
