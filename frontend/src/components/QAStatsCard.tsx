@@ -35,7 +35,7 @@ export function QAStatsCard() {
         <h3 className="text-sm font-semibold">Visual QA</h3>
         <span className="text-xs text-muted-foreground">ด่านตรวจคุณภาพก่อน publish</span>
       </div>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {stats.map(s => (
           <div key={s.label}>
             <div className={`text-xl font-semibold tabular-nums ${s.className}`}>{s.value}</div>
