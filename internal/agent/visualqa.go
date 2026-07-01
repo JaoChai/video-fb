@@ -69,7 +69,7 @@ type VisualQATemplateData struct {
 }
 
 // VisualQAAgent looks at one rendered frame per scene and flags visual defects.
-// Runs on a vision-capable Claude model (cfg.Model = claude-sonnet-4-6).
+// Runs on a vision-capable Claude model (cfg.Model = claude-sonnet-5).
 type VisualQAAgent struct {
 	llm *KieLLMClient
 }

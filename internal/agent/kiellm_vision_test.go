@@ -7,7 +7,7 @@ import (
 
 func TestBuildClaudeVisionBody_Shape(t *testing.T) {
 	imgs := [][]byte{{0x89, 0x50, 0x4e, 0x47}} // fake PNG bytes
-	raw, err := buildClaudeVisionBody("claude-sonnet-4-6", "SYS", "USER", 0.2, imgs, kieLLMMaxTokens)
+	raw, err := buildClaudeVisionBody("claude-sonnet-5", "SYS", "USER", 0.2, imgs, kieLLMMaxTokens)
 	if err != nil {
 		t.Fatalf("buildClaudeVisionBody error: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestBuildClaudeVisionBody_Shape(t *testing.T) {
 		t.Fatalf("body not valid JSON: %v\nraw: %s", err, raw)
 	}
 
-	if parsed.Model != "claude-sonnet-4-6" || parsed.System != "SYS" || parsed.Stream != false {
+	if parsed.Model != "claude-sonnet-5" || parsed.System != "SYS" || parsed.Stream != false {
 		t.Fatalf("scalar fields wrong: %+v", parsed)
 	}
 	if len(parsed.Messages) != 1 || parsed.Messages[0].Role != "user" {
@@ -59,7 +59,7 @@ func TestBuildClaudeVisionBody_Shape(t *testing.T) {
 }
 
 func TestBuildClaudeVisionBody_MultipleImages(t *testing.T) {
-	raw, err := buildClaudeVisionBody("claude-sonnet-4-6", "", "U", 0, [][]byte{{1}, {2}, {3}}, 100)
+	raw, err := buildClaudeVisionBody("claude-sonnet-5", "", "U", 0, [][]byte{{1}, {2}, {3}}, 100)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}

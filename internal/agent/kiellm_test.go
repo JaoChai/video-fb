@@ -13,7 +13,7 @@ func TestProviderForModel(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"claude sonnet", "claude-sonnet-4-6", "claude", false},
+		{"claude sonnet", "claude-sonnet-5", "claude", false},
 		{"gemini flash", "gemini-3-5-flash", "gemini", false},
 		{"gpt5 fallback", "gpt-5-4", "gpt5", false},
 		{"unknown", "openai/gpt-4.1", "", true},
@@ -33,7 +33,7 @@ func TestProviderForModel(t *testing.T) {
 }
 
 func TestBuildClaudeBody(t *testing.T) {
-	body, err := buildClaudeBody("claude-sonnet-4-6", "SYS", "USER", 0.5, 8000)
+	body, err := buildClaudeBody("claude-sonnet-5", "SYS", "USER", 0.5, 8000)
 	if err != nil {
 		t.Fatalf("buildClaudeBody err: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestBuildClaudeBody(t *testing.T) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		t.Fatalf("body not valid JSON: %v", err)
 	}
-	if parsed["model"] != "claude-sonnet-4-6" {
+	if parsed["model"] != "claude-sonnet-5" {
 		t.Errorf("model = %v", parsed["model"])
 	}
 	if parsed["system"] != "SYS" {
