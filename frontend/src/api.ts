@@ -81,3 +81,14 @@ export const getPresetPerformance = () => apiFetch<PresetScore[]>('/api/v1/prese
 export const getKieCredits = () => apiFetch<{ credits: number; error?: string }>('/api/v1/status/kie-credits');
 export const getClipCritique = (id: string) => apiFetch<ClipCritique | null>(`/api/v1/clips/${id}/critique`);
 export const getSkillRevisions = () => apiFetch<SkillRevision[]>('/api/v1/agents/skill-revisions');
+
+export interface AutoReview {
+  decision: string;
+  confidence: number;
+  defect_type: string;
+  reasons: string[];
+  created_at: string;
+}
+
+export const getClipAutoReview = (clipId: string) =>
+  apiFetch<AutoReview | null>(`/api/v1/clips/${clipId}/auto-review`);
