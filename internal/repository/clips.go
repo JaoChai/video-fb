@@ -21,7 +21,7 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
 	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format,
-	production_stage`
+	production_stage, review_retry_count, auto_review_held`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -31,7 +31,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.Video169URL, &c.Video916URL, &c.ThumbnailURL,
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
 		&c.FailReason, &c.RetryCount, &c.StylePreset, &c.ContentFormat,
-		&c.ProductionStage,
+		&c.ProductionStage, &c.ReviewRetryCount, &c.AutoReviewHeld,
 	)
 	return c, err
 }
@@ -165,6 +165,40 @@ func (r *ClipsRepo) IncrementRetry(ctx context.Context, id, reason string) error
 		return fmt.Errorf("increment retry for clip %s: %w", id, err)
 	}
 	return nil
+}
+
+// ListNeedsReview returns needs_review clips eligible for auto-review: not held
+// and under the review-retry cap, oldest first, capped at `limit`.
+func (r *ClipsRepo) ListNeedsReview(ctx context.Context, retryCap, limit int) ([]models.Clip, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+clipColumns+` FROM clips
+		 WHERE status = 'needs_review' AND auto_review_held = FALSE AND review_retry_count < $1
+		 ORDER BY created_at ASC LIMIT $2`, retryCap, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query needs_review clips: %w", err)
+	}
+	defer rows.Close()
+	var clips []models.Clip
+	for rows.Next() {
+		c, err := scanClip(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan needs_review clip: %w", err)
+		}
+		clips = append(clips, c)
+	}
+	return clips, nil
+}
+
+// SetAutoReviewHeld marks a clip as held so the auto-review tick stops re-judging it.
+func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE clips SET auto_review_held = TRUE, updated_at = NOW() WHERE id = $1`, id)
+	return err
+}
+
+// IncrementReviewRetry bumps the review-retry counter (separate from retry_count).
+func (r *ClipsRepo) IncrementReviewRetry(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE clips SET review_retry_count = review_retry_count + 1, updated_at = NOW() WHERE id = $1`, id)
+	return err
 }
 
 // ClearFailReason wipes a stale fail_reason once a clip has successfully
