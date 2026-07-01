@@ -34,7 +34,7 @@ SELECT
   "score": { "hook": 8, "clarity": 7, "brand_fit": 9, "overall": 8 },
   "changes": [ { "field": "scene[0].voice_text", "reason": "hook ไม่ดึงใน 2 วิแรก" } ]
 }',
-  'claude-sonnet-4-6',
+  'claude-sonnet-5',
   0.3,
   TRUE,
   '- hook สายนี้: เปิดด้วยตัวเลขช็อกหรือคำถามที่โดนความกลัว (โดนแบน/เสียเงิน/บัญชีปิด).

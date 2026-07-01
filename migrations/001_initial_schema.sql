@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_name TEXT UNIQUE NOT NULL,
     system_prompt TEXT NOT NULL,
-    model TEXT NOT NULL DEFAULT 'claude-sonnet-4-6-20250514',
+    model TEXT NOT NULL DEFAULT 'claude-sonnet-5',
     temperature FLOAT NOT NULL DEFAULT 0.7,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     config JSONB NOT NULL DEFAULT '{}'
@@ -121,10 +121,10 @@ CREATE TABLE IF NOT EXISTS brand_themes (
 );
 
 INSERT INTO agent_configs (agent_name, system_prompt, model) VALUES
-    ('question', 'You generate realistic customer questions about Facebook Ads problems in Thai.', 'claude-sonnet-4-6-20250514'),
-    ('script', 'You write Q&A video scripts answering Facebook Ads questions in Thai.', 'claude-sonnet-4-6-20250514'),
-    ('image', 'You generate image prompts for video scenes matching brand theme.', 'claude-sonnet-4-6-20250514'),
-    ('analytics', 'You analyze video performance metrics and recommend improvements.', 'claude-sonnet-4-6-20250514')
+    ('question', 'You generate realistic customer questions about Facebook Ads problems in Thai.', 'claude-sonnet-5'),
+    ('script', 'You write Q&A video scripts answering Facebook Ads questions in Thai.', 'claude-sonnet-5'),
+    ('image', 'You generate image prompts for video scenes matching brand theme.', 'claude-sonnet-5'),
+    ('analytics', 'You analyze video performance metrics and recommend improvements.', 'claude-sonnet-5')
 ON CONFLICT (agent_name) DO NOTHING;
 
 INSERT INTO brand_themes (name, primary_color, secondary_color, accent_color, active)

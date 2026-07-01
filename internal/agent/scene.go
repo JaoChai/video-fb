@@ -18,7 +18,7 @@ type SceneTemplateData struct {
 
 // SceneAgent is the Director: it breaks a finished script into 6-10 constrained
 // scenes for the 9:16 hyperframes template. Runs on Claude (cfg.Model is
-// claude-sonnet-4-6, routed by KieLLMClient prefix). Output fields map onto the
+// claude-sonnet-5, routed by KieLLMClient prefix). Output fields map onto the
 // new scenes columns added in Plan 2b-1.
 type SceneAgent struct {
 	llm *KieLLMClient

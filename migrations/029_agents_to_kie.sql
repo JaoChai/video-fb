@@ -4,7 +4,7 @@
 -- (replaces perplexity/sonar). Idempotent: re-running just re-sets the same values.
 
 UPDATE agent_configs SET model = 'gemini-3-5-flash' WHERE agent_name = 'research';
-UPDATE agent_configs SET model = 'claude-sonnet-4-6' WHERE agent_name = 'script';
+UPDATE agent_configs SET model = 'claude-sonnet-5' WHERE agent_name = 'script';
 UPDATE agent_configs SET model = 'gemini-3-5-flash' WHERE agent_name = 'image';
 UPDATE agent_configs SET model = 'gemini-3-5-flash' WHERE agent_name = 'question';
 UPDATE agent_configs SET model = 'gemini-3-5-flash' WHERE agent_name = 'analytics';

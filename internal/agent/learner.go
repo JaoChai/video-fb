@@ -34,7 +34,7 @@ type learnerTemplateData struct {
 }
 
 // LearnerAgent proposes improved skills guidelines for an upstream agent from
-// recurring quality issues. Runs on Claude (cfg.Model is claude-sonnet-4-6).
+// recurring quality issues. Runs on Claude (cfg.Model is claude-sonnet-5).
 type LearnerAgent struct {
 	llm *KieLLMClient
 }
