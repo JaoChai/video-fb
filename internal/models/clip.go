@@ -61,6 +61,17 @@ type VisualQA struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// AutoReview is one append-only auto-review decision row.
+type AutoReview struct {
+	ID         string          `json:"id"`
+	ClipID     string          `json:"clip_id"`
+	Decision   string          `json:"decision"`
+	Confidence float64         `json:"confidence"`
+	DefectType string          `json:"defect_type"`
+	Reasons    json.RawMessage `json:"reasons"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
 // VisualQAStats is the aggregate Visual QA tally shown on the Content page:
 // how many QA runs happened and how many blocked a clip (passed=false). Survives
 // clip deletion (clip_id FK is ON DELETE SET NULL).
