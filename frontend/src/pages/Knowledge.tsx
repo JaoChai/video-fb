@@ -198,7 +198,7 @@ export default function KnowledgePage() {
             <h3 className="text-sm font-semibold">New Document</h3>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Input
                 placeholder="Document name"
                 value={newDoc.name}
@@ -208,7 +208,7 @@ export default function KnowledgePage() {
               <select
                 value={newDoc.category}
                 onChange={e => setNewDoc(prev => ({ ...prev, category: e.target.value }))}
-                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-[180px]"
+                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-full sm:w-[180px]"
               >
                 {CATEGORIES.map(c => (
                   <option key={c} value={c}>{categoryLabels[c]}</option>
@@ -312,7 +312,7 @@ export default function KnowledgePage() {
                       {/* Expanded */}
                       {isExpanded && (
                         <CardContent className="pt-0 space-y-3">
-                          <div className="flex gap-3">
+                          <div className="flex flex-col sm:flex-row gap-3">
                             <Input
                               value={e.name ?? source.name}
                               onChange={ev => handleEdit(source.id, 'name', ev.target.value)}
@@ -321,7 +321,7 @@ export default function KnowledgePage() {
                             <select
                               value={e.category ?? source.category}
                               onChange={ev => handleEdit(source.id, 'category', ev.target.value)}
-                              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-[180px]"
+                              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 w-full sm:w-[180px]"
                             >
                               {CATEGORIES.map(c => (
                                 <option key={c} value={c}>{categoryLabels[c]}</option>

@@ -80,7 +80,7 @@ export function AgentModelsCard({ agents }: AgentModelsCardProps) {
             key={agent.id}
             className="flex items-center gap-3 rounded-lg border bg-card p-3.5"
           >
-            <div className="w-[120px] shrink-0">
+            <div className="w-24 shrink-0 sm:w-[120px]">
               <span className="text-sm font-medium">{agent.agent_name}</span>
             </div>
             <Input
