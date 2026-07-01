@@ -756,7 +756,9 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	mids := sceneMids(scenes)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
-		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("ar-scene%d.png", s.SceneNumber))
+		// Key the PNG to the already-unique mp4 temp filename so two clips'
+		// scene-N frames never collide under concurrency.
+		outPath := mp4Path + fmt.Sprintf(".scene%d.png", s.SceneNumber)
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
 			log.Printf("autoreview: scene %d frame extract failed (skip): %v", s.SceneNumber, err)
 			continue
@@ -788,7 +790,30 @@ func (o *Orchestrator) AutoReviewPending(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("auto-review list: %w", err)
 	}
+	if len(clips) == 0 {
+		return nil
+	}
+
+	// A retry decision below re-renders via RetryClip, which shares the single
+	// Chrome/CPU render budget. Acquire the production gate for the whole batch —
+	// same pattern as RetryAllFailed — so we never oversubscribe it with a
+	// concurrent produce/retry tick. If busy, skip this tick (return nil, like
+	// retryFailed) rather than surface a hard error.
+	if !o.tracker.StartProduction(len(clips)) {
+		log.Println("autoreview: production running, skipping tick")
+		return nil
+	}
+	defer o.tracker.FinishProduction()
+
+	ctx, cancel := context.WithCancel(ctx)
+	o.tracker.SetCancelFunc(cancel)
+	defer cancel()
+
 	for i := range clips {
+		if ctx.Err() != nil {
+			log.Printf("autoreview: cancelled, stopping at clip %d/%d", i+1, len(clips))
+			break
+		}
 		o.autoReviewOne(ctx, &clips[i], cfg)
 	}
 	return nil
@@ -810,11 +835,23 @@ func (o *Orchestrator) autoReviewOne(ctx context.Context, clip *models.Clip, cfg
 	}
 
 	var qaIssues []string
-	if qa, err := o.visualQARepo.GetLatestByClipID(ctx, clip.ID); err == nil && qa != nil {
+	if qa, err := o.visualQARepo.GetLatestByClipID(ctx, clip.ID); err != nil {
+		log.Printf("autoreview: clip %s visual-QA lookup failed (continuing with no QA issues): %v", clip.ID, err)
+	} else if qa != nil {
 		qaIssues = flattenQAIssues(qa)
 	}
 
 	frames := o.autoReviewFrames(ctx, *clip.Video916URL, scenes)
+	// Fail-closed: approve must only be reachable when EVERY scene frame is
+	// present. A per-scene extract/read failure yields a partial slice — a
+	// flagged scene could be silently missing — so hold for a human instead.
+	if len(frames) < len(scenes) {
+		reason := fmt.Sprintf("partial frame extraction — %d/%d scenes", len(frames), len(scenes))
+		log.Printf("autoreview: clip %s %s — holding", clip.ID, reason)
+		o.recordAndHold(ctx, clip, agent.AutoReviewResult{Decision: "hold", Reasons: []string{reason}})
+		return
+	}
+
 	res := o.autoReviewAgent.Judge(ctx, agent.AutoReviewInput{
 		Question: clip.Question,
 		Frames:   frames,
@@ -835,14 +872,23 @@ func (o *Orchestrator) autoReviewOne(ctx context.Context, clip *models.Clip, cfg
 		}
 		log.Printf("autoreview: clip %s APPROVED (conf %.2f) — now ready", clip.ID, res.Confidence)
 	case "retry":
+		// Increment the retry budget only AFTER a successful re-render so a
+		// skipped/failed render doesn't burn a retry. RetryClip relies on the
+		// caller-held production gate (acquired in AutoReviewPending); it doesn't
+		// acquire one itself, so ErrProductionRunning shouldn't occur here — but
+		// be defensive and leave the clip unincremented for the next tick.
+		if err := o.RetryClip(ctx, clip); err != nil {
+			if errors.Is(err, ErrProductionRunning) {
+				log.Printf("autoreview: clip %s retry skipped (production running) — leaving retry count for next tick", clip.ID)
+				return
+			}
+			log.Printf("autoreview: clip %s retry render failed (retry count unchanged): %v", clip.ID, err)
+			return
+		}
 		if err := o.clipsRepo.IncrementReviewRetry(ctx, clip.ID); err != nil {
 			log.Printf("autoreview: clip %s retry counter bump failed: %v", clip.ID, err)
 		}
-		if err := o.RetryClip(ctx, clip); err != nil {
-			log.Printf("autoreview: clip %s retry render failed: %v", clip.ID, err)
-		} else {
-			log.Printf("autoreview: clip %s RETRY re-render triggered (review_retry now %d)", clip.ID, clip.ReviewRetryCount+1)
-		}
+		log.Printf("autoreview: clip %s RETRY re-render triggered (review_retry now %d)", clip.ID, clip.ReviewRetryCount+1)
 	default: // hold
 		o.recordHeld(ctx, clip)
 	}
