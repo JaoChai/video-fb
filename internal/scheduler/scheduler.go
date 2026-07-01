@@ -212,6 +212,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.learner.RunOnce
 	case "retry_failed":
 		return s.retryFailed
+	case "auto_review":
+		return s.orchestrator.AutoReviewPending
 	default:
 		return nil
 	}
