@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -58,23 +60,25 @@ func scriptNarration(script *agent.GeneratedScript) string {
 }
 
 type Orchestrator struct {
-	settingsRepo  *repository.SettingsRepo
-	formatsRepo   *repository.FormatsRepo
-	questionAgent *agent.QuestionAgent
-	scriptAgent   *agent.ScriptAgent
-	imageAgent    *agent.ImageAgent
-	sceneAgent    *agent.SceneAgent
-	criticAgent   *agent.CriticAgent
-	visualQAAgent *agent.VisualQAAgent
-	producer      *producer.Producer
-	clipsRepo     *repository.ClipsRepo
-	scenesRepo    *repository.ScenesRepo
-	critiquesRepo *repository.CritiquesRepo
-	visualQARepo  *repository.VisualQARepo
-	themesRepo    *repository.ThemesRepo
-	agentsRepo    *repository.AgentsRepo
-	analyticsRepo *repository.AnalyticsRepo
-	tracker       *progress.Tracker
+	settingsRepo    *repository.SettingsRepo
+	formatsRepo     *repository.FormatsRepo
+	questionAgent   *agent.QuestionAgent
+	scriptAgent     *agent.ScriptAgent
+	imageAgent      *agent.ImageAgent
+	sceneAgent      *agent.SceneAgent
+	criticAgent     *agent.CriticAgent
+	visualQAAgent   *agent.VisualQAAgent
+	autoReviewAgent *agent.AutoReviewAgent
+	producer        *producer.Producer
+	clipsRepo       *repository.ClipsRepo
+	scenesRepo      *repository.ScenesRepo
+	critiquesRepo   *repository.CritiquesRepo
+	visualQARepo    *repository.VisualQARepo
+	autoReviewsRepo *repository.AutoReviewsRepo
+	themesRepo      *repository.ThemesRepo
+	agentsRepo      *repository.AgentsRepo
+	analyticsRepo   *repository.AnalyticsRepo
+	tracker         *progress.Tracker
 }
 
 func New(
@@ -84,11 +88,13 @@ func New(
 	sca *agent.SceneAgent,
 	ca *agent.CriticAgent,
 	vqa *agent.VisualQAAgent,
+	ara *agent.AutoReviewAgent,
 	prod *producer.Producer,
 	clips *repository.ClipsRepo,
 	scenes *repository.ScenesRepo,
 	critiques *repository.CritiquesRepo,
 	visualqa *repository.VisualQARepo,
+	autoreviews *repository.AutoReviewsRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
 	analytics *repository.AnalyticsRepo,
@@ -98,9 +104,10 @@ func New(
 ) *Orchestrator {
 	return &Orchestrator{
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
-		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa,
+		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
-		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics, tracker: tracker,
+		autoReviewsRepo: autoreviews,
+		themesRepo:      themes, agentsRepo: agents, analyticsRepo: analytics, tracker: tracker,
 	}
 }
 
@@ -687,4 +694,186 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		})
 	}
 	return frames
+}
+
+// auto_review tuning: approve threshold matches AutoReviewAgent's normalization
+// default; retryCap bounds how many auto-triggered re-renders a clip gets before
+// it's left for a human; batch caps work done per scheduler tick.
+const (
+	autoReviewApproveThreshold = 0.8
+	autoReviewRetryCap         = 2
+	autoReviewBatch            = 5
+)
+
+// sceneMids returns each scene's midpoint timestamp (seconds) from persisted scenes.
+func sceneMids(scenes []models.Scene) []float64 {
+	mids := make([]float64, len(scenes))
+	var acc float64
+	for i, s := range scenes {
+		mids[i] = acc + s.DurationSeconds/2
+		acc += s.DurationSeconds
+	}
+	return mids
+}
+
+// downloadToTemp fetches url into a temp .mp4 and returns its path (caller removes it).
+func downloadToTemp(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
+	}
+	f, err := os.CreateTemp("", "autoreview-*.mp4")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// autoReviewFrames downloads the clip's rendered 9:16 video and extracts one
+// PNG per scene at its midpoint, paired with scene text. Returns nil on any
+// failure (caller treats missing frames as a fail-closed hold).
+func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, scenes []models.Scene) []agent.QAFrame {
+	mp4Path, err := downloadToTemp(ctx, videoURL)
+	if err != nil {
+		log.Printf("autoreview: download video failed: %v", err)
+		return nil
+	}
+	defer os.Remove(mp4Path)
+
+	mids := sceneMids(scenes)
+	frames := make([]agent.QAFrame, 0, len(scenes))
+	for i, s := range scenes {
+		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("ar-scene%d.png", s.SceneNumber))
+		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
+			log.Printf("autoreview: scene %d frame extract failed (skip): %v", s.SceneNumber, err)
+			continue
+		}
+		png, err := os.ReadFile(outPath)
+		os.Remove(outPath)
+		if err != nil {
+			continue
+		}
+		frames = append(frames, agent.QAFrame{
+			SceneNumber:  s.SceneNumber,
+			PNG:          png,
+			OnScreenText: s.OnScreenText,
+			VoiceText:    s.VoiceText,
+		})
+	}
+	return frames
+}
+
+// AutoReviewPending runs the second-opinion judge over the needs_review queue.
+// Disabled agent → no-op (behavior identical to manual review). Called by the
+// scheduler's auto_review tick.
+func (o *Orchestrator) AutoReviewPending(ctx context.Context) error {
+	cfg, err := o.agentsRepo.GetByName(ctx, "auto_review")
+	if err != nil || cfg == nil || !cfg.Enabled {
+		return nil
+	}
+	clips, err := o.clipsRepo.ListNeedsReview(ctx, autoReviewRetryCap, autoReviewBatch)
+	if err != nil {
+		return fmt.Errorf("auto-review list: %w", err)
+	}
+	for i := range clips {
+		o.autoReviewOne(ctx, &clips[i], cfg)
+	}
+	return nil
+}
+
+// autoReviewOne judges one clip and applies the decision. Every path is logged;
+// a per-clip failure never aborts the batch.
+func (o *Orchestrator) autoReviewOne(ctx context.Context, clip *models.Clip, cfg *models.AgentConfig) {
+	if clip.Video916URL == nil || *clip.Video916URL == "" {
+		log.Printf("autoreview: clip %s has no video URL — holding", clip.ID)
+		o.recordAndHold(ctx, clip, agent.AutoReviewResult{Decision: "hold", Reasons: []string{"no video url"}})
+		return
+	}
+	scenes, err := o.scenesRepo.ListByClip(ctx, clip.ID)
+	if err != nil || len(scenes) == 0 {
+		log.Printf("autoreview: clip %s scenes unavailable — holding: %v", clip.ID, err)
+		o.recordAndHold(ctx, clip, agent.AutoReviewResult{Decision: "hold", Reasons: []string{"scenes unavailable"}})
+		return
+	}
+
+	var qaIssues []string
+	if qa, err := o.visualQARepo.GetLatestByClipID(ctx, clip.ID); err == nil && qa != nil {
+		qaIssues = flattenQAIssues(qa)
+	}
+
+	frames := o.autoReviewFrames(ctx, *clip.Video916URL, scenes)
+	res := o.autoReviewAgent.Judge(ctx, agent.AutoReviewInput{
+		Question: clip.Question,
+		Frames:   frames,
+		QAIssues: qaIssues,
+	}, cfg, autoReviewApproveThreshold)
+
+	reasons, _ := json.Marshal(res.Reasons)
+	if err := o.autoReviewsRepo.Create(ctx, clip.ID, res.Decision, res.DefectType, res.Confidence, reasons); err != nil {
+		log.Printf("autoreview: clip %s log write failed: %v", clip.ID, err)
+	}
+
+	switch res.Decision {
+	case "approve":
+		ready := "ready"
+		if _, err := o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &ready}); err != nil {
+			log.Printf("autoreview: clip %s approve->ready failed: %v", clip.ID, err)
+			return
+		}
+		log.Printf("autoreview: clip %s APPROVED (conf %.2f) — now ready", clip.ID, res.Confidence)
+	case "retry":
+		if err := o.clipsRepo.IncrementReviewRetry(ctx, clip.ID); err != nil {
+			log.Printf("autoreview: clip %s retry counter bump failed: %v", clip.ID, err)
+		}
+		if err := o.RetryClip(ctx, clip); err != nil {
+			log.Printf("autoreview: clip %s retry render failed: %v", clip.ID, err)
+		} else {
+			log.Printf("autoreview: clip %s RETRY re-render triggered (review_retry now %d)", clip.ID, clip.ReviewRetryCount+1)
+		}
+	default: // hold
+		o.recordHeld(ctx, clip)
+	}
+}
+
+func (o *Orchestrator) recordAndHold(ctx context.Context, clip *models.Clip, res agent.AutoReviewResult) {
+	reasons, _ := json.Marshal(res.Reasons)
+	_ = o.autoReviewsRepo.Create(ctx, clip.ID, "hold", res.DefectType, res.Confidence, reasons)
+	o.recordHeld(ctx, clip)
+}
+
+func (o *Orchestrator) recordHeld(ctx context.Context, clip *models.Clip) {
+	if err := o.clipsRepo.SetAutoReviewHeld(ctx, clip.ID); err != nil {
+		log.Printf("autoreview: clip %s set-held failed: %v", clip.ID, err)
+	} else {
+		log.Printf("autoreview: clip %s HELD for human review", clip.ID)
+	}
+}
+
+// flattenQAIssues pulls the human-readable issue strings out of the stored
+// visual_qa verdicts JSON (array of {scene_number, ok, issues}).
+func flattenQAIssues(qa *models.VisualQA) []string {
+	var verdicts []agent.SceneVerdict
+	if err := json.Unmarshal(qa.Issues, &verdicts); err != nil {
+		return nil
+	}
+	var out []string
+	for _, v := range verdicts {
+		if !v.OK {
+			out = append(out, v.Issues...)
+		}
+	}
+	return out
 }
