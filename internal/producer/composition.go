@@ -31,6 +31,11 @@ type scenesTemplateData struct {
 	AmbientSrc     string
 	AudioMotion    bool
 	TransitionCues []TransitionCue
+
+	ThemeKey     string
+	EntranceDur  float64
+	EntranceEase string
+	BGZoomTo     float64
 }
 
 //go:embed templates/*.html.tmpl
@@ -106,6 +111,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		outroStart = 0
 	}
 
+	motion := p.Motion
+	if motion.EntranceEase == "" {
+		motion = MotionDefault
+	}
+
 	data := scenesTemplateData{
 		Width:           width,
 		Height:          height,
@@ -127,6 +137,10 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		AmbientSrc:      p.AmbientSrc,
 		AudioMotion:     p.AudioMotion,
 		TransitionCues:  p.TransitionCues,
+		ThemeKey:        p.ThemeKey,
+		EntranceDur:     motion.EntranceDur,
+		EntranceEase:    motion.EntranceEase,
+		BGZoomTo:        motion.BGZoomTo,
 	}
 
 	const name = "layout_multi_scene.html.tmpl"

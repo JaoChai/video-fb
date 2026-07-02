@@ -1,7 +1,9 @@
 package producer
 
 import (
+	"fmt"
 	"html/template"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -122,8 +124,11 @@ func TestRenderCompositionScenes_CaptionStyleInJSON(t *testing.T) {
 	}
 }
 
+// All presets share Palette: Brand, so palette alone no longer varies by
+// theme (see presets.go). This asserts the property that DOES vary per theme
+// instead: the rendered --font-heading value tracks the preset's HeadingFont.
 func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
-	preset := PresetByKey("teal-coral")
+	preset := PresetByKey("neon-techno")
 	params := ScenesParams{
 		AspectRatio:     "9:16",
 		BrandName:       BrandName,
@@ -137,11 +142,12 @@ func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(string(html), preset.Palette.Navy) {
-		t.Errorf("rendered HTML missing preset navy %q", preset.Palette.Navy)
+	want := fmt.Sprintf(`--font-heading: "%s"`, preset.HeadingFont.HeadingFamily)
+	if !strings.Contains(string(html), want) {
+		t.Errorf("rendered HTML missing preset heading font %q", want)
 	}
-	if strings.Contains(string(html), Brand.Navy) && preset.Palette.Navy != Brand.Navy {
-		t.Errorf("rendered HTML leaked hardcoded Brand navy")
+	if strings.Contains(string(html), `--font-heading: "Kanit"`) {
+		t.Errorf("rendered HTML leaked hardcoded editorial-bold heading font")
 	}
 }
 
@@ -173,5 +179,73 @@ func TestRenderCompositionScenes_StyleB(t *testing.T) {
 		if strings.Contains(html, emo) {
 			t.Errorf("emoji leaked: %q", emo)
 		}
+	}
+}
+
+// TestRenderScenes_InjectsThemeKeyAndHeadingFont confirms the template wires
+// ThemeKey/Motion through to the rendered HTML: the data-theme attribute
+// (drives per-theme texture CSS), the --font-heading var (drives display
+// font), and the motion consts derived from the preset's MotionProfile.
+func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
+	preset := PresetByKey("neon-techno")
+	params := sampleScenesParams("9:16")
+	params.ThemeKey = preset.Key
+	params.Motion = preset.Motion
+	params.BrandCSS = preset.BrandCSS()
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	for _, want := range []string{`data-theme="neon-techno"`, "--font-heading", "ENTRANCE_EASE"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered HTML missing %q", want)
+		}
+	}
+	if !strings.Contains(html, fmt.Sprintf(`"%s"`, preset.Motion.EntranceEase)) {
+		t.Errorf("rendered HTML missing intact ease string %q", preset.Motion.EntranceEase)
+	}
+}
+
+// TestRenderScenes_ParenthesizedEaseSurvivesEscaping guards against html/template
+// mangling a GSAP ease string that itself contains parens — soft-3d-clay's
+// EntranceEase is "back.out(1.6)", the exact shape the review flagged as risky
+// for JS-string escaping inside a Go template.
+func TestRenderScenes_ParenthesizedEaseSurvivesEscaping(t *testing.T) {
+	preset := PresetByKey("soft-3d-clay")
+	params := sampleScenesParams("9:16")
+	params.ThemeKey = preset.Key
+	params.Motion = preset.Motion
+	params.BrandCSS = preset.BrandCSS()
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, "back.out(1.6)") {
+		t.Errorf("rendered HTML missing intact ease string %q (escaping regression?)", "back.out(1.6)")
+	}
+}
+
+// TestRenderScenes_FlagOffPinsDefaultBGZoom pins the flag-off/no-caller motion
+// path to today's live bg ken-burns zoom (1.10). Without ThemeKey/Motion set,
+// composition.go falls back to MotionDefault; this guards against future
+// silent drift away from the live value.
+func TestRenderScenes_FlagOffPinsDefaultBGZoom(t *testing.T) {
+	params := sampleScenesParams("9:16")
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	// html/template's JS-context escaper pads numeric literals with extra
+	// spaces (e.g. "=  1.1  ||"), so match loosely on the token rather than
+	// an exact "= 1.1" substring.
+	bgZoomRe := regexp.MustCompile(`BG_ZOOM_TO\s*=\s*1\.1\b`)
+	if !bgZoomRe.MatchString(html) {
+		t.Errorf("rendered HTML missing default BG_ZOOM_TO = 1.1 (want %v); got motion default drift", MotionDefault.BGZoomTo)
 	}
 }

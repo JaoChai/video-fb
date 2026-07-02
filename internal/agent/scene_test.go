@@ -72,6 +72,30 @@ func TestSceneOutputParsesSeededSchema(t *testing.T) {
 	}
 }
 
+// Locks the prompt↔struct contract for the themed scene prompt (migration 046):
+// on_screen_text + emphasis_words must still unmarshal into GeneratedScene.
+func TestSceneOutput_ThemedSchemaHasHookAndEmphasis(t *testing.T) {
+	raw := `[{"scene_number":1,"layout":"hook","voice_text":"บัญชีโฆษณาโดนแบนถาวรเพราะอะไร",
+	  "on_screen_text":"โดนแบนถาวรใน 3 วิ","emphasis_words":["โดนแบน"],
+	  "caption_style":"word_pop","image_prompt":"a locked facebook ads dashboard",
+	  "content":{"kicker":"ระวัง","rows":[{"t":"ยิงผิดกฎ","bad":true}]}}]`
+	var scenes []GeneratedScene
+	if err := json.Unmarshal([]byte(raw), &scenes); err != nil {
+		t.Fatalf("themed scene JSON did not unmarshal: %v", err)
+	}
+	s := scenes[0]
+	if s.Layout != "hook" || s.OnScreenText != "โดนแบนถาวรใน 3 วิ" {
+		t.Errorf("hook fields drifted: layout=%q ost=%q", s.Layout, s.OnScreenText)
+	}
+	if len(s.EmphasisWords) == 0 {
+		t.Errorf("emphasis_words must be present")
+	}
+	// on_screen_text ของ hook ต้อง <=7 คำ (นับ token คั่นด้วยช่องว่าง)
+	if n := len(strings.Fields(s.OnScreenText)); n > 7 {
+		t.Errorf("hook on_screen_text has %d words, want <=7", n)
+	}
+}
+
 func TestBuildSceneThemeDescription(t *testing.T) {
 	style := "flat illustration"
 	theme := &models.BrandTheme{

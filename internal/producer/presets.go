@@ -18,82 +18,66 @@ type StylePreset struct {
 	Palette     BrandColors // overlay + image colors
 	ImageAnchor string      // art-style paragraph; its colors MUST match Palette
 	Font        TypeTokens  // overlay font (Thai-capable)
+
+	HeadingFont TypeTokens    // display font for headlines; zero ⇒ use Font
+	Motion      MotionProfile // per-theme entrance/ken-burns feel
 }
 
-// Presets is the curated set. Presets[0] is "signature" — it equals today's
-// hardcoded Brand look and is the universal fallback, so a disabled flag or any
-// selection failure reproduces the current output exactly.
+// Presets is the curated set of design themes. Presets[0] is "editorial-bold" —
+// it equals today's hardcoded Brand look and is the universal fallback, so a
+// disabled flag or any selection failure reproduces the current output exactly.
+// All themes share Palette: Brand — navy+orange is the brand invariant; themes
+// differ only by ImageAnchor (art media), HeadingFont, and Motion.
 var Presets = []StylePreset{
 	{
-		Key:         "signature",
-		DisplayName: "Signature Royal Blue",
+		Key:         "editorial-bold",
+		DisplayName: "Editorial Bold",
 		Palette:     Brand,
-		ImageAnchor: Brand.ImageStyleAnchor(),
+		ImageAnchor: "Flat modern editorial illustration, premium and clean, with soft cinematic lighting. " +
+			"Strict two-tone palette: vivid royal blue #0047AF as the dominant background/structural color, " +
+			"warm amber gold #F0A030 as the single accent for highlights and focal points. No other saturated hues. " +
+			"Crisp vector-quality shapes, confident composition, subtle top-center glow, gentle edge vignette, minimal grain. " +
+			"No photorealism, no 3D render, no text. Atmosphere: confident, authoritative, premium digital-marketing brand.",
 		Font:        Type,
+		HeadingFont: TypeTokens{Family: "Sarabun", HeadingFamily: "Kanit"},
+		Motion:      MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.10},
 	},
 	{
-		Key:         "teal-coral",
-		DisplayName: "Teal & Coral",
-		Palette: BrandColors{
-			NavyDeep: "#04302E", Navy: "#0A5247", NavyHi: "#138B7A",
-			Orange: "#FF6B5C", OrangeSoft: "#F2856E", OrangeBright: "#FF9A7A",
-			Ink: "#F2FBF8", Muted: "#A9D9CE",
-			Warn: "#ff5a52", Win: "#2fd17a", Info: "#3b82f6",
-		},
-		ImageAnchor: "Soft 3D clay-render illustration style with gentle studio lighting. " +
-			"Strict two-tone palette: deep teal #0A5247 as the dominant background and structural color, " +
-			"warm coral #FF6B5C as the single accent for highlights and focal points. " +
-			"No other saturated hues. Rounded clean shapes, soft shadows, no photorealism, no text. " +
-			"Atmosphere: friendly, modern, premium digital-marketing brand identity.",
-		Font: Type,
+		Key:         "cinematic-photo",
+		DisplayName: "Cinematic Photo",
+		Palette:     Brand,
+		ImageAnchor: "Cinematic editorial PHOTOGRAPHY, shot on 85mm f/1.4, natural window light, shallow depth of field, " +
+			"warm filmic color grade with a subtle deep-navy #0047AF duotone wash in the shadows and warm amber #F0A030 highlights. " +
+			"Real-world settings (modern office, hands on a laptop showing an ads dashboard, banknotes, people), photorealistic, " +
+			"premium and trustworthy. NO illustration, NO 3D render, NO cartoon, NO flat vector, no text. " +
+			"Atmosphere: credible, premium, real digital-marketing business.",
+		Font:        TypeTokens{Family: "IBM Plex Sans Thai", HeadingFamily: "Kanit"},
+		HeadingFont: TypeTokens{Family: "IBM Plex Sans Thai", HeadingFamily: "Kanit"},
+		Motion:      MotionProfile{EntranceDur: 0.70, EntranceEase: "power2.out", BGZoomTo: 1.12},
 	},
 	{
-		Key:         "purple-gold",
-		DisplayName: "Royal Purple & Gold",
-		Palette: BrandColors{
-			NavyDeep: "#1A0E3D", Navy: "#2E1A66", NavyHi: "#4A2E9E",
-			Orange: "#F0C030", OrangeSoft: "#E8B84A", OrangeBright: "#FFD66B",
-			Ink: "#F7F3FF", Muted: "#C9B8FF",
-			Warn: "#ff5a52", Win: "#2fd17a", Info: "#3b82f6",
-		},
-		ImageAnchor: "Premium gradient-mesh illustration with glassy translucent surfaces and soft glow. " +
-			"Strict two-tone palette: deep royal purple #2E1A66 as the dominant background and structural color, " +
-			"luxurious gold #F0C030 as the single accent for highlights and focal points. " +
-			"No other saturated hues. Smooth vector rendering, subtle bloom, no photorealism, no text. " +
-			"Atmosphere: luxurious, confident, premium digital-marketing brand identity.",
-		Font: Type,
+		Key:         "neon-techno",
+		DisplayName: "Neon Techno HUD",
+		Palette:     Brand,
+		ImageAnchor: "Sleek techno HUD illustration on a dark deep-navy #062F78 background, crisp neon line-art and thin glowing strokes, " +
+			"glassmorphism panels, data/graph/ring motifs. Electric-blue glow accents with warm amber #F0A030 as the single focal accent. " +
+			"High-tech, sharp, clean vector rendering, subtle scanline glow. No photorealism, no text. " +
+			"Atmosphere: high-energy, data-driven, premium digital-marketing brand.",
+		Font:        TypeTokens{Family: "Prompt", HeadingFamily: "Prompt"},
+		HeadingFont: TypeTokens{Family: "Prompt", HeadingFamily: "Prompt"},
+		Motion:      MotionProfile{EntranceDur: 0.34, EntranceEase: "power4.out", BGZoomTo: 1.05},
 	},
 	{
-		Key:         "charcoal-electric",
-		DisplayName: "Charcoal & Electric Blue",
-		Palette: BrandColors{
-			NavyDeep: "#10141B", Navy: "#1B2330", NavyHi: "#2A3647",
-			Orange: "#2E8BFF", OrangeSoft: "#4A9BFF", OrangeBright: "#6FB4FF",
-			Ink: "#F2F6FF", Muted: "#9FB2CC",
-			Warn: "#ff5a52", Win: "#2fd17a", Info: "#3b82f6",
-		},
-		ImageAnchor: "Sleek techno HUD illustration with crisp neon line-art and thin glowing strokes. " +
-			"Strict two-tone palette: near-black charcoal #1B2330 as the dominant background and structural color, " +
-			"electric blue #2E8BFF as the single accent for highlights and focal points. " +
-			"No other saturated hues. Clean vector rendering, subtle scanline glow, no photorealism, no text. " +
-			"Atmosphere: high-tech, sharp, premium digital-marketing brand identity.",
-		Font: Type,
-	},
-	{
-		Key:         "sunset-magenta",
-		DisplayName: "Sunset Magenta",
-		Palette: BrandColors{
-			NavyDeep: "#2B0E2E", Navy: "#5A1A4D", NavyHi: "#8E2A66",
-			Orange: "#FF8A3D", OrangeSoft: "#FF7A5C", OrangeBright: "#FFB454",
-			Ink: "#FFF3F0", Muted: "#F0C2D6",
-			Warn: "#ff5a52", Win: "#2fd17a", Info: "#3b82f6",
-		},
-		ImageAnchor: "Warm grainy risograph poster illustration with bold flat shapes and a soft paper texture. " +
-			"Strict two-tone palette: deep magenta-plum #5A1A4D as the dominant background and structural color, " +
-			"warm sunset orange #FF8A3D as the single accent for highlights and focal points. " +
-			"No other saturated hues. Slight grain, no photorealism, no text. " +
-			"Atmosphere: bold, energetic, premium digital-marketing brand identity.",
-		Font: Type,
+		Key:         "soft-3d-clay",
+		DisplayName: "Soft 3D Clay",
+		Palette:     Brand,
+		ImageAnchor: "Soft 3D clay-render illustration, rounded matte shapes with gentle soft studio shadows, tactile and friendly. " +
+			"Palette anchored to brand royal blue #0047AF with warm amber #F0A030 as the single accent; warm approachable mood. " +
+			"Claymorphism, smooth surfaces, no harsh edges. No photorealism, no text. " +
+			"Atmosphere: friendly, approachable, premium digital-marketing brand.",
+		Font:        TypeTokens{Family: "Prompt", HeadingFamily: "Kanit"},
+		HeadingFont: TypeTokens{Family: "Prompt", HeadingFamily: "Kanit"},
+		Motion:      MotionProfile{EntranceDur: 0.48, EntranceEase: "back.out(1.6)", BGZoomTo: 1.08},
 	},
 }
 
@@ -105,7 +89,7 @@ const (
 )
 
 // StylePresetsEnabled reports whether per-clip preset selection is on. Off ⇒
-// callers use the signature preset, reproducing today's exact look.
+// callers use the editorial-bold preset, reproducing today's exact look.
 func StylePresetsEnabled() bool { return os.Getenv("STYLE_PRESETS_ENABLED") == "true" }
 
 // StylePresetsPerformanceEnabled reports whether per-clip selection should be biased
@@ -163,7 +147,7 @@ func PickPresetWeighted(lastKey string, scores []models.PresetScore, epsilon flo
 	return candidates[bestIdx]
 }
 
-// PresetByKey returns the preset with key, or the signature preset (Presets[0])
+// PresetByKey returns the preset with key, or the editorial-bold preset (Presets[0])
 // when key is unknown/empty. Never panics.
 func PresetByKey(key string) StylePreset {
 	for _, p := range Presets {
@@ -201,7 +185,11 @@ func PickPreset(lastKey string) StylePreset {
 // + font + the shared Motion tokens. Var names exactly match those the layout
 // template consumes (the template aliases --amber* → --orange*).
 func (p StylePreset) BrandCSS() string {
-	return p.Palette.cssVars(p.Font)
+	font := p.Font
+	if p.HeadingFont.HeadingFamily != "" {
+		font.HeadingFamily = p.HeadingFont.HeadingFamily
+	}
+	return p.Palette.cssVars(font)
 }
 
 // AsTheme returns a copy of base with the color + image-style fields overridden

@@ -5,9 +5,10 @@ import "html/template"
 // TranscriptSegment is one phrase-level caption with its audio time window.
 // Matches the Whisper verbose_json segment shape (start/end in seconds).
 type TranscriptSegment struct {
-	Text  string  `json:"text"`
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
+	Text     string   `json:"text"`
+	Start    float64  `json:"start"`
+	End      float64  `json:"end"`
+	Emphasis []string `json:"emph,omitempty"` // words the template should highlight; empty ⇒ longest-word fallback
 }
 
 // SceneSpec is one fully-resolved scene the multi-scene template renders.
@@ -99,6 +100,12 @@ type ScenesParams struct {
 	// RenderCompositionScenes falls back to the package-global Brand (today's look).
 	Palette  BrandColors
 	BrandCSS string
+
+	// ThemeKey + Motion identify the active design theme for the template
+	// (data-theme attribute + per-theme texture/motion). Zero Motion ⇒
+	// MotionDefault (today's Editorial Bold feel).
+	ThemeKey string
+	Motion   MotionProfile
 
 	// Audio + motion upgrade (gated by AUDIO_MOTION_ENABLED). All zero ⇒ today's
 	// voice-only, current-motion output.

@@ -142,6 +142,18 @@ var Motion = MotionTokens{
 	DurSlow:   0.90,
 }
 
+// MotionProfile is a per-theme animation feel: how a scene's content enters and
+// how far the background ken-burns. Injected into the template as CSS vars +
+// JS constants so each theme moves differently without new template code.
+type MotionProfile struct {
+	EntranceDur  float64 // seconds — content entrance duration
+	EntranceEase string  // GSAP ease name, e.g. "power3.out", "back.out(1.6)"
+	BGZoomTo     float64 // background ken-burns end scale, e.g. 1.06, 1.10
+}
+
+// MotionDefault matches today's Style-B feel (Editorial Bold baseline).
+var MotionDefault = MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.10}
+
 // ── Type tokens ──────────────────────────────────────────────────────────────
 
 // TypeTokens holds the brand typography system: font family and the four
@@ -150,6 +162,10 @@ var Motion = MotionTokens{
 type TypeTokens struct {
 	// Family is the primary font family string for CSS font-family declarations.
 	Family string // "Sarabun"
+
+	// HeadingFamily is the display font for headlines/hooks. Empty ⇒ fall back
+	// to Family. Vendored locally (see assets/fonts). Body text keeps Family.
+	HeadingFamily string // "Kanit" / "Prompt" / "" (=Family)
 
 	// Weight constants match the four @font-face declarations in both templates.
 	WeightRegular   int // 400
@@ -184,6 +200,12 @@ func (b BrandColors) CSSVars() string { return b.cssVars(Type) }
 //
 // The output is deterministic; it contains no newline at the end of the block.
 func (b BrandColors) cssVars(t TypeTokens) string {
+	heading := t.HeadingFamily
+	if heading == "" {
+		heading = t.Family
+	}
+	headingCSS := fmt.Sprintf(`"%s", "%s", sans-serif`, heading, t.Family)
+
 	return fmt.Sprintf(`:root {
   /* ── Brand colors (navy scale) ── */
   --navy-deep: %s;
@@ -216,6 +238,7 @@ func (b BrandColors) cssVars(t TypeTokens) string {
 
   /* ── Typography ── */
   --font-family: "%s", sans-serif;
+  --font-heading: %s;
   --font-weight-regular: %d;
   --font-weight-semibold: %d;
   --font-weight-bold: %d;
@@ -228,6 +251,7 @@ func (b BrandColors) cssVars(t TypeTokens) string {
 		Motion.EaseOut, Motion.EaseInOut, Motion.EaseIn, Motion.EaseSpring,
 		formatDur(Motion.DurFast), formatDur(Motion.DurNormal), formatDur(Motion.DurSlow),
 		t.Family,
+		headingCSS,
 		t.WeightRegular, t.WeightSemiBold, t.WeightBold, t.WeightExtraBold,
 	)
 }
@@ -260,7 +284,7 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 // The function is deterministic: same (concept, aspect, preset) always yields the
 // same string. It is placed in brand.go because it is purely brand-prompt
 // composition, building on ImageAnchor and SafeZone which live here.
-func buildScenePrompt(concept, aspect string, preset StylePreset) string {
+func buildScenePrompt(concept, aspect string, preset StylePreset, clipToken string) string {
 	subject := strings.TrimSpace(concept)
 	if subject == "" {
 		subject = genericSceneSubject
@@ -270,6 +294,12 @@ func buildScenePrompt(concept, aspect string, preset StylePreset) string {
 		"Subject: " + subject + ". " +
 		"Composition: " + sz.NegativeSpace + ". " +
 		"Keep the image uncluttered with generous negative space. " +
-		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image." +
-		" Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% as simple, uncluttered background (a text card is overlaid there)."
+		// Cross-scene cohesion: all scenes in one clip share the same look.
+		"Maintain a cohesive style across the whole set: same lighting direction, " +
+		"same color grade, same rendering style (style set: " + clipToken + "). " +
+		// Anti-"AI-slop" exclusions.
+		"Avoid: oversaturated colors, plastic/glossy surfaces, warped hands or faces, " +
+		"generic stock-photo look, watermarks, extra limbs, cluttered composition. " +
+		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image. " +
+		"Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% simple and uncluttered (a text card is overlaid there)."
 }

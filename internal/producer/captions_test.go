@@ -95,3 +95,27 @@ func TestCaptionSegmentsFromScenes_LongTextSplitsIntoPhrases(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptionSegments_CarryEmphasisFromScene(t *testing.T) {
+	scenes := []agent.GeneratedScene{
+		{SceneNumber: 1, VoiceText: "บัญชีโฆษณาโดนแบนถาวร", EmphasisWords: []string{"โดนแบน"}},
+	}
+	bounds := []sceneBound{{Start: 0, End: 5}}
+	segs := captionSegmentsFromScenes(scenes, bounds)
+	if len(segs) == 0 {
+		t.Fatal("expected segments")
+	}
+	// At least one produced segment must carry the scene's emphasis words so the
+	// template can highlight the RIGHT word (not merely the longest).
+	found := false
+	for _, s := range segs {
+		for _, e := range s.Emphasis {
+			if e == "โดนแบน" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no segment carried emphasis %q; got %+v", "โดนแบน", segs)
+	}
+}
