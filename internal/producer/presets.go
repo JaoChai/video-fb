@@ -40,7 +40,7 @@ var Presets = []StylePreset{
 			"No photorealism, no 3D render, no text. Atmosphere: confident, authoritative, premium digital-marketing brand.",
 		Font:        Type,
 		HeadingFont: TypeTokens{Family: "Sarabun", HeadingFamily: "Kanit"},
-		Motion:      MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.06},
+		Motion:      MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.10},
 	},
 	{
 		Key:         "cinematic-photo",

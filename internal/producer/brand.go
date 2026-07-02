@@ -152,7 +152,7 @@ type MotionProfile struct {
 }
 
 // MotionDefault matches today's Style-B feel (Editorial Bold baseline).
-var MotionDefault = MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.06}
+var MotionDefault = MotionProfile{EntranceDur: 0.60, EntranceEase: "power3.out", BGZoomTo: 1.10}
 
 // ── Type tokens ──────────────────────────────────────────────────────────────
 

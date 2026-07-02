@@ -3,6 +3,7 @@ package producer
 import (
 	"fmt"
 	"html/template"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -204,5 +205,47 @@ func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
 	}
 	if !strings.Contains(html, fmt.Sprintf(`"%s"`, preset.Motion.EntranceEase)) {
 		t.Errorf("rendered HTML missing intact ease string %q", preset.Motion.EntranceEase)
+	}
+}
+
+// TestRenderScenes_ParenthesizedEaseSurvivesEscaping guards against html/template
+// mangling a GSAP ease string that itself contains parens — soft-3d-clay's
+// EntranceEase is "back.out(1.6)", the exact shape the review flagged as risky
+// for JS-string escaping inside a Go template.
+func TestRenderScenes_ParenthesizedEaseSurvivesEscaping(t *testing.T) {
+	preset := PresetByKey("soft-3d-clay")
+	params := sampleScenesParams("9:16")
+	params.ThemeKey = preset.Key
+	params.Motion = preset.Motion
+	params.BrandCSS = preset.BrandCSS()
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, "back.out(1.6)") {
+		t.Errorf("rendered HTML missing intact ease string %q (escaping regression?)", "back.out(1.6)")
+	}
+}
+
+// TestRenderScenes_FlagOffPinsDefaultBGZoom pins the flag-off/no-caller motion
+// path to today's live bg ken-burns zoom (1.10). Without ThemeKey/Motion set,
+// composition.go falls back to MotionDefault; this guards against future
+// silent drift away from the live value.
+func TestRenderScenes_FlagOffPinsDefaultBGZoom(t *testing.T) {
+	params := sampleScenesParams("9:16")
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	// html/template's JS-context escaper pads numeric literals with extra
+	// spaces (e.g. "=  1.1  ||"), so match loosely on the token rather than
+	// an exact "= 1.1" substring.
+	bgZoomRe := regexp.MustCompile(`BG_ZOOM_TO\s*=\s*1\.1\b`)
+	if !bgZoomRe.MatchString(html) {
+		t.Errorf("rendered HTML missing default BG_ZOOM_TO = 1.1 (want %v); got motion default drift", MotionDefault.BGZoomTo)
 	}
 }
