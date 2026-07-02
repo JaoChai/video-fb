@@ -692,7 +692,7 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 func (o *Orchestrator) qaFrameTimestamps(mp4Path string, n int, fallback []float64) []float64 {
 	dur, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
 	if err != nil || dur <= 0 {
-		log.Printf("qa: probe duration failed (%v); using estimate timestamps", err)
+		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); using estimate timestamps", err, dur)
 		return fallback
 	}
 	if ts := evenFrameTimestamps(dur, n); ts != nil {
