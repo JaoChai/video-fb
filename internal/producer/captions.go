@@ -54,10 +54,12 @@ func captionSegmentsFromScenes(scenes []agent.GeneratedScene, bounds []sceneBoun
 			if j == len(phrases)-1 {
 				end = b.End // pin the last phrase to the boundary; kills float drift
 			}
+			emph := emphasisInPhrase(scenes[i].EmphasisWords, ph)
 			segs = append(segs, TranscriptSegment{
-				Text:  ph,
-				Start: math.Round(start*100) / 100,
-				End:   math.Round(end*100) / 100,
+				Text:     ph,
+				Start:    math.Round(start*100) / 100,
+				End:      math.Round(end*100) / 100,
+				Emphasis: emph,
 			})
 			cursor = end
 		}
@@ -105,4 +107,17 @@ func splitCaptionPhrases(text string) []string {
 	}
 	flush()
 	return phrases
+}
+
+// emphasisInPhrase returns the subset of emphasis words that appear in phrase,
+// so each caption segment only carries the emphasis it can actually highlight.
+func emphasisInPhrase(words []string, phrase string) []string {
+	var out []string
+	for _, w := range words {
+		w = strings.TrimSpace(w)
+		if w != "" && strings.Contains(phrase, w) {
+			out = append(out, w)
+		}
+	}
+	return out
 }

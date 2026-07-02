@@ -5,9 +5,10 @@ import "html/template"
 // TranscriptSegment is one phrase-level caption with its audio time window.
 // Matches the Whisper verbose_json segment shape (start/end in seconds).
 type TranscriptSegment struct {
-	Text  string  `json:"text"`
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
+	Text     string   `json:"text"`
+	Start    float64  `json:"start"`
+	End      float64  `json:"end"`
+	Emphasis []string `json:"emph,omitempty"` // words the template should highlight; empty ⇒ longest-word fallback
 }
 
 // SceneSpec is one fully-resolved scene the multi-scene template renders.

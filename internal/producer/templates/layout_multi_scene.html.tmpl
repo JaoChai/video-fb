@@ -236,11 +236,18 @@
       const seg2=typeof Intl!=="undefined"&&Intl.Segmenter?new Intl.Segmenter(undefined,{granularity:"grapheme"}):null;
       function gl(t){if(seg2){let o=[];for(const s of seg2.segment(t))o.push(s.segment);return o;}return Array.from(t);}
       function splitWords(t){const o=[];const re=/\S+\s*/g;let m;while((m=re.exec(t))!==null)o.push(m[0]);if(!o.length&&t.length)o.push(t);return o;}
-      function keyIdx(ws){let b=0,bl=-1;ws.forEach((w,i)=>{const l=gl(w.trim()).length;if(l>bl){bl=l;b=i;}});return b;}
+      function keyIdx(ws,emph){
+        // Prefer a word that matches the scene's emphasis; fall back to longest.
+        if(emph&&emph.length){
+          for(let i=0;i<ws.length;i++){const t=ws[i].trim();
+            for(const e of emph){if(e&&t.indexOf(e)>=0)return i;}}
+        }
+        let b=0,bl=-1;ws.forEach((w,i)=>{const l=gl(w.trim()).length;if(l>bl){bl=l;b=i;}});return b;
+      }
       const capStage=document.getElementById("capStage");
       SEGMENTS.forEach((seg,i)=>{
         const p=el("div","cap-phrase");
-        const ws=splitWords(seg.text);const k=keyIdx(ws);
+        const ws=splitWords(seg.text);const k=keyIdx(ws,seg.emph);
         ws.forEach((w,wi)=>{const s=el("span","cap-word"+(wi===k?" key":""));s.textContent=w;p.appendChild(s);});
         capStage.appendChild(p);
         const inAt=seg.start;
