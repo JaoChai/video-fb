@@ -92,6 +92,21 @@ func highlightTitleStr(title string, words []string) string {
 	return highlightWithClass(title, words, "acc")
 }
 
+// speedForLayout picks an entrance pacing per scene layout so a clip doesn't
+// enter every scene at one uniform tempo: hook teasers snap in fast, headline
+// and stat reveals ease in slow/premium, the rest stay normal. The template
+// multiplies its per-theme ENTRANCE_DUR by the factor this maps to.
+func speedForLayout(layout string) string {
+	switch layout {
+	case "hook":
+		return "fast"
+	case "hero", "stat":
+		return "slow"
+	default:
+		return "normal"
+	}
+}
+
 // buildSceneContent maps a GeneratedScene + its measured audio bound into the
 // structured SceneContent the Style-B template renders. It clamps the layout,
 // unmarshals the model's per-layout content object, and strips emoji from every
@@ -144,5 +159,7 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		c.Layout = "hero"
 		c.Title = highlightTitleStr(clean(strings.TrimSpace(s.OnScreenText)), s.EmphasisWords)
 	}
+	// Derive after the hero fallback so speed follows the final layout.
+	c.Speed = speedForLayout(c.Layout)
 	return c
 }

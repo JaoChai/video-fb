@@ -124,6 +124,57 @@ func TestRenderCompositionScenes_CaptionStyleInJSON(t *testing.T) {
 	}
 }
 
+// assertRenderContains renders params and fails for each marker absent from the
+// output — shared by the wiring tests below to avoid repeating the scaffold.
+func assertRenderContains(t *testing.T, params ScenesParams, markers ...string) string {
+	t.Helper()
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	s := string(out)
+	for _, m := range markers {
+		if !strings.Contains(s, m) {
+			t.Errorf("rendered template missing %q", m)
+		}
+	}
+	return s
+}
+
+// A1 (per-scene entrance speed) + A4 (emphasis word pop/glow): the derived
+// Speed must reach the template's SCENES JSON, and the template must carry the
+// GSAP wiring that consumes it — SPEED_FACTOR for entrance pacing and a
+// palette-driven key-word textShadow tween for the glow (GSAP-only, no keyframes).
+func TestRenderCompositionScenes_SpeedAndGlowWiring(t *testing.T) {
+	params := sampleScenesParams("9:16")
+	params.Scenes[0].Content.Speed = "fast"
+	params.Scenes[1].Content.Speed = "slow"
+	s := assertRenderContains(t, params,
+		`"speed":"fast"`, `"speed":"slow"`, // A1: derived speed serialized into SCENES
+		"SPEED_FACTOR", // A1: template consumes it for entrance duration
+		"keyEl=s",      // A4: key word captured at creation (no re-query)
+		"KEY_ACCENT",   // A4: glow color read from the palette, not hardcoded
+		"textShadow",   // A4: glow tween (GSAP, seek-safe)
+	)
+	// Guard the seek-safety rule the plan committed to: no CSS keyframe animation.
+	if strings.Contains(s, "@keyframes") {
+		t.Errorf("template contains @keyframes — animations must be GSAP-driven for frame capture")
+	}
+}
+
+// A2 (per-layout composition): the scene wrapper must expose its layout as a
+// data-layout attribute, and the template must carry the per-layout CSS hooks
+// that reposition each layout so scenes aren't all centered.
+func TestRenderCompositionScenes_LayoutComposition(t *testing.T) {
+	assertRenderContains(t, sampleScenesParams("9:16"),
+		`w.setAttribute("data-layout", sc.type`, // scene exposes its layout to CSS
+		`.scene[data-layout="hook"] .scene-content`, // opener raised
+		`.scene[data-layout="stat"] .scene-content`, // stat narrowed
+		`.scene[data-layout="step"] .scene-content`, // step left-aligned
+		`.scene[data-layout="cta"]  .scene-content`, // cta centered
+	)
+}
+
 // All presets share Palette: Brand, so palette alone no longer varies by
 // theme (see presets.go). This asserts the property that DOES vary per theme
 // instead: the rendered --font-heading value tracks the preset's HeadingFont.

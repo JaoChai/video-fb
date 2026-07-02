@@ -68,6 +68,44 @@ func TestBuildSceneContent_EdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("entrance speed is derived from layout", func(t *testing.T) {
+		cases := map[string]string{
+			"hook": "fast", // punchy teaser → enters fast
+			"hero": "slow", // headline reveal → enters slow/premium
+			"stat": "slow", // number reveal → enters slow
+			"step": "normal",
+			"tip":  "normal",
+			"cta":  "normal",
+		}
+		for layout, want := range cases {
+			s := agent.GeneratedScene{
+				SceneNumber:  1,
+				Layout:       layout,
+				Content:      json.RawMessage(`{"title":"x","stat":"x","pill":"x","cta":"x","rows":[{"t":"x"}]}`),
+				CaptionStyle: "phrase_block",
+			}
+			if got := buildSceneContent(s, b).Speed; got != want {
+				t.Errorf("layout %q: Speed = %q, want %q", layout, got, want)
+			}
+		}
+	})
+
+	t.Run("hero fallback also carries hero speed", func(t *testing.T) {
+		// malformed content on a stat scene degrades to hero → speed must follow
+		// the final (hero) layout, not the original stat layout.
+		s := agent.GeneratedScene{
+			SceneNumber:  1,
+			Layout:       "stat",
+			Content:      json.RawMessage("{bad"),
+			OnScreenText: "สำรอง",
+			CaptionStyle: "phrase_block",
+		}
+		c := buildSceneContent(s, b)
+		if c.Layout != "hero" || c.Speed != "slow" {
+			t.Errorf("Layout=%q Speed=%q, want hero/slow", c.Layout, c.Speed)
+		}
+	})
+
 	t.Run("hook with rows preserves and cleans rows", func(t *testing.T) {
 		s := agent.GeneratedScene{
 			SceneNumber:  4,

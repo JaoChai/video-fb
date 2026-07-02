@@ -50,6 +50,16 @@
       .scene-content{position:absolute;left:56px;right:56px;bottom:430px;
         display:flex;flex-direction:column;gap:26px;align-items:stretch}
 
+      /* A2: per-layout composition so scenes don't all sit dead-center. Each rule
+         only nudges position/width/alignment — content elements are unchanged, so
+         `hyperframes inspect` still guards against overflow. hero keeps the default. */
+      .scene[data-layout="hook"] .scene-content{bottom:560px}                 /* raise the opener high on frame */
+      .scene[data-layout="stat"] .scene-content{left:110px;right:110px}       /* narrow to spotlight the number card */
+      .scene[data-layout="step"] .scene-content,
+      .scene[data-layout="tip"]  .scene-content{align-items:flex-start}       /* left-align step & tip flow */
+      .scene[data-layout="tip"]  .pill{align-self:flex-start}                 /* pill follows the left edge */
+      .scene[data-layout="cta"]  .scene-content{top:0;bottom:0;justify-content:center} /* dead-center the close */
+
       .kicker{font-weight:800;font-size:30px;letter-spacing:.10em;color:var(--amber-bright);text-align:center}
 
       /* Thai needs a loose line-height: at 1.06 the upper vowels/tone marks of a
@@ -129,7 +139,8 @@
         background:rgba(8,24,64,.86);border:2px solid var(--amber-bright);border-radius:24px;
         padding:26px 40px;opacity:0;box-shadow:0 18px 50px rgba(0,0,0,.5);word-break:break-word}
       .cap-word{display:inline;white-space:normal;overflow-wrap:anywhere}
-      .cap-word.key{color:var(--amber-bright);font-weight:800}
+      /* key word is inline-block so GSAP can scale it (transform is a no-op on inline) */
+      .cap-word.key{color:var(--amber-bright);font-weight:800;display:inline-block;will-change:transform}
     </style>
   </head>
   <body>
@@ -167,6 +178,7 @@
         w.setAttribute("data-start", sc.start);
         w.setAttribute("data-duration", Math.max(0.1, sc.end - sc.start).toFixed(3));
         w.setAttribute("data-track-index", 10 + i);
+        w.setAttribute("data-layout", sc.type || "");
         w.setAttribute("data-layout-allow-overflow", "");
         w.innerHTML =
           (sc.bg ? '<div class="scene-bg" style="background-image:url(\'' + sc.bg + '\')"></div>' : '<div class="scene-bg"></div>') +
@@ -214,6 +226,9 @@
       tl.fromTo("#badges",{opacity:0,x:-40},{opacity:1,x:0,duration:.6,ease:"power3.out"},0.3);
       tl.to("#badges",{opacity:0,y:-20,duration:.5,ease:"power2.in"},Math.min(7,TOTAL*0.18));
 
+      // A1 entrance pacing factors (multiply base entrance durations):
+      // fast = snappy hook, slow = premium hero/stat reveal, absent = normal (1.0).
+      const SPEED_FACTORS={fast:0.7,slow:1.35};
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
@@ -223,19 +238,23 @@
         const bg=sceneEl.querySelector(".scene-bg");
         const span=Math.max(0.4,sc.end-inAt);
 
+        const SPEED_FACTOR=SPEED_FACTORS[sc.speed]||1.0;
+
         if (MOTION_UP) {
           // Upgraded: incoming scene slides up + scales in while fading; bg ken-burns.
-          tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:ENTRANCE_DUR,ease:ENTRANCE_EASE},inAt);
+          const durIn=ENTRANCE_DUR*SPEED_FACTOR;
+          tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:durIn,ease:ENTRANCE_EASE},inAt);
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
-            tl.fromTo(content,{y:60,opacity:0},{y:0,opacity:1,duration:ENTRANCE_DUR,ease:ENTRANCE_EASE},sc.start+0.08);
+            tl.fromTo(content,{y:60,opacity:0},{y:0,opacity:1,duration:durIn,ease:ENTRANCE_EASE},sc.start+0.08);
           }
         } else {
-          // Current behavior (unchanged).
-          tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55,ease:"power2.out"},inAt);
+          // Current behavior, now speed-scaled per scene.
+          const contentDurIn=0.6*SPEED_FACTOR;
+          tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55*SPEED_FACTOR,ease:"power2.out"},inAt);
           if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
           if(content){
-            tl.fromTo(content,{y:46,opacity:0},{y:0,opacity:1,duration:0.6,ease:"power3.out"},sc.start+0.1);
+            tl.fromTo(content,{y:46,opacity:0},{y:0,opacity:1,duration:contentDurIn,ease:"power3.out"},sc.start+0.1);
           }
         }
 
@@ -265,15 +284,28 @@
         }
         let b=0,bl=-1;ws.forEach((w,i)=>{const l=gl(w.trim()).length;if(l>bl){bl=l;b=i;}});return b;
       }
+      // A4 key-word glow color, read from the active palette so it tracks the brand
+      // instead of a hardcoded hex (falls back to brand orange if the var is missing).
+      const accentHex=getComputedStyle(document.documentElement).getPropertyValue("--amber-bright").trim();
+      const KEY_ACCENT=/^#[0-9a-fA-F]{6}$/.test(accentHex)?accentHex:"#F0A030";
       const capStage=document.getElementById("capStage");
       SEGMENTS.forEach((seg,i)=>{
         const p=el("div","cap-phrase");
         const ws=splitWords(seg.text);const k=keyIdx(ws,seg.emph);
-        ws.forEach((w,wi)=>{const s=el("span","cap-word"+(wi===k?" key":""));s.textContent=w;p.appendChild(s);});
+        let keyEl=null;
+        ws.forEach((w,wi)=>{const s=el("span","cap-word"+(wi===k?" key":""));s.textContent=w;p.appendChild(s);if(wi===k)keyEl=s;});
         capStage.appendChild(p);
         const inAt=seg.start;
         const outAt=i<SEGMENTS.length-1?SEGMENTS[i+1].start:seg.end;
         tl.fromTo(p,{opacity:0,y:16},{opacity:1,y:0,duration:0.28,ease:"power3.out"},inAt);
+        // A4: the emphasis word pops in with a scale + palette glow, then settles to a
+        // soft resting glow so it stays legible. GSAP-only (seek-safe) — no CSS keyframes.
+        // 8-digit hex alpha (E6≈.9, 66≈.4, 00=0) keeps the color palette-driven.
+        if(keyEl){
+          tl.fromTo(keyEl,{scale:1,textShadow:"0 0 0px "+KEY_ACCENT+"00"},
+            {scale:1.14,textShadow:"0 0 20px "+KEY_ACCENT+"E6",duration:0.24,ease:"back.out(2)"},inAt+0.10);
+          tl.to(keyEl,{scale:1,textShadow:"0 0 8px "+KEY_ACCENT+"66",duration:0.30,ease:"power2.out"},inAt+0.38);
+        }
         tl.to(p,{opacity:0,y:-12,duration:0.22,ease:"power2.in"},Math.max(inAt+0.4,outAt-0.2));
         tl.set(p,{opacity:0},outAt);
       });

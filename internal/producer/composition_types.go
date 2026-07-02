@@ -43,6 +43,7 @@ type SceneContent struct {
 	End             float64 `json:"end"`
 	Layout          string  `json:"type"`          // hook|hero|stat|step|tip|cta
 	CaptionStyle    string  `json:"caption_style"` // word_pop|phrase_block
+	Speed           string  `json:"speed"`         // fast|normal|slow — entrance pacing, derived from layout
 	BackgroundImage string  `json:"bg"`            // relative assets path, "" = gradient only
 
 	Kicker    string        `json:"kicker,omitempty"`
