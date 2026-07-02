@@ -13,14 +13,14 @@ func TestBuildScenePrompt(t *testing.T) {
 	sz169 := preset.Palette.SafeZone("16:9")
 
 	t.Run("contains style anchor", func(t *testing.T) {
-		out := buildScenePrompt("a rising conversion graph dashboard", "9:16", preset)
+		out := buildScenePrompt("a rising conversion graph dashboard", "9:16", preset, "clip-test")
 		if !strings.Contains(out, anchor) {
 			t.Errorf("output missing style anchor\ngot: %q", out)
 		}
 	})
 
 	t.Run("contains preset ImageAnchor", func(t *testing.T) {
-		out := buildScenePrompt("a rising conversion graph dashboard", "9:16", preset)
+		out := buildScenePrompt("a rising conversion graph dashboard", "9:16", preset, "clip-test")
 		if !strings.Contains(out, Presets[0].ImageAnchor) {
 			t.Errorf("output missing Presets[0].ImageAnchor\ngot: %q", out)
 		}
@@ -28,14 +28,14 @@ func TestBuildScenePrompt(t *testing.T) {
 
 	t.Run("contains concept subject", func(t *testing.T) {
 		concept := "a Facebook Ads Manager dashboard showing a rising conversion graph"
-		out := buildScenePrompt(concept, "9:16", preset)
+		out := buildScenePrompt(concept, "9:16", preset, "clip-test")
 		if !strings.Contains(out, concept) {
 			t.Errorf("output missing concept %q\ngot: %q", concept, out)
 		}
 	})
 
 	t.Run("contains no-text instruction", func(t *testing.T) {
-		out := buildScenePrompt("a vibrant cityscape at dusk", "16:9", preset)
+		out := buildScenePrompt("a vibrant cityscape at dusk", "16:9", preset, "clip-test")
 		lower := strings.ToLower(out)
 		if !strings.Contains(lower, "no text") {
 			t.Errorf("output missing no-text instruction\ngot: %q", out)
@@ -43,22 +43,22 @@ func TestBuildScenePrompt(t *testing.T) {
 	})
 
 	t.Run("contains negative space for 9:16", func(t *testing.T) {
-		out := buildScenePrompt("concept art", "9:16", preset)
+		out := buildScenePrompt("concept art", "9:16", preset, "clip-test")
 		if !strings.Contains(out, sz916.NegativeSpace) {
 			t.Errorf("output missing 9:16 NegativeSpace\ngot: %q", out)
 		}
 	})
 
 	t.Run("contains negative space for 16:9", func(t *testing.T) {
-		out := buildScenePrompt("concept art", "16:9", preset)
+		out := buildScenePrompt("concept art", "16:9", preset, "clip-test")
 		if !strings.Contains(out, sz169.NegativeSpace) {
 			t.Errorf("output missing 16:9 NegativeSpace\ngot: %q", out)
 		}
 	})
 
 	t.Run("aspect negative space differs by ratio", func(t *testing.T) {
-		out916 := buildScenePrompt("concept art", "9:16", preset)
-		out169 := buildScenePrompt("concept art", "16:9", preset)
+		out916 := buildScenePrompt("concept art", "9:16", preset, "clip-test")
+		out169 := buildScenePrompt("concept art", "16:9", preset, "clip-test")
 		if out916 == out169 {
 			t.Error("9:16 and 16:9 outputs are identical; negative-space block should differ")
 		}
@@ -66,15 +66,15 @@ func TestBuildScenePrompt(t *testing.T) {
 
 	t.Run("deterministic same concept and aspect", func(t *testing.T) {
 		concept := "entrepreneur checking analytics on laptop"
-		a := buildScenePrompt(concept, "9:16", preset)
-		b := buildScenePrompt(concept, "9:16", preset)
+		a := buildScenePrompt(concept, "9:16", preset, "clip-test")
+		b := buildScenePrompt(concept, "9:16", preset, "clip-test")
 		if a != b {
 			t.Errorf("buildScenePrompt is not deterministic\ncall1: %q\ncall2: %q", a, b)
 		}
 	})
 
 	t.Run("empty concept falls back to generic subject", func(t *testing.T) {
-		out := buildScenePrompt("", "9:16", preset)
+		out := buildScenePrompt("", "9:16", preset, "clip-test")
 		if out == "" {
 			t.Fatal("output is empty for empty concept")
 		}
@@ -93,7 +93,7 @@ func TestBuildScenePrompt(t *testing.T) {
 	})
 
 	t.Run("whitespace-only concept falls back to generic subject", func(t *testing.T) {
-		out := buildScenePrompt("   ", "9:16", preset)
+		out := buildScenePrompt("   ", "9:16", preset, "clip-test")
 		if out == "" {
 			t.Fatal("output is empty for whitespace concept")
 		}
@@ -395,5 +395,28 @@ func TestCSSVars_EmitsHeadingFontAndMotionProfile(t *testing.T) {
 func TestMotionProfile_Default(t *testing.T) {
 	if MotionDefault.EntranceDur <= 0 || MotionDefault.EntranceEase == "" || MotionDefault.BGZoomTo < 1.0 {
 		t.Errorf("MotionDefault has invalid zero values: %+v", MotionDefault)
+	}
+}
+
+func TestBuildScenePrompt_HasNegativeExclusionsAndCohesion(t *testing.T) {
+	p := PresetByKey("cinematic-photo")
+	got := buildScenePrompt("hands on a laptop", "9:16", p, "clip-abc123")
+	for _, want := range []string{
+		p.ImageAnchor,       // theme art anchor present
+		"hands on a laptop", // subject present
+		"NO text",           // hard no-text rule (case-insensitive contains below)
+		"cohesive",          // cohesion directive present
+		"clip-abc123",       // per-clip token threaded in
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt missing %q\n%s", want, got)
+		}
+	}
+}
+
+func TestBuildScenePrompt_EmptyConceptFallsBack(t *testing.T) {
+	got := buildScenePrompt("   ", "9:16", PresetByKey("editorial-bold"), "clip-x")
+	if !strings.Contains(got, genericSceneSubject) {
+		t.Errorf("empty concept must fall back to genericSceneSubject:\n%s", got)
 	}
 }

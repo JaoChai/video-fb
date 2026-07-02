@@ -284,7 +284,7 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 // The function is deterministic: same (concept, aspect, preset) always yields the
 // same string. It is placed in brand.go because it is purely brand-prompt
 // composition, building on ImageAnchor and SafeZone which live here.
-func buildScenePrompt(concept, aspect string, preset StylePreset) string {
+func buildScenePrompt(concept, aspect string, preset StylePreset, clipToken string) string {
 	subject := strings.TrimSpace(concept)
 	if subject == "" {
 		subject = genericSceneSubject
@@ -294,6 +294,12 @@ func buildScenePrompt(concept, aspect string, preset StylePreset) string {
 		"Subject: " + subject + ". " +
 		"Composition: " + sz.NegativeSpace + ". " +
 		"Keep the image uncluttered with generous negative space. " +
-		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image." +
-		" Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% as simple, uncluttered background (a text card is overlaid there)."
+		// Cross-scene cohesion: all scenes in one clip share the same look.
+		"Maintain a cohesive style across the whole set: same lighting direction, " +
+		"same color grade, same rendering style (style set: " + clipToken + "). " +
+		// Anti-"AI-slop" exclusions.
+		"Avoid: oversaturated colors, plastic/glossy surfaces, warped hands or faces, " +
+		"generic stock-photo look, watermarks, extra limbs, cluttered composition. " +
+		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image. " +
+		"Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% simple and uncluttered (a text card is overlaid there)."
 }

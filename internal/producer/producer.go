@@ -310,7 +310,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		}
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 		if !fileExists(bgFile) && !imageDegraded {
-			prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset)
+			prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
 			if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
 				log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
 				imageDegraded = true
