@@ -18,6 +18,9 @@ type StylePreset struct {
 	Palette     BrandColors // overlay + image colors
 	ImageAnchor string      // art-style paragraph; its colors MUST match Palette
 	Font        TypeTokens  // overlay font (Thai-capable)
+
+	HeadingFont TypeTokens    // display font for headlines; zero ⇒ use Font
+	Motion      MotionProfile // per-theme entrance/ken-burns feel
 }
 
 // Presets is the curated set. Presets[0] is "signature" — it equals today's
@@ -201,7 +204,11 @@ func PickPreset(lastKey string) StylePreset {
 // + font + the shared Motion tokens. Var names exactly match those the layout
 // template consumes (the template aliases --amber* → --orange*).
 func (p StylePreset) BrandCSS() string {
-	return p.Palette.cssVars(p.Font)
+	font := p.Font
+	if p.HeadingFont.HeadingFamily != "" {
+		font.HeadingFamily = p.HeadingFont.HeadingFamily
+	}
+	return p.Palette.cssVars(font)
 }
 
 // AsTheme returns a copy of base with the color + image-style fields overridden

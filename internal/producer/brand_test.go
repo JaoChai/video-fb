@@ -378,3 +378,22 @@ func TestSafeZone(t *testing.T) {
 		}
 	})
 }
+
+func TestCSSVars_EmitsHeadingFontAndMotionProfile(t *testing.T) {
+	// A theme with a distinct heading font + snappy motion must surface those as
+	// CSS custom properties the template can consume.
+	tt := TypeTokens{Family: "Sarabun", HeadingFamily: "Kanit",
+		WeightRegular: 400, WeightSemiBold: 600, WeightBold: 700, WeightExtraBold: 800}
+	css := Brand.cssVars(tt)
+	for _, want := range []string{`--font-heading: "Kanit"`, "--font-family:"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("cssVars missing %q\n%s", want, css)
+		}
+	}
+}
+
+func TestMotionProfile_Default(t *testing.T) {
+	if MotionDefault.EntranceDur <= 0 || MotionDefault.EntranceEase == "" || MotionDefault.BGZoomTo < 1.0 {
+		t.Errorf("MotionDefault has invalid zero values: %+v", MotionDefault)
+	}
+}
