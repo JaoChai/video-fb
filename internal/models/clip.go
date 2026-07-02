@@ -6,25 +6,27 @@ import (
 )
 
 type Clip struct {
-	ID              string    `json:"id"`
-	Title           string    `json:"title"`
-	Question        string    `json:"question"`
-	QuestionerName  string    `json:"questioner_name"`
-	AnswerScript    string    `json:"answer_script"`
-	VoiceScript     string    `json:"voice_script"`
-	Category        string    `json:"category"`
-	Status          string    `json:"status"`
-	Video169URL     *string   `json:"video_16_9_url"`
-	Video916URL     *string   `json:"video_9_16_url"`
-	ThumbnailURL    *string   `json:"thumbnail_url"`
-	PublishDate     *string   `json:"publish_date"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	FailReason      *string   `json:"fail_reason,omitempty"`
-	RetryCount      int       `json:"retry_count"`
-	StylePreset     string    `json:"style_preset"`
-	ContentFormat   string    `json:"content_format"`
-	ProductionStage string    `json:"production_stage"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Question         string    `json:"question"`
+	QuestionerName   string    `json:"questioner_name"`
+	AnswerScript     string    `json:"answer_script"`
+	VoiceScript      string    `json:"voice_script"`
+	Category         string    `json:"category"`
+	Status           string    `json:"status"`
+	Video169URL      *string   `json:"video_16_9_url"`
+	Video916URL      *string   `json:"video_9_16_url"`
+	ThumbnailURL     *string   `json:"thumbnail_url"`
+	PublishDate      *string   `json:"publish_date"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	FailReason       *string   `json:"fail_reason,omitempty"`
+	RetryCount       int       `json:"retry_count"`
+	ReviewRetryCount int       `json:"review_retry_count"`
+	AutoReviewHeld   bool      `json:"auto_review_held"`
+	StylePreset      string    `json:"style_preset"`
+	ContentFormat    string    `json:"content_format"`
+	ProductionStage  string    `json:"production_stage"`
 }
 
 type Scene struct {
@@ -57,6 +59,17 @@ type VisualQA struct {
 	Passed    bool            `json:"passed"`
 	Issues    json.RawMessage `json:"issues"`
 	CreatedAt time.Time       `json:"created_at"`
+}
+
+// AutoReview is one append-only auto-review decision row.
+type AutoReview struct {
+	ID         string          `json:"id"`
+	ClipID     string          `json:"clip_id"`
+	Decision   string          `json:"decision"`
+	Confidence float64         `json:"confidence"`
+	DefectType string          `json:"defect_type"`
+	Reasons    json.RawMessage `json:"reasons"`
+	CreatedAt  time.Time       `json:"created_at"`
 }
 
 // VisualQAStats is the aggregate Visual QA tally shown on the Content page:

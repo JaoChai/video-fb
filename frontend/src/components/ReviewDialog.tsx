@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, getClipCritique } from '../api';
+import { apiFetch, getClipCritique, getClipAutoReview } from '../api';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { useToast } from './ui/toaster';
@@ -62,6 +62,11 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
   const { data: critique } = useQuery({
     queryKey: ['clip-critique', clip.id],
     queryFn: () => getClipCritique(clip.id),
+  });
+
+  const { data: autoReview } = useQuery({
+    queryKey: ['clip-auto-review', clip.id],
+    queryFn: () => getClipAutoReview(clip.id),
   });
 
   const failedScenes = qa?.issues?.filter(v => !v.ok) ?? [];
@@ -213,6 +218,37 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
                 </div>
               ) : null;
             })()}
+          </div>
+        )}
+
+        {/* Auto-review — best effort, renders only when data is available */}
+        {autoReview != null && (
+          <div className="px-4 pb-4 border-t pt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold">Auto-review</h3>
+              <Badge className="bg-blue-100 text-blue-700 border-blue-200 text-xs">
+                {autoReview.decision}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-2">
+              <span className="text-xs bg-muted rounded px-2 py-1">
+                confidence: {autoReview.confidence}
+              </span>
+              {autoReview.defect_type && (
+                <span className="text-xs bg-muted rounded px-2 py-1">
+                  defect: {autoReview.defect_type}
+                </span>
+              )}
+            </div>
+            {autoReview.reasons?.length > 0 && (
+              <ul className="ml-1 space-y-0.5">
+                {autoReview.reasons.map((reason, i) => (
+                  <li key={i} className="text-xs text-muted-foreground leading-snug">
+                    • {reason}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 

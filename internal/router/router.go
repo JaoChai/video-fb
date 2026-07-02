@@ -106,6 +106,9 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	critiques := handler.NewCritiquesHandler(repository.NewCritiquesRepo(pool))
 	r.Get("/api/v1/clips/{clipId}/critique", critiques.GetByClip)
 
+	autoReviews := handler.NewAutoReviewsHandler(repository.NewAutoReviewsRepo(pool))
+	r.Get("/api/v1/clips/{clipId}/auto-review", autoReviews.GetByClip)
+
 	skillRevs := handler.NewSkillRevisionsHandler(repository.NewSkillRevisionsRepo(pool))
 	r.Get("/api/v1/agents/skill-revisions", skillRevs.List)
 
