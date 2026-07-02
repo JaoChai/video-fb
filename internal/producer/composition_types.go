@@ -101,6 +101,12 @@ type ScenesParams struct {
 	Palette  BrandColors
 	BrandCSS string
 
+	// ThemeKey + Motion identify the active design theme for the template
+	// (data-theme attribute + per-theme texture/motion). Zero Motion ⇒
+	// MotionDefault (today's Editorial Bold feel).
+	ThemeKey string
+	Motion   MotionProfile
+
 	// Audio + motion upgrade (gated by AUDIO_MOTION_ENABLED). All zero ⇒ today's
 	// voice-only, current-motion output.
 	AmbientLocalPath string          // absolute path to a prepared ambient.mp3 (input; builder copies it)

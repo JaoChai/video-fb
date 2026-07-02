@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"fmt"
 	"html/template"
 	"strings"
 	"testing"
@@ -122,8 +123,11 @@ func TestRenderCompositionScenes_CaptionStyleInJSON(t *testing.T) {
 	}
 }
 
+// All presets share Palette: Brand, so palette alone no longer varies by
+// theme (see presets.go). This asserts the property that DOES vary per theme
+// instead: the rendered --font-heading value tracks the preset's HeadingFont.
 func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
-	preset := PresetByKey("teal-coral")
+	preset := PresetByKey("neon-techno")
 	params := ScenesParams{
 		AspectRatio:     "9:16",
 		BrandName:       BrandName,
@@ -137,11 +141,12 @@ func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(string(html), preset.Palette.Navy) {
-		t.Errorf("rendered HTML missing preset navy %q", preset.Palette.Navy)
+	want := fmt.Sprintf(`--font-heading: "%s"`, preset.HeadingFont.HeadingFamily)
+	if !strings.Contains(string(html), want) {
+		t.Errorf("rendered HTML missing preset heading font %q", want)
 	}
-	if strings.Contains(string(html), Brand.Navy) && preset.Palette.Navy != Brand.Navy {
-		t.Errorf("rendered HTML leaked hardcoded Brand navy")
+	if strings.Contains(string(html), `--font-heading: "Kanit"`) {
+		t.Errorf("rendered HTML leaked hardcoded editorial-bold heading font")
 	}
 }
 
@@ -173,5 +178,31 @@ func TestRenderCompositionScenes_StyleB(t *testing.T) {
 		if strings.Contains(html, emo) {
 			t.Errorf("emoji leaked: %q", emo)
 		}
+	}
+}
+
+// TestRenderScenes_InjectsThemeKeyAndHeadingFont confirms the template wires
+// ThemeKey/Motion through to the rendered HTML: the data-theme attribute
+// (drives per-theme texture CSS), the --font-heading var (drives display
+// font), and the motion consts derived from the preset's MotionProfile.
+func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
+	preset := PresetByKey("neon-techno")
+	params := sampleScenesParams("9:16")
+	params.ThemeKey = preset.Key
+	params.Motion = preset.Motion
+	params.BrandCSS = preset.BrandCSS()
+
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	for _, want := range []string{`data-theme="neon-techno"`, "--font-heading", "ENTRANCE_EASE"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered HTML missing %q", want)
+		}
+	}
+	if !strings.Contains(html, fmt.Sprintf(`"%s"`, preset.Motion.EntranceEase)) {
+		t.Errorf("rendered HTML missing intact ease string %q", preset.Motion.EntranceEase)
 	}
 }
