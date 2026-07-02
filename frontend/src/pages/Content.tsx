@@ -10,7 +10,7 @@ import { Input } from '../components/ui/input';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '../components/ui/table';
-import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight, ClipboardCheck, Square } from 'lucide-react';
+import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCircle2, Zap, AlertTriangle, Search, ChevronLeft, ChevronRight, ClipboardCheck, Square, Lock } from 'lucide-react';
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
@@ -25,6 +25,7 @@ interface Clip {
   video_9_16_url?: string | null;
   style_preset: string;
   content_format: string;
+  auto_review_held?: boolean;
 }
 
 type StatusFilter = 'all' | 'published' | 'ready' | 'failed' | 'producing' | 'needs_review';
@@ -95,12 +96,18 @@ export default function ContentPage() {
   });
 
   const statusCounts = useMemo(() => {
-    if (!clips) return { all: 0, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0 };
-    const counts = { all: clips.length, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0 };
+    if (!clips) return { all: 0, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0, held: 0, publishable: 0 };
+    const counts = { all: clips.length, published: 0, ready: 0, failed: 0, producing: 0, needs_review: 0, retryable: 0, held: 0, publishable: 0 };
     for (const c of clips) {
       if (c.status === 'published') counts.published++;
-      else if (c.status === 'ready') counts.ready++;
-      else if (c.status === 'failed') {
+      else if (c.status === 'ready') {
+        counts.ready++;
+        // A held clip stays 'ready' but the publisher skips it, so only count
+        // non-held ready clips as actually publishable — otherwise "Publish Ready (N)"
+        // promises to publish clips that silently won't move.
+        if (c.auto_review_held) counts.held++;
+        else counts.publishable++;
+      } else if (c.status === 'failed') {
         counts.failed++;
         if (c.retry_count < 2) counts.retryable++;
       } else if (c.status === 'producing') counts.producing++;
@@ -274,19 +281,21 @@ export default function ContentPage() {
               )}
               {statusCounts.ready > 0 && (
                 <>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handlePublish}
-                    disabled={publishing}
-                  >
-                    {publishing ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Send className="size-4" />
-                    )}
-                    {publishing ? 'Publishing...' : `Publish Ready (${statusCounts.ready})`}
-                  </Button>
+                  {statusCounts.publishable > 0 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={handlePublish}
+                      disabled={publishing}
+                    >
+                      {publishing ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Send className="size-4" />
+                      )}
+                      {publishing ? 'Publishing...' : `Publish Ready (${statusCounts.publishable})`}
+                    </Button>
+                  )}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -396,11 +405,15 @@ export default function ContentPage() {
             <TableBody>
               {paged.map(clip => {
                 const reviewable = clip.status === 'needs_review';
+                // A held clip is 'ready' but the publisher skips it (Visual QA gate).
+                // Make it clickable too so the reasons dialog explains why it won't publish.
+                const held = clip.status === 'ready' && !!clip.auto_review_held;
+                const clickable = reviewable || held;
                 return (
                 <TableRow
                   key={clip.id}
-                  onClick={reviewable ? () => setReviewClip(clip) : undefined}
-                  className={cn(reviewable && 'cursor-pointer hover:bg-muted/50')}
+                  onClick={clickable ? () => setReviewClip(clip) : undefined}
+                  className={cn(clickable && 'cursor-pointer hover:bg-muted/50')}
                 >
                   <TableCell className="pl-4 py-3">
                     <div className="text-sm font-medium leading-snug line-clamp-1">{clip.title}</div>
@@ -412,6 +425,11 @@ export default function ContentPage() {
                     {reviewable && (
                       <div className="text-xs text-amber-600 mt-0.5 font-medium">
                         คลิกเพื่อรีวิว →
+                      </div>
+                    )}
+                    {held && (
+                      <div className="text-xs text-amber-600 mt-0.5 font-medium">
+                        ถูกกักโดย Visual QA — คลิกดูเหตุผล/override →
                       </div>
                     )}
                     <div className="sm:hidden text-xs text-muted-foreground mt-0.5">
@@ -432,6 +450,15 @@ export default function ContentPage() {
                   <TableCell className="py-3">
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={clip.status} />
+                      {held && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-transparent bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0 h-auto"
+                        >
+                          <Lock className="size-2.5" />
+                          ถูกกัก QA
+                        </Badge>
+                      )}
                       {clip.status === 'failed' && clip.retry_count > 0 && (
                         <span className="text-[10px] text-muted-foreground">
                           ({clip.retry_count}/2)

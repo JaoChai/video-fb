@@ -195,6 +195,14 @@ func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
 	return err
 }
 
+// ClearAutoReviewHeld lifts an auto-review hold so the clip can publish again.
+// Used by the manual "override & publish" action when a human decides to ship a
+// clip the auto-reviewer flagged.
+func (r *ClipsRepo) ClearAutoReviewHeld(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE clips SET auto_review_held = FALSE, updated_at = NOW() WHERE id = $1`, id)
+	return err
+}
+
 // IncrementReviewRetry bumps the review-retry counter (separate from retry_count).
 func (r *ClipsRepo) IncrementReviewRetry(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE clips SET review_retry_count = review_retry_count + 1, updated_at = NOW() WHERE id = $1`, id)

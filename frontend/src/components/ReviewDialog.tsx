@@ -26,6 +26,8 @@ export interface ReviewClip {
   question: string;
   category: string;
   video_9_16_url?: string | null;
+  status?: string;
+  auto_review_held?: boolean;
 }
 
 function parseScoreFields(raw: unknown): [string, number][] {
@@ -91,14 +93,20 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
     }
   }
 
+  // A held clip is already 'ready' — approving it means overriding the Visual QA
+  // hold so the publisher stops skipping it. A needs_review clip is promoted to 'ready'.
+  const held = clip.auto_review_held === true;
+
   function handleApprove(): void {
     runAction(
       'approve',
-      () => apiFetch(`/api/v1/clips/${clip.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'ready' }),
-      }),
-      'อนุมัติแล้ว — คลิปพร้อม publish',
+      () => held
+        ? apiFetch(`/api/v1/clips/${clip.id}/unhold`, { method: 'POST' })
+        : apiFetch(`/api/v1/clips/${clip.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'ready' }),
+          }),
+      held ? 'Override แล้ว — คลิปพร้อม publish รอบถัดไป' : 'อนุมัติแล้ว — คลิปพร้อม publish',
     );
   }
 
@@ -264,7 +272,7 @@ export function ReviewDialog({ clip, onClose }: { clip: ReviewClip; onClose: () 
           </Button>
           <Button onClick={handleApprove} disabled={acting !== null}>
             {acting === 'approve' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-            อนุมัติ — พร้อม publish
+            {held ? 'Override — publish ทั้งที่มีตำหนิ' : 'อนุมัติ — พร้อม publish'}
           </Button>
         </div>
       </div>

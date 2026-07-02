@@ -74,6 +74,17 @@ func (h *ClipsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, models.APIResponse{Message: "deleted"})
 }
 
+// Unhold lifts an auto-review hold so the clip becomes publishable again. It's the
+// manual "override & publish anyway" escape hatch for a clip the auto-reviewer gated.
+func (h *ClipsHandler) Unhold(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.repo.ClearAutoReviewHeld(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, models.APIResponse{Message: "hold lifted"})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

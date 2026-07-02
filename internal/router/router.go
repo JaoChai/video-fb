@@ -35,6 +35,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Get("/{id}", clips.Get)
 		r.Patch("/{id}", clips.Update)
 		r.Delete("/{id}", clips.Delete)
+		r.Post("/{id}/unhold", clips.Unhold)
 	})
 
 	visualQA := handler.NewVisualQAHandler(repository.NewVisualQARepo(pool))
