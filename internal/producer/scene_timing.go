@@ -9,6 +9,17 @@ import (
 // sceneBound is one scene's [start, end) window on the combined audio timeline.
 type sceneBound struct{ Start, End float64 }
 
+// boundsToDurations returns each scene's real rendered duration (End-Start),
+// derived from the measured voice bounds. Used to persist accurate per-scene
+// durations (scenes.duration_seconds), which the scene agent never emits.
+func boundsToDurations(bounds []sceneBound) []float64 {
+	durs := make([]float64, len(bounds))
+	for i, b := range bounds {
+		durs[i] = b.End - b.Start
+	}
+	return durs
+}
+
 // computeBounds turns per-scene durations into cumulative [start, end) windows.
 // Example: [8, 11, 5] → [{0,8},{8,19},{19,24}]
 func computeBounds(durations []float64) []sceneBound {

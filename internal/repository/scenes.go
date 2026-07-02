@@ -86,6 +86,21 @@ func (r *ScenesRepo) UpdateImagePrompt(ctx context.Context, clipID string, scene
 	return nil
 }
 
+// UpdateDurations persists each scene's real rendered duration (from voice
+// bounds), matched to scene_number in order (durations[i] → scene_number i+1).
+// The scene agent never emits durations, so scenes are first created with 0 and
+// corrected here after render. A per-scene failure aborts and returns the error.
+func (r *ScenesRepo) UpdateDurations(ctx context.Context, clipID string, durations []float64) error {
+	for i, d := range durations {
+		if _, err := r.pool.Exec(ctx,
+			`UPDATE scenes SET duration_seconds = $3 WHERE clip_id = $1 AND scene_number = $2`,
+			clipID, i+1, d); err != nil {
+			return fmt.Errorf("update duration for clip %s scene %d: %w", clipID, i+1, err)
+		}
+	}
+	return nil
+}
+
 func (r *ScenesRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM scenes WHERE id = $1`, id)
 	if err != nil {

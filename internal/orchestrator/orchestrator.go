@@ -450,6 +450,14 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
 
+	// Persist real per-scene durations (from measured voice bounds); scenes were
+	// created with 0 because the scene agent never emits durations.
+	if len(result.SceneDurations) > 0 {
+		if derr := o.scenesRepo.UpdateDurations(ctx, clipID, result.SceneDurations); derr != nil {
+			log.Printf("persist scene durations failed (non-fatal) for clip %s: %v", clipID, derr)
+		}
+	}
+
 	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {

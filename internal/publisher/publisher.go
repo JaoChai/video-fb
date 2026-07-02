@@ -42,7 +42,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
 		 JOIN clip_metadata cm ON c.id = cm.clip_id
-		 WHERE c.status = 'ready' AND c.publish_date <= CURRENT_DATE
+		 WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE
 		 ORDER BY c.publish_date ASC LIMIT 1`)
 	if err != nil {
 		return fmt.Errorf("query ready clips: %w", err)
@@ -202,7 +202,7 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_9_16_url, c.title
 		 FROM clips c JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.video_9_16_url IS NOT NULL AND c.video_9_16_url <> ''
-		   AND c.status IN ('ready','published')
+		   AND c.status IN ('ready','published') AND c.auto_review_held = FALSE
 		   AND (cm.zernio_tiktok_post_id IS NULL OR cm.zernio_tiktok_post_id = '')
 		 ORDER BY c.created_at DESC LIMIT 1`).
 		Scan(&clipID, &title, &description, &video916, &clipTitle)
