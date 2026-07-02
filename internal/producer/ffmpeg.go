@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -128,6 +129,38 @@ func (f *FFmpegAssembler) ExtractFrameAt(videoPath, outPath string, tsSeconds fl
 		return fmt.Errorf("ffmpeg extract frame at %.3fs failed: %w", tsSeconds, err)
 	}
 	return nil
+}
+
+// ProbeDurationSeconds returns the container duration of videoPath in seconds
+// via ffprobe. QA frame sampling uses it to place frames on the real timeline
+// instead of trusting per-scene duration estimates (which are often 0).
+func (f *FFmpegAssembler) ProbeDurationSeconds(videoPath string) (float64, error) {
+	args := []string{"-v", "error", "-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1", videoPath}
+	out, err := exec.Command(ffprobePath(f.ffmpegPath), args...).Output()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe duration failed: %w", err)
+	}
+	d, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe duration parse %q: %w", strings.TrimSpace(string(out)), err)
+	}
+	return d, nil
+}
+
+// ffprobePath derives the ffprobe binary path from the ffmpeg path (they ship
+// together), falling back to "ffprobe" on PATH when ffmpegPath is bare or has
+// no "ffmpeg" segment to rewrite.
+func ffprobePath(ffmpegPath string) string {
+	if ffmpegPath == "" || ffmpegPath == "ffmpeg" {
+		return "ffprobe"
+	}
+	dir, base := filepath.Dir(ffmpegPath), filepath.Base(ffmpegPath)
+	probeBase := strings.Replace(base, "ffmpeg", "ffprobe", 1)
+	if probeBase == base {
+		return "ffprobe"
+	}
+	return filepath.Join(dir, probeBase)
 }
 
 // BuildAmbientBed loops srcPath to at least durationSec, trims to exactly
