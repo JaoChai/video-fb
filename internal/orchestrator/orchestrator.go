@@ -236,7 +236,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 }
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
-	preset := producer.PresetByKey("signature")
+	preset := producer.PresetByKey("editorial-bold")
 	if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
 		preset = producer.PickPreset(last)
@@ -603,7 +603,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
 	// Retried clips keep their original visual identity. PresetByKey falls back to
-	// "signature" if the stored key is empty (pre-flag clips have no stored preset).
+	// editorial-bold (Presets[0]) if the stored key is empty (pre-flag clips have no stored preset).
 	retryPreset := producer.PresetByKey(clip.StylePreset)
 	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona)
 }

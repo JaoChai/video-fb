@@ -342,6 +342,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		Segments:        segments,
 		Palette:         preset.Palette,
 		BrandCSS:        preset.BrandCSS(),
+		ThemeKey:        preset.Key,
+		Motion:          preset.Motion,
 	}
 
 	if AudioMotionEnabled() {

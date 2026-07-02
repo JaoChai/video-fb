@@ -211,3 +211,20 @@ func candidateKeysExcluding(lastKey string) []string {
 	}
 	return ks
 }
+
+func TestPickPreset_AvoidsLastAcrossFourThemes(t *testing.T) {
+	// Never repeats the previous theme; over many picks all 4 themes appear.
+	seen := map[string]bool{}
+	last := "editorial-bold"
+	for i := 0; i < 200; i++ {
+		p := PickPreset(last)
+		if p.Key == last {
+			t.Fatalf("PickPreset returned same as last %q", last)
+		}
+		seen[p.Key] = true
+		last = p.Key
+	}
+	if len(seen) < 3 {
+		t.Errorf("expected variety across themes, only saw %v", seen)
+	}
+}
