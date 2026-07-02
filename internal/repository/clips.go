@@ -195,11 +195,17 @@ func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
 	return err
 }
 
-// ClearAutoReviewHeld lifts an auto-review hold so the clip can publish again.
-// Used by the manual "override & publish" action when a human decides to ship a
-// clip the auto-reviewer flagged.
+// ClearAutoReviewHeld lifts an auto-review hold AND promotes the clip to 'ready'
+// so it actually becomes publishable. A held clip is either 'needs_review'
+// (fresh auto-review hold — recordHeld only flips the flag, never the status) or a
+// stale 'ready'+held row; in both cases the human "override & publish" intent is
+// to make it publishable, so clearing the flag alone isn't enough — the publisher
+// gates on status='ready'. Guarded to those two statuses so an unrelated state
+// (producing/published/failed) is never clobbered.
 func (r *ClipsRepo) ClearAutoReviewHeld(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE clips SET auto_review_held = FALSE, updated_at = NOW() WHERE id = $1`, id)
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET auto_review_held = FALSE, status = 'ready', updated_at = NOW()
+		 WHERE id = $1 AND status IN ('needs_review', 'ready')`, id)
 	return err
 }
 
