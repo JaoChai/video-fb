@@ -193,18 +193,15 @@
 
 ---
 
-## 13. เฟสการทำ (เสนอ)
+## 13. เฟสการทำ (ตัดสินใจแล้ว: ทำ Phase 1+2 รวดเดียว)
 
-**Phase 1 — Quick wins (ยกคุณภาพ ไม่ต้องรอธีมครบ):**
-- hook ≤7 คำเฟรมแรก + emphasis-word highlight + image house-style/negative/seed anchor
-- เพิ่มฟอนต์ Kanit/Prompt (vendor) ใช้กับ default theme
-→ ดัน retention ได้เร็วก่อนธีมครบ
-
-**Phase 2 — Theme system:**
+**Phase 1+2 — ทำในแผนเดียว (รอบนี้):**
+- Quick wins: hook ≤7 คำเฟรมแรก + emphasis-word highlight + image house-style/negative/seed anchor
+- เพิ่มฟอนต์ Kanit/Prompt/IBM Plex (vendor local)
 - ขยาย struct + LayoutKit + motion profile + template รองรับหลาย composition/ฟอนต์/texture
 - ทำครบ 4 ธีม + เปิด avoid-last rotation
 
-**Phase 3 — เรียนรู้:**
+**Phase 3 — เรียนรู้ (แยกทีหลัง):**
 - เปิด performance-weighting (epsilon-greedy) + วัดผล retention ต่อธีม + ปรับจูน
 
 ---
@@ -213,4 +210,4 @@
 
 - **สมมติ:** ภาพถ่ายจริง (ธีม 2) — gpt-image-2 สร้าง photoreal ได้คุณภาพพอ (ยังไม่ยืนยัน คุณภาพจริง — ต้องทดสอบตอน implement; ถ้าไม่ผ่านคุณภาพ อาจสลับธีม 2 เป็นสื่ออื่น)
 - **สมมติ:** metric retention ต่อคลิปมีเก็บพอสำหรับ performance-weighting (โครงมี แต่ยังไม่ตรวจว่ามีข้อมูลพอ)
-- **คำถามค้าง:** อยากทำ Phase 1 ก่อนเห็นผลเร็ว หรือทำ Phase 2 (ธีม) ให้เห็นความต่างก่อน? (เสนอ: Phase 1 ก่อน)
+- **ตัดสินใจแล้ว:** ทำ Phase 1+2 รวดเดียว (ดูข้อ 13) — Phase 3 (performance-weighting) แยกทีหลัง
