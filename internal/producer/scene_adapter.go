@@ -137,13 +137,17 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		}
 	}
 	clean := agent.StripEmoji
-	c.Kicker, c.Sub = clean(raw.Kicker), clean(raw.Sub)
+	c.Kicker = clean(raw.Kicker)
+	c.Sub = agent.TruncateRunes(clean(raw.Sub), 50)
 	c.Title = clean(raw.Title) // may legitimately contain <span class="acc">…</span>
-	c.Stat, c.Unit, c.StatLabel = clean(raw.Stat), clean(raw.Unit), clean(raw.StatLabel)
-	c.Num, c.Of, c.Pill = clean(raw.Num), clean(raw.Of), clean(raw.Pill)
-	c.CTA, c.Brand = clean(raw.CTA), clean(raw.Brand)
+	c.Stat, c.Unit = clean(raw.Stat), clean(raw.Unit)
+	c.StatLabel = agent.TruncateRunes(clean(raw.StatLabel), 28)
+	c.Num, c.Of = clean(raw.Num), clean(raw.Of)
+	c.Pill = agent.TruncateRunes(clean(raw.Pill), 16)
+	c.CTA = agent.TruncateRunes(clean(raw.CTA), 14)
+	c.Brand = clean(raw.Brand)
 	for _, r := range raw.Rows {
-		if t := clean(r.T); t != "" {
+		if t := agent.TruncateRunes(clean(r.T), 36); t != "" {
 			c.Rows = append(c.Rows, ContentRow{Text: t, Bad: r.Bad})
 		}
 	}

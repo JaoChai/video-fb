@@ -34,3 +34,19 @@ func StripEmoji(s string) string {
 	}
 	return string(out)
 }
+
+// TruncateRunes caps s at max runes, backing off any trailing combining mark so a
+// Thai vowel/tone mark is never orphaned, and trimming a trailing space. Returns s
+// unchanged when already within budget. Used as a safety net for on-screen text
+// fields whose generation prompt caps are advisory.
+func TruncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	cut := max
+	for cut > 1 && unicode.Is(unicode.Mn, r[cut]) {
+		cut--
+	}
+	return strings.TrimRight(string(r[:cut]), " ")
+}
