@@ -40,7 +40,7 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
       <CardContent className="p-4">
         <div className="flex items-center gap-1.5 mb-3">
           <h3 className="text-sm font-semibold">คลิปยาว vs Shorts</h3>
-          <MetricTooltip text="เทียบผลระหว่างคลิปแบบยาว (Regular) กับคลิปสั้น (Shorts) — ดูว่ารูปแบบไหนคนดูเยอะ/ดูจบมากกว่า" />
+          <MetricTooltip text="เทียบผลระหว่างคลิปแบบยาวกับคลิปสั้น (Shorts) — ดูว่ารูปแบบไหนคนดูเยอะ/ดูจบมากกว่า" />
         </div>
         <div className="space-y-3">
           {segments.map(s => (
