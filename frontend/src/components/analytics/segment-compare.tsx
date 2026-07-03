@@ -1,5 +1,6 @@
 import { Card, CardContent } from '../ui/card'
 import { MiniBar } from '../ui/mini-bar'
+import { MetricTooltip } from './metric-tooltip'
 import { formatNum, formatWatch } from '../../lib/format'
 
 interface SegmentTotals {
@@ -16,7 +17,7 @@ interface SegmentCompareProps {
   data: SegmentTotals[]
 }
 
-const LABELS: Record<string, string> = { regular: 'Regular', shorts: 'Shorts' }
+const LABELS: Record<string, string> = { regular: 'คลิปยาว', shorts: 'Shorts' }
 
 export function SegmentCompare({ data }: SegmentCompareProps) {
   const regular = data.find(d => d.post_type === 'regular')
@@ -26,7 +27,7 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
   if (segments.length === 0) {
     return (
       <Card>
-        <CardContent className="p-4 text-xs text-muted-foreground">No segmented data</CardContent>
+        <CardContent className="p-4 text-xs text-muted-foreground">ยังไม่มีข้อมูลแยกประเภท</CardContent>
       </Card>
     )
   }
@@ -37,16 +38,17 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
   return (
     <Card>
       <CardContent className="p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Regular vs Shorts
-        </h3>
+        <div className="flex items-center gap-1.5 mb-3">
+          <h3 className="text-sm font-semibold">คลิปยาว vs Shorts</h3>
+          <MetricTooltip text="เทียบผลระหว่างคลิปแบบยาว (Regular) กับคลิปสั้น (Shorts) — ดูว่ารูปแบบไหนคนดูเยอะ/ดูจบมากกว่า" />
+        </div>
         <div className="space-y-3">
           {segments.map(s => (
             <div key={s.post_type} className="space-y-2">
-              <div className="flex items-baseline justify-between">
+              <div className="flex items-baseline justify-between gap-2">
                 <span className="text-sm font-medium">{LABELS[s.post_type] ?? s.post_type}</span>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {formatNum(s.views)} views · {formatWatch(s.watch_time_seconds)} · {(s.avg_retention_rate * 100).toFixed(1)}% retention
+                  {formatNum(s.views)} วิว · {formatWatch(s.watch_time_seconds)} · ดูจบ {(s.avg_retention_rate * 100).toFixed(0)}%
                 </span>
               </div>
               <MiniBar value={s.views} max={maxViews} />
@@ -54,8 +56,8 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
             </div>
           ))}
           <div className="flex gap-3 pt-2 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-primary" /> Views</span>
-            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-amber-500" /> Watch time</span>
+            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-primary" /> ยอดวิว</span>
+            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-amber-500" /> เวลาดู</span>
           </div>
         </div>
       </CardContent>
