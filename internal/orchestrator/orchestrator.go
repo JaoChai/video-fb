@@ -487,6 +487,13 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		o.tracker.CompleteStep("visual_qa")
 	}
 
+	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
+	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
+	if result.InspectFlagged && status == "ready" {
+		status = "needs_review"
+		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
+	}
+
 	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
 		Status:          &status,
@@ -690,6 +697,11 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 // before the next scene that it never lands on a transition/crossfade frame.
 const qaSceneFrac = 0.6
 
+// autoReviewSceneFrac positions the auto-review sample at a DIFFERENT point in each
+// scene than QA (qaSceneFrac), so the second-opinion judge inspects an independent
+// frame and can overturn a QA false positive instead of re-confirming the same frame.
+const autoReviewSceneFrac = 0.45
+
 // sceneAwareTimestamps returns one timestamp per scene, each positioned `frac` into
 // its own scene using the real per-scene durations, then rescaled so the estimated
 // total maps onto the probed video duration. This keeps every sample inside its
@@ -723,17 +735,17 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 }
 
 // qaFrameTimestamps returns one timestamp per scene for frame extraction, each
-// positioned qaSceneFrac into its scene via real per-scene durations rescaled to
+// positioned frac into its scene via real per-scene durations rescaled to
 // the probed video length. Falls back to naive even slicing when per-scene
 // durations are unavailable (all zero); if the probe ALSO fails it returns a
 // short/nil slice, and callers must guard their index (fail-open on missing frames).
-func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64) []float64 {
+func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64, frac float64) []float64 {
 	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
 	if err != nil || probed <= 0 {
 		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); sampling from estimated scene durations", err, probed)
 		probed = 0
 	}
-	if ts := sceneAwareTimestamps(durations, probed, qaSceneFrac); ts != nil {
+	if ts := sceneAwareTimestamps(durations, probed, frac); ts != nil {
 		return ts
 	}
 	return evenFrameTimestamps(probed, len(durations))
@@ -747,7 +759,7 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs)
+	mids := o.qaFrameTimestamps(mp4Path, durs, qaSceneFrac)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
@@ -824,7 +836,7 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs)
+	mids := o.qaFrameTimestamps(mp4Path, durs, autoReviewSceneFrac)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
@@ -939,9 +951,13 @@ func (o *Orchestrator) autoReviewOne(ctx context.Context, clip *models.Clip, cfg
 
 	switch res.Decision {
 	case "approve":
-		ready := "ready"
-		if _, err := o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &ready}); err != nil {
+		updated, err := o.clipsRepo.ApproveFromNeedsReview(ctx, clip.ID)
+		if err != nil {
 			log.Printf("autoreview: clip %s approve->ready failed: %v", clip.ID, err)
+			return
+		}
+		if !updated {
+			log.Printf("autoreview: clip %s no longer needs_review — skipping stale approve", clip.ID)
 			return
 		}
 		log.Printf("autoreview: clip %s APPROVED (conf %.2f) — now ready", clip.ID, res.Confidence)
