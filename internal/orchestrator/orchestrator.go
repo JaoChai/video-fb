@@ -487,6 +487,13 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		o.tracker.CompleteStep("visual_qa")
 	}
 
+	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
+	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
+	if result.InspectFlagged && status == "ready" {
+		status = "needs_review"
+		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
+	}
+
 	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
 		Status:          &status,
