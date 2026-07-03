@@ -3,6 +3,7 @@ package producer
 import (
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/jaochai/video-fb/internal/agent"
 )
@@ -119,3 +120,19 @@ func TestCaptionSegments_CarryEmphasisFromScene(t *testing.T) {
 		t.Errorf("no segment carried emphasis %q; got %+v", "โดนแบน", segs)
 	}
 }
+
+func TestSafeCut_doesNotSplitCombiningMark(t *testing.T) {
+	// "ที่" = ท + ◌ี(U+0E35 Mn) ; a naive cut at an index landing on the mark
+	// would orphan it. Build a >max run ending so index `max` is a combining mark.
+	base := []rune("กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก") // 42 base consonants
+	tr := append(base, 'ี')                                        // index 42 = combining mark
+	cut := safeCut(tr, 42)
+	if unicodeIsMn(tr[cut]) {
+		t.Errorf("safeCut returned index %d which is a combining mark", cut)
+	}
+	if cut < 1 {
+		t.Errorf("safeCut backed off too far: %d", cut)
+	}
+}
+
+func unicodeIsMn(r rune) bool { return unicode.Is(unicode.Mn, r) }

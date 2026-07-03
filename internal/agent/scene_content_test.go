@@ -30,3 +30,17 @@ func TestClampLayout(t *testing.T) {
 		t.Error("empty should -> hero")
 	}
 }
+
+func TestTruncateRunes_underLimitUnchanged(t *testing.T) {
+	if got := TruncateRunes("สั้น", 14); got != "สั้น" {
+		t.Errorf("want unchanged, got %q", got)
+	}
+}
+
+func TestTruncateRunes_cutsToLimit(t *testing.T) {
+	in := "กกกกกกกกกกกกกกกกกกกก" // 20 runes
+	got := TruncateRunes(in, 14)
+	if r := []rune(got); len(r) > 14 {
+		t.Errorf("want <=14 runes, got %d (%q)", len(r), got)
+	}
+}
