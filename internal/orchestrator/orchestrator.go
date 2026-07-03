@@ -458,6 +458,15 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
+	// Reflect the measured durations onto the in-memory scenes so QA frame sampling
+	// sees real per-scene lengths (the scene agent emits 0). Without this the QA path
+	// falls back to scene-unaware slicing even though the fix is in place.
+	for i := range scenes {
+		if i < len(result.SceneDurations) {
+			scenes[i].DurationSeconds = result.SceneDurations[i]
+		}
+	}
+
 	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
@@ -659,23 +668,6 @@ func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) e
 	return err
 }
 
-// sceneMidTimestamps returns the midpoint timestamp (seconds) of each scene's
-// window, reconstructed from cumulative DurationSeconds. Pure — the exactness
-// only matters enough to land inside the scene.
-func sceneMidTimestamps(scenes []agent.GeneratedScene) []float64 {
-	mids := make([]float64, len(scenes))
-	cursor := 0.0
-	for i, s := range scenes {
-		d := s.DurationSeconds
-		if d < 0 {
-			d = 0
-		}
-		mids[i] = cursor + d/2
-		cursor += d
-	}
-	return mids
-}
-
 // evenFrameTimestamps returns n timestamps evenly spread over a video of the
 // given duration — the midpoint of each of n equal slices. Used for QA frame
 // sampling so frames land on real content instead of collapsing to t=0 when
@@ -693,29 +685,74 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 	return ts
 }
 
-// qaFrameTimestamps returns one timestamp per scene for QA frame extraction,
-// spread over the video's real (probed) duration. Falls back to the estimate
-// mids when probing fails — but the estimates are usually all-zero, so probing
-// is what makes QA actually inspect content.
-func (o *Orchestrator) qaFrameTimestamps(mp4Path string, n int, fallback []float64) []float64 {
-	dur, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
-	if err != nil || dur <= 0 {
-		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); using estimate timestamps", err, dur)
-		return fallback
+// qaSceneFrac positions each QA/auto-review sample this fraction into its scene —
+// far enough past the entrance animation that content is visible, and far enough
+// before the next scene that it never lands on a transition/crossfade frame.
+const qaSceneFrac = 0.6
+
+// sceneAwareTimestamps returns one timestamp per scene, each positioned `frac` into
+// its own scene using the real per-scene durations, then rescaled so the estimated
+// total maps onto the probed video duration. This keeps every sample inside its
+// intended scene even when scene durations are unequal (unlike naive even slicing,
+// which drifts onto transitions). Returns nil when durations sum to <= 0 so the
+// caller can fall back. probedDur <= 0 means "don't rescale" (scale = 1).
+func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float64 {
+	var total float64
+	for _, d := range durations {
+		if d > 0 {
+			total += d
+		}
 	}
-	if ts := evenFrameTimestamps(dur, n); ts != nil {
+	if total <= 0 {
+		return nil
+	}
+	scale := 1.0
+	if probedDur > 0 {
+		scale = probedDur / total
+	}
+	ts := make([]float64, len(durations))
+	var acc float64
+	for i, d := range durations {
+		if d < 0 {
+			d = 0
+		}
+		ts[i] = (acc + d*frac) * scale
+		acc += d
+	}
+	return ts
+}
+
+// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
+// positioned qaSceneFrac into its scene via real per-scene durations rescaled to
+// the probed video length. Falls back to naive even slicing when per-scene
+// durations are unavailable (all zero); if the probe ALSO fails it returns a
+// short/nil slice, and callers must guard their index (fail-open on missing frames).
+func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64) []float64 {
+	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
+	if err != nil || probed <= 0 {
+		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); sampling from estimated scene durations", err, probed)
+		probed = 0
+	}
+	if ts := sceneAwareTimestamps(durations, probed, qaSceneFrac); ts != nil {
 		return ts
 	}
-	return fallback
+	return evenFrameTimestamps(probed, len(durations))
 }
 
 // extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
 // it with the scene's text. A per-scene extraction failure is logged and that
 // frame is dropped (Visual QA fails open on missing frames).
 func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
-	mids := o.qaFrameTimestamps(mp4Path, len(scenes), sceneMidTimestamps(scenes))
+	durs := make([]float64, len(scenes))
+	for i, s := range scenes {
+		durs[i] = s.DurationSeconds
+	}
+	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
+		if i >= len(mids) {
+			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
 		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
 			log.Printf("visualqa: clip %s scene %d frame extract failed (skip): %v", clipID, s.SceneNumber, err)
@@ -745,17 +782,6 @@ const (
 	autoReviewRetryCap         = 2
 	autoReviewBatch            = 5
 )
-
-// sceneMids returns each scene's midpoint timestamp (seconds) from persisted scenes.
-func sceneMids(scenes []models.Scene) []float64 {
-	mids := make([]float64, len(scenes))
-	var acc float64
-	for i, s := range scenes {
-		mids[i] = acc + s.DurationSeconds/2
-		acc += s.DurationSeconds
-	}
-	return mids
-}
 
 // downloadToTemp fetches url into a temp .mp4 and returns its path (caller removes it).
 func downloadToTemp(ctx context.Context, url string) (string, error) {
@@ -794,9 +820,16 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	}
 	defer os.Remove(mp4Path)
 
-	mids := o.qaFrameTimestamps(mp4Path, len(scenes), sceneMids(scenes))
+	durs := make([]float64, len(scenes))
+	for i, s := range scenes {
+		durs[i] = s.DurationSeconds
+	}
+	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
+		if i >= len(mids) {
+			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
 		// Key the PNG to the already-unique mp4 temp filename so two clips'
 		// scene-N frames never collide under concurrency.
 		outPath := mp4Path + fmt.Sprintf(".scene%d.png", s.SceneNumber)
