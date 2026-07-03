@@ -693,6 +693,43 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 	return ts
 }
 
+// qaSceneFrac positions each QA/auto-review sample this fraction into its scene —
+// far enough past the entrance animation that content is visible, and far enough
+// before the next scene that it never lands on a transition/crossfade frame.
+const qaSceneFrac = 0.6
+
+// sceneAwareTimestamps returns one timestamp per scene, each positioned `frac` into
+// its own scene using the real per-scene durations, then rescaled so the estimated
+// total maps onto the probed video duration. This keeps every sample inside its
+// intended scene even when scene durations are unequal (unlike naive even slicing,
+// which drifts onto transitions). Returns nil when durations sum to <= 0 so the
+// caller can fall back. probedDur <= 0 means "don't rescale" (scale = 1).
+func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float64 {
+	var total float64
+	for _, d := range durations {
+		if d > 0 {
+			total += d
+		}
+	}
+	if total <= 0 {
+		return nil
+	}
+	scale := 1.0
+	if probedDur > 0 {
+		scale = probedDur / total
+	}
+	ts := make([]float64, len(durations))
+	var acc float64
+	for i, d := range durations {
+		if d < 0 {
+			d = 0
+		}
+		ts[i] = (acc + d*frac) * scale
+		acc += d
+	}
+	return ts
+}
+
 // qaFrameTimestamps returns one timestamp per scene for QA frame extraction,
 // spread over the video's real (probed) duration. Falls back to the estimate
 // mids when probing fails — but the estimates are usually all-zero, so probing
