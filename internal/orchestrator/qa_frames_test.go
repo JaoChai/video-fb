@@ -95,3 +95,20 @@ func TestSceneAwareTimestamps_ZeroDurationsNil(t *testing.T) {
 		t.Errorf("want nil for zero durations, got %v", ts)
 	}
 }
+
+// QA and auto-review must sample DIFFERENT positions within a scene so auto-review
+// is an independent second opinion (not the same frame QA already judged).
+func TestSceneAwareTimestamps_QAandAutoReviewDiffer(t *testing.T) {
+	durs := []float64{10, 10, 10}
+	total := 30.0
+	qa := sceneAwareTimestamps(durs, total, qaSceneFrac)
+	ar := sceneAwareTimestamps(durs, total, autoReviewSceneFrac)
+	if qaSceneFrac == autoReviewSceneFrac {
+		t.Fatal("qaSceneFrac and autoReviewSceneFrac must differ for an independent second opinion")
+	}
+	for i := range qa {
+		if qa[i] == ar[i] {
+			t.Errorf("scene %d: QA and auto-review sampled the same timestamp %.3f", i, qa[i])
+		}
+	}
+}
