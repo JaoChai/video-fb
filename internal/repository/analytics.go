@@ -148,7 +148,8 @@ func (r *AnalyticsRepo) SummaryByPlatform(ctx context.Context) ([]models.Platfor
 		       COALESCE(SUM(l.likes),0),
 		       COALESCE(SUM(l.comments),0),
 		       COALESCE(SUM(l.shares),0),
-		       COALESCE(SUM(l.watch_time_seconds),0)
+		       COALESCE(SUM(l.watch_time_seconds),0),
+		       COALESCE(AVG(NULLIF(l.retention_rate, 0)),0)
 		FROM latest l
 		GROUP BY l.platform
 		ORDER BY SUM(l.views) DESC`)
@@ -160,7 +161,7 @@ func (r *AnalyticsRepo) SummaryByPlatform(ctx context.Context) ([]models.Platfor
 	for rows.Next() {
 		var p models.PlatformTotals
 		if err := rows.Scan(&p.Platform, &p.Views, &p.Likes, &p.Comments,
-			&p.Shares, &p.WatchTimeSeconds); err != nil {
+			&p.Shares, &p.WatchTimeSeconds, &p.AvgRetention); err != nil {
 			return nil, fmt.Errorf("scan platform row: %w", err)
 		}
 		out = append(out, p)
