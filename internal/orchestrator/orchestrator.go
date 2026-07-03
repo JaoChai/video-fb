@@ -659,23 +659,6 @@ func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) e
 	return err
 }
 
-// sceneMidTimestamps returns the midpoint timestamp (seconds) of each scene's
-// window, reconstructed from cumulative DurationSeconds. Pure — the exactness
-// only matters enough to land inside the scene.
-func sceneMidTimestamps(scenes []agent.GeneratedScene) []float64 {
-	mids := make([]float64, len(scenes))
-	cursor := 0.0
-	for i, s := range scenes {
-		d := s.DurationSeconds
-		if d < 0 {
-			d = 0
-		}
-		mids[i] = cursor + d/2
-		cursor += d
-	}
-	return mids
-}
-
 // evenFrameTimestamps returns n timestamps evenly spread over a video of the
 // given duration — the midpoint of each of n equal slices. Used for QA frame
 // sampling so frames land on real content instead of collapsing to t=0 when
@@ -730,27 +713,31 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 	return ts
 }
 
-// qaFrameTimestamps returns one timestamp per scene for QA frame extraction,
-// spread over the video's real (probed) duration. Falls back to the estimate
-// mids when probing fails — but the estimates are usually all-zero, so probing
-// is what makes QA actually inspect content.
-func (o *Orchestrator) qaFrameTimestamps(mp4Path string, n int, fallback []float64) []float64 {
-	dur, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
-	if err != nil || dur <= 0 {
-		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); using estimate timestamps", err, dur)
-		return fallback
+// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
+// positioned qaSceneFrac into its scene via real per-scene durations rescaled to
+// the probed video length. Falls back to naive even slicing only when per-scene
+// durations are unavailable (all zero).
+func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64) []float64 {
+	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
+	if err != nil || probed <= 0 {
+		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); sampling from estimated scene durations", err, probed)
+		probed = 0
 	}
-	if ts := evenFrameTimestamps(dur, n); ts != nil {
+	if ts := sceneAwareTimestamps(durations, probed, qaSceneFrac); ts != nil {
 		return ts
 	}
-	return fallback
+	return evenFrameTimestamps(probed, len(durations))
 }
 
 // extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
 // it with the scene's text. A per-scene extraction failure is logged and that
 // frame is dropped (Visual QA fails open on missing frames).
 func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
-	mids := o.qaFrameTimestamps(mp4Path, len(scenes), sceneMidTimestamps(scenes))
+	durs := make([]float64, len(scenes))
+	for i, s := range scenes {
+		durs[i] = s.DurationSeconds
+	}
+	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
@@ -782,17 +769,6 @@ const (
 	autoReviewRetryCap         = 2
 	autoReviewBatch            = 5
 )
-
-// sceneMids returns each scene's midpoint timestamp (seconds) from persisted scenes.
-func sceneMids(scenes []models.Scene) []float64 {
-	mids := make([]float64, len(scenes))
-	var acc float64
-	for i, s := range scenes {
-		mids[i] = acc + s.DurationSeconds/2
-		acc += s.DurationSeconds
-	}
-	return mids
-}
 
 // downloadToTemp fetches url into a temp .mp4 and returns its path (caller removes it).
 func downloadToTemp(ctx context.Context, url string) (string, error) {
@@ -831,7 +807,11 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	}
 	defer os.Remove(mp4Path)
 
-	mids := o.qaFrameTimestamps(mp4Path, len(scenes), sceneMids(scenes))
+	durs := make([]float64, len(scenes))
+	for i, s := range scenes {
+		durs[i] = s.DurationSeconds
+	}
+	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		// Key the PNG to the already-unique mp4 temp filename so two clips'
