@@ -7,5 +7,5 @@ export function formatNum(n: number): string {
 export function formatWatch(s: number): string {
   const h = Math.floor(s / 3600)
   const m = Math.round((s % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
+  return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`
 }
