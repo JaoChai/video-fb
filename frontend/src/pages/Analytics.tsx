@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
-import { Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, AlertTriangle } from 'lucide-react'
+import {
+  Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, AlertTriangle,
+  ChevronDown, ChevronUp,
+} from 'lucide-react'
 import { apiFetch, getPresetPerformance, type PresetScore } from '../api'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
@@ -11,8 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { EmptyState } from '../components/empty-state'
 import { StatCard } from '../components/analytics/stat-card'
 import { SegmentCompare } from '../components/analytics/segment-compare'
-import { PlatformBreakdown } from '../components/analytics/platform-breakdown'
+import { PlatformCard } from '../components/analytics/platform-card'
 import { TopClipsTable, type ClipRow } from '../components/analytics/top-clips-table'
+import { MetricTooltip } from '../components/analytics/metric-tooltip'
 import { formatNum, formatWatch } from '../lib/format'
 
 interface Summary {
@@ -61,6 +65,7 @@ interface PlatformTotals {
   comments: number
   shares: number
   watch_time_seconds: number
+  avg_retention_rate: number
 }
 
 interface SummaryResponse {
@@ -78,18 +83,18 @@ type Range = '7d' | '30d' | 'all'
 
 function StatusLine({ lastFetchedAt, clipCount }: { lastFetchedAt: string | null | undefined; clipCount: number | undefined }) {
   if (!lastFetchedAt) {
-    return <div className="text-xs text-muted-foreground">No fetch yet</div>
+    return <div className="text-xs text-muted-foreground">ยังไม่เคยดึงข้อมูล</div>
   }
   const fetched = new Date(lastFetchedAt)
   const stale = Date.now() - fetched.getTime() > 36 * 3600 * 1000
   return (
-    <div className="text-xs text-muted-foreground flex items-center gap-2">
-      {clipCount !== undefined && <span>{clipCount} published clips</span>}
-      <span>· Last updated {fetched.toLocaleString('th-TH')}</span>
+    <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+      {clipCount !== undefined && <span>เผยแพร่แล้ว {clipCount} คลิป</span>}
+      <span>· อัปเดตเมื่อ {fetched.toLocaleString('th-TH')}</span>
       {stale && (
         <span className="inline-flex items-center gap-1 text-amber-600">
           <AlertTriangle className="size-3.5" aria-hidden />
-          data over 36h old
+          ข้อมูลเก่ากว่า 36 ชม.
         </span>
       )}
     </div>
@@ -98,6 +103,7 @@ function StatusLine({ lastFetchedAt, clipCount }: { lastFetchedAt: string | null
 
 export default function AnalyticsPage() {
   const [range, setRange] = useState<Range>('30d')
+  const [presetOpen, setPresetOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -127,10 +133,6 @@ export default function AnalyticsPage() {
 
   const trendSeries = useMemo(() => ({
     views: trend.map(t => t.views),
-    likes: trend.map(t => t.likes),
-    comments: trend.map(t => t.comments),
-    shares: trend.map(t => t.shares),
-    watch: trend.map(t => t.watch_time_seconds),
     retention: trend.map(t => t.avg_retention_rate * 100),
   }), [trend])
 
@@ -139,22 +141,24 @@ export default function AnalyticsPage() {
     [presetPerf],
   )
 
+  const platforms = data?.by_platform ?? []
+
   return (
     <div>
-      <PageHeader title="Analytics" />
+      <PageHeader title="ภาพรวมสถิติ" />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <StatusLine lastFetchedAt={data?.last_fetched_at} clipCount={summary?.clip_count} />
         <div className="flex items-center gap-2">
           <Tabs value={range} onValueChange={v => setRange(v as Range)}>
             <TabsList>
-              <TabsTrigger value="7d">7d</TabsTrigger>
-              <TabsTrigger value="30d">30d</TabsTrigger>
-              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="7d">7 วัน</TabsTrigger>
+              <TabsTrigger value="30d">30 วัน</TabsTrigger>
+              <TabsTrigger value="all">ทั้งหมด</TabsTrigger>
             </TabsList>
           </Tabs>
           <Button size="sm" variant="outline" disabled={triggerFetch.isPending} onClick={() => triggerFetch.mutate()}>
-            {triggerFetch.isPending ? 'Fetching…' : 'Refresh now'}
+            {triggerFetch.isPending ? 'กำลังดึง…' : 'อัปเดตล่าสุด'}
           </Button>
         </div>
       </div>
@@ -162,7 +166,7 @@ export default function AnalyticsPage() {
       {isLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {[1, 2].map(i => <Skeleton key={i} className="h-32" />)}
+            {[1, 2].map(i => <Skeleton key={i} className="h-40" />)}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20" />)}
@@ -171,15 +175,17 @@ export default function AnalyticsPage() {
       ) : !summary || summary.clip_count === 0 ? (
         <EmptyState
           icon={BarChart3}
-          title="No analytics data"
-          description="Publish clips to YouTube first, then analytics data will appear here."
+          title="ยังไม่มีข้อมูลสถิติ"
+          description="เผยแพร่คลิปขึ้น YouTube หรือ TikTok ก่อน แล้วสถิติจะแสดงที่นี่"
         />
       ) : (
         <div className="space-y-6">
+          {/* คนดูทั้งหมด + ดูจบเฉลี่ย */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <StatCard
               variant="hero"
-              label="Total Views"
+              label="คนดูทั้งหมด"
+              tooltip="จำนวนครั้งที่คลิปถูกเปิดดู รวมทุกแพลตฟอร์ม"
               value={formatNum(summary.total_views)}
               icon={Eye}
               delta={delta?.views_pct}
@@ -187,7 +193,8 @@ export default function AnalyticsPage() {
             />
             <StatCard
               variant="hero"
-              label="Avg Retention"
+              label="ดูจบเฉลี่ย"
+              tooltip="โดยเฉลี่ยคนดูคลิปจนจบกี่เปอร์เซ็นต์ — ยิ่งสูงยิ่งดี"
               value={`${(summary.avg_retention_rate * 100).toFixed(1)}%`}
               icon={TrendingUp}
               delta={delta?.retention_pp}
@@ -196,56 +203,84 @@ export default function AnalyticsPage() {
             />
           </div>
 
+          {/* แยกแพลตฟอร์ม */}
+          {platforms.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-1.5">
+                <h2 className="text-sm font-semibold">แยกตามแพลตฟอร์ม</h2>
+                <MetricTooltip text="ยอดวิวและการมีส่วนร่วมแยกตามแต่ละแพลตฟอร์มที่เผยแพร่" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {platforms.map(p => <PlatformCard key={p.platform} data={p} />)}
+              </div>
+            </div>
+          )}
+
+          {/* การมีส่วนร่วม */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Likes" value={formatNum(summary.total_likes)} icon={ThumbsUp} delta={delta?.likes_pct} />
-            <StatCard label="Comments" value={formatNum(summary.total_comments)} icon={MessageSquare} delta={delta?.comments_pct} />
-            <StatCard label="Shares" value={formatNum(summary.total_shares)} icon={Share2} delta={delta?.shares_pct} />
-            <StatCard label="Watch Time" value={formatWatch(summary.total_watch_time_seconds)} icon={Clock} delta={delta?.watch_time_pct} />
+            <StatCard label="ไลก์" tooltip="จำนวนคนกดถูกใจ" value={formatNum(summary.total_likes)} icon={ThumbsUp} delta={delta?.likes_pct} />
+            <StatCard label="คอมเมนต์" tooltip="จำนวนความคิดเห็น" value={formatNum(summary.total_comments)} icon={MessageSquare} delta={delta?.comments_pct} />
+            <StatCard label="แชร์" tooltip="จำนวนครั้งที่ถูกแชร์ต่อ" value={formatNum(summary.total_shares)} icon={Share2} delta={delta?.shares_pct} />
+            <StatCard label="เวลาดูรวม" tooltip="เวลาที่คนดูคลิปรวมกันทั้งหมด" value={formatWatch(summary.total_watch_time_seconds)} icon={Clock} delta={delta?.watch_time_pct} />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <SegmentCompare data={data?.by_post_type ?? []} />
-            <PlatformBreakdown data={data?.by_platform ?? []} />
-          </div>
-
+          {/* คลิปยาว vs Shorts */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Top Clips</h2>
-              <span className="text-xs text-muted-foreground">Click a row to expand platform breakdown</span>
+            <SegmentCompare data={data?.by_post_type ?? []} />
+          </div>
+
+          {/* คลิปที่ดีที่สุด */}
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">คลิปที่ดีที่สุด</h2>
+              <span className="text-xs text-muted-foreground">แตะเพื่อดูรายละเอียดแต่ละแพลตฟอร์ม</span>
             </div>
             <TopClipsTable clips={data?.top_clips ?? []} />
           </div>
 
+          {/* ผลตามธีม (พับเก็บได้) */}
           <div>
-            <h2 className="text-sm font-semibold mb-2">By Style Preset</h2>
-            <Card>
-              <CardContent className="pt-4">
-                {sortedPresets.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-2">
-                    ยังไม่มีข้อมูลพอ — ระบบกำลังสะสม retention ต่อธีม
-                  </p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Preset</TableHead>
-                        <TableHead>Retention</TableHead>
-                        <TableHead>N</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedPresets.map(row => (
-                        <TableRow key={row.preset}>
-                          <TableCell className="font-medium">{row.preset}</TableCell>
-                          <TableCell>{(row.avg_retention * 100).toFixed(1)}%</TableCell>
-                          <TableCell>{row.n}</TableCell>
+            <button
+              type="button"
+              onClick={() => setPresetOpen(o => !o)}
+              className="mb-2 flex w-full items-center justify-between gap-2 text-sm font-semibold"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                ผลตามธีมคลิป
+                <MetricTooltip text="เปรียบเทียบอัตราดูจบเฉลี่ยของแต่ละธีม/สไตล์คลิป เพื่อดูว่าธีมไหนคนดูชอบกว่า" />
+              </span>
+              {presetOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </button>
+            {presetOpen && (
+              <Card>
+                <CardContent className="pt-4">
+                  {sortedPresets.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">
+                      ยังมีข้อมูลไม่พอ — ระบบกำลังสะสมอัตราดูจบต่อธีม
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ธีม</TableHead>
+                          <TableHead>ดูจบ</TableHead>
+                          <TableHead>จำนวนคลิป</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedPresets.map(row => (
+                          <TableRow key={row.preset}>
+                            <TableCell className="font-medium">{row.preset}</TableCell>
+                            <TableCell>{(row.avg_retention * 100).toFixed(1)}%</TableCell>
+                            <TableCell>{row.n}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       )}

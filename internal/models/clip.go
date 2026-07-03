@@ -154,6 +154,7 @@ type PlatformTotals struct {
 	Comments         int     `json:"comments"`
 	Shares           int     `json:"shares"`
 	WatchTimeSeconds float64 `json:"watch_time_seconds"`
+	AvgRetention     float64 `json:"avg_retention_rate"`
 }
 
 type TrendPoint struct {
