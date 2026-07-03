@@ -195,6 +195,20 @@ func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
 	return err
 }
 
+// ApproveFromNeedsReview promotes a clip to 'ready' ONLY if it is still
+// 'needs_review', so a clip whose status changed since the auto-reviewer snapshotted
+// it (already published, manually handled) is left untouched. Returns true if a row
+// was updated. Prevents a late auto-review "approve" from forcing a published clip
+// back to 'ready' (which would re-publish it next tick).
+func (r *ClipsRepo) ApproveFromNeedsReview(ctx context.Context, id string) (bool, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE clips SET status = 'ready', updated_at = NOW() WHERE id = $1 AND status = 'needs_review'`, id)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // ClearAutoReviewHeld lifts an auto-review hold AND promotes the clip to 'ready'
 // so it actually becomes publishable. A held clip is either 'needs_review'
 // (fresh auto-review hold — recordHeld only flips the flag, never the status) or a

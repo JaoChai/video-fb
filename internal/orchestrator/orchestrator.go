@@ -951,9 +951,13 @@ func (o *Orchestrator) autoReviewOne(ctx context.Context, clip *models.Clip, cfg
 
 	switch res.Decision {
 	case "approve":
-		ready := "ready"
-		if _, err := o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &ready}); err != nil {
+		updated, err := o.clipsRepo.ApproveFromNeedsReview(ctx, clip.ID)
+		if err != nil {
 			log.Printf("autoreview: clip %s approve->ready failed: %v", clip.ID, err)
+			return
+		}
+		if !updated {
+			log.Printf("autoreview: clip %s no longer needs_review — skipping stale approve", clip.ID)
 			return
 		}
 		log.Printf("autoreview: clip %s APPROVED (conf %.2f) — now ready", clip.ID, res.Confidence)
