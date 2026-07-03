@@ -458,6 +458,15 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
+	// Reflect the measured durations onto the in-memory scenes so QA frame sampling
+	// sees real per-scene lengths (the scene agent emits 0). Without this the QA path
+	// falls back to scene-unaware slicing even though the fix is in place.
+	for i := range scenes {
+		if i < len(result.SceneDurations) {
+			scenes[i].DurationSeconds = result.SceneDurations[i]
+		}
+	}
+
 	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
@@ -715,8 +724,9 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 
 // qaFrameTimestamps returns one timestamp per scene for frame extraction, each
 // positioned qaSceneFrac into its scene via real per-scene durations rescaled to
-// the probed video length. Falls back to naive even slicing only when per-scene
-// durations are unavailable (all zero).
+// the probed video length. Falls back to naive even slicing when per-scene
+// durations are unavailable (all zero); if the probe ALSO fails it returns a
+// short/nil slice, and callers must guard their index (fail-open on missing frames).
 func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64) []float64 {
 	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
 	if err != nil || probed <= 0 {
@@ -740,6 +750,9 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
+		if i >= len(mids) {
+			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
 		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
 			log.Printf("visualqa: clip %s scene %d frame extract failed (skip): %v", clipID, s.SceneNumber, err)
@@ -814,6 +827,9 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	mids := o.qaFrameTimestamps(mp4Path, durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
+		if i >= len(mids) {
+			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
 		// Key the PNG to the already-unique mp4 temp filename so two clips'
 		// scene-N frames never collide under concurrency.
 		outPath := mp4Path + fmt.Sprintf(".scene%d.png", s.SceneNumber)
