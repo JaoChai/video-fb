@@ -27,6 +27,7 @@ var ValidVoices = map[string]bool{
 type Producer struct {
 	pool         *pgxpool.Pool
 	kie          *KieClient
+	r2           *R2Client
 	openRouter   *OpenRouterClient
 	ffmpeg       *FFmpegAssembler
 	defaultVoice string
@@ -35,9 +36,9 @@ type Producer struct {
 	hf           *hyperframesDeps // nil until EnableHyperframes; only the multi-scene path uses it
 }
 
-func NewProducer(pool *pgxpool.Pool, kie *KieClient, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
+func NewProducer(pool *pgxpool.Pool, kie *KieClient, r2 *R2Client, openRouter *OpenRouterClient, ffmpeg *FFmpegAssembler, voice, workDir string, tracker *progress.Tracker) *Producer {
 	os.MkdirAll(workDir, 0755)
-	return &Producer{pool: pool, kie: kie, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
+	return &Producer{pool: pool, kie: kie, r2: r2, openRouter: openRouter, ffmpeg: ffmpeg, defaultVoice: voice, workDir: workDir, tracker: tracker}
 }
 
 // KieCredits returns the kie.ai account credit balance — a cheap pre-flight the
