@@ -94,17 +94,21 @@ type ClipMetadata struct {
 }
 
 type ClipAnalytics struct {
-	ID               string    `json:"id"`
-	ClipID           string    `json:"clip_id"`
-	Platform         string    `json:"platform"`
-	PostType         string    `json:"post_type"`
-	Views            int       `json:"views"`
-	Likes            int       `json:"likes"`
-	Comments         int       `json:"comments"`
-	Shares           int       `json:"shares"`
-	WatchTimeSeconds float64   `json:"watch_time_seconds"`
-	RetentionRate    float64   `json:"retention_rate"`
-	FetchedAt        time.Time `json:"fetched_at"`
+	ID                string    `json:"id"`
+	ClipID            string    `json:"clip_id"`
+	Platform          string    `json:"platform"`
+	PostType          string    `json:"post_type"`
+	Views             int       `json:"views"`
+	Likes             int       `json:"likes"`
+	Comments          int       `json:"comments"`
+	Shares            int       `json:"shares"`
+	WatchTimeSeconds  float64   `json:"watch_time_seconds"`
+	RetentionRate     float64   `json:"retention_rate"`
+	EngagementRate    float64   `json:"engagement_rate"`     // percent: 0.83 = 0.83%
+	AvgViewPercentage float64   `json:"avg_view_percentage"` // fraction: 0.83 = 83%, may exceed 1 (Shorts loops)
+	SubscribersGained int       `json:"subscribers_gained"`
+	SubscribersLost   int       `json:"subscribers_lost"`
+	FetchedAt         time.Time `json:"fetched_at"`
 }
 
 type AnalyticsSummary struct {
@@ -118,15 +122,17 @@ type AnalyticsSummary struct {
 }
 
 type ClipPerformance struct {
-	ClipID           string  `json:"clip_id"`
-	Title            string  `json:"title"`
-	Category         string  `json:"category"`
-	Views            int     `json:"views"`
-	Likes            int     `json:"likes"`
-	Comments         int     `json:"comments"`
-	Shares           int     `json:"shares"`
-	RetentionRate    float64 `json:"retention_rate"`
-	WatchTimeSeconds float64 `json:"watch_time_seconds"`
+	ClipID           string   `json:"clip_id"`
+	Title            string   `json:"title"`
+	Category         string   `json:"category"`
+	Views            int      `json:"views"`
+	Likes            int      `json:"likes"`
+	Comments         int      `json:"comments"`
+	Shares           int      `json:"shares"`
+	RetentionRate    float64  `json:"retention_rate"`
+	WatchTimeSeconds float64  `json:"watch_time_seconds"`
+	Sparkline        []int    `json:"sparkline"`        // daily view deltas, oldest→newest
+	FailedPlatforms  []string `json:"failed_platforms"` // platforms whose publish failed
 }
 
 // PresetScore is one style preset's measured retention over a recent window,
@@ -148,13 +154,15 @@ type SegmentedTotals struct {
 }
 
 type PlatformTotals struct {
-	Platform         string  `json:"platform"`
-	Views            int     `json:"views"`
-	Likes            int     `json:"likes"`
-	Comments         int     `json:"comments"`
-	Shares           int     `json:"shares"`
-	WatchTimeSeconds float64 `json:"watch_time_seconds"`
-	AvgRetention     float64 `json:"avg_retention_rate"`
+	Platform          string  `json:"platform"`
+	Views             int     `json:"views"`
+	Likes             int     `json:"likes"`
+	Comments          int     `json:"comments"`
+	Shares            int     `json:"shares"`
+	WatchTimeSeconds  float64 `json:"watch_time_seconds"`
+	AvgRetention      float64 `json:"avg_retention_rate"`
+	EngagementRate    float64 `json:"engagement_rate"`
+	SubscribersGained int     `json:"subscribers_gained"`
 }
 
 type TrendPoint struct {
@@ -174,4 +182,51 @@ type DeltaSummary struct {
 	Shares         float64 `json:"shares_pct"`
 	WatchTime      float64 `json:"watch_time_pct"`
 	RetentionPoint float64 `json:"retention_pp"`
+}
+
+// ClipAnalyticsDaily is one day of YouTube analytics for one post,
+// upserted from Zernio's daily-views endpoint on every fetch.
+type ClipAnalyticsDaily struct {
+	ClipID                  string  `json:"clip_id"`
+	Platform                string  `json:"platform"`
+	PostType                string  `json:"post_type"`
+	Date                    string  `json:"date"` // YYYY-MM-DD as sent by Zernio
+	Views                   int     `json:"views"`
+	EstimatedMinutesWatched float64 `json:"estimated_minutes_watched"`
+	AverageViewDuration     float64 `json:"average_view_duration"`
+	AvgViewPercentage       float64 `json:"avg_view_percentage"` // fraction
+	SubscribersGained       int     `json:"subscribers_gained"`
+	SubscribersLost         int     `json:"subscribers_lost"`
+	Likes                   int     `json:"likes"`
+	Comments                int     `json:"comments"`
+	Shares                  int     `json:"shares"`
+}
+
+// ClipPublishStatus is the last-seen publish outcome of one Zernio post.
+type ClipPublishStatus struct {
+	ClipID       string  `json:"clip_id"`
+	Platform     string  `json:"platform"`
+	PostType     string  `json:"post_type"`
+	ZernioPostID string  `json:"zernio_post_id"`
+	Status       string  `json:"status"`
+	ErrorMessage *string `json:"error_message"`
+}
+
+// PublishFailure is one failed publish surfaced on the Analytics page.
+type PublishFailure struct {
+	ClipID       string    `json:"clip_id"`
+	Title        string    `json:"title"`
+	Platform     string    `json:"platform"`
+	PostType     string    `json:"post_type"`
+	ErrorMessage string    `json:"error_message"`
+	CheckedAt    time.Time `json:"checked_at"`
+}
+
+// CategoryScore is one topic category's measured performance: mean within-platform
+// views percentile (0..1) across its clips over a recent window.
+type CategoryScore struct {
+	Category      string  `json:"category"`
+	AvgPercentile float64 `json:"avg_percentile"`
+	AvgViews      float64 `json:"avg_views"`
+	N             int     `json:"n"`
 }
