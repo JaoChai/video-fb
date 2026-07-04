@@ -16,6 +16,7 @@ import (
 )
 
 const platformYouTube = "youtube"
+const platformTikTok = "tiktok"
 
 func isContactInfo(title string) bool {
 	lower := strings.ToLower(title)
@@ -264,8 +265,9 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 }
 
 type postRef struct {
-	id    string
-	label string
+	id       string
+	platform string
+	label    string
 }
 
 func (p *Publisher) configuredPlatforms(ctx context.Context) ([]string, error) {
@@ -307,11 +309,11 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	_ = p.pool.QueryRow(ctx, `SELECT COUNT(*) FROM clips WHERE status = 'published'`).Scan(&totalPublished)
 
 	rows, err := p.pool.Query(ctx,
-		`SELECT cm.clip_id, cm.zernio_post_id, cm.zernio_shorts_post_id
+		`SELECT cm.clip_id, cm.zernio_post_id, cm.zernio_shorts_post_id, cm.zernio_tiktok_post_id
 		 FROM clip_metadata cm
 		 JOIN clips c ON c.id = cm.clip_id
 		 WHERE c.status = 'published'
-		   AND (cm.zernio_post_id IS NOT NULL OR cm.zernio_shorts_post_id IS NOT NULL)`)
+		   AND (cm.zernio_post_id IS NOT NULL OR cm.zernio_shorts_post_id IS NOT NULL OR cm.zernio_tiktok_post_id IS NOT NULL)`)
 	if err != nil {
 		return fmt.Errorf("query published clips: %w", err)
 	}
@@ -321,11 +323,12 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 		ClipID       string
 		PostID       *string
 		ShortsPostID *string
+		TikTokPostID *string
 	}
 	var clips []clipPost
 	for rows.Next() {
 		var cp clipPost
-		if err := rows.Scan(&cp.ClipID, &cp.PostID, &cp.ShortsPostID); err != nil {
+		if err := rows.Scan(&cp.ClipID, &cp.PostID, &cp.ShortsPostID, &cp.TikTokPostID); err != nil {
 			return fmt.Errorf("scan clip metadata: %w", err)
 		}
 		clips = append(clips, cp)
@@ -335,58 +338,70 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	}
 	log.Printf("FetchAnalytics: %d clips with zernio IDs / %d total published", len(clips), totalPublished)
 
+	// Each Zernio post targets a single platform, and its post ID lives in a
+	// platform-specific column, so pair every post ID with its own platform.
+	// TikTok is a 9:16 short-form video, so it's counted under the "shorts" segment.
+	configured := make(map[string]bool, len(platforms))
+	for _, pl := range platforms {
+		configured[pl] = true
+	}
+
 	var success, failed, dbFailed int
 	for _, cp := range clips {
 		var posts []postRef
 		if cp.PostID != nil && *cp.PostID != "" {
-			posts = append(posts, postRef{*cp.PostID, "regular"})
+			posts = append(posts, postRef{*cp.PostID, platformYouTube, "regular"})
 		}
 		if cp.ShortsPostID != nil && *cp.ShortsPostID != "" {
-			posts = append(posts, postRef{*cp.ShortsPostID, "shorts"})
+			posts = append(posts, postRef{*cp.ShortsPostID, platformYouTube, "shorts"})
+		}
+		if cp.TikTokPostID != nil && *cp.TikTokPostID != "" {
+			posts = append(posts, postRef{*cp.TikTokPostID, platformTikTok, "shorts"})
 		}
 		for _, post := range posts {
-			for _, platform := range platforms {
-				resp, err := p.zernio.GetAnalytics(ctx, post.id, platform)
-				if err != nil {
-					log.Printf("FetchAnalytics FAIL clip=%s type=%s platform=%s post=%s: %v", cp.ClipID, post.label, platform, post.id, err)
-					failed++
-					continue
-				}
-				var metrics PostMetrics
-				found := false
-				for _, pa := range resp.PlatformAnalytics {
-					if pa.Platform == platform {
-						metrics = pa.Analytics
-						found = true
-						break
-					}
-				}
-				if !found {
-					log.Printf("FetchAnalytics NO_PLATFORM_DATA clip=%s platform=%s post=%s syncStatus=%s", cp.ClipID, platform, post.id, resp.SyncStatus)
-					failed++
-					continue
-				}
-				watchTime, retention := 0.0, 0.0
-				if platform == platformYouTube && metrics.Views > 0 {
-					watchTime, retention = p.fetchYouTubeWatchTime(ctx, cp.ClipID, ytAccountID, resp)
-				}
-				if err := p.analytics.Create(ctx, models.ClipAnalytics{
-					ClipID:           cp.ClipID,
-					Platform:         platform,
-					PostType:         post.label,
-					Views:            metrics.Views,
-					Likes:            metrics.Likes,
-					Comments:         metrics.Comments,
-					Shares:           metrics.Shares,
-					WatchTimeSeconds: watchTime,
-					RetentionRate:    retention,
-				}); err != nil {
-					log.Printf("FetchAnalytics DB_FAIL clip=%s platform=%s: %v", cp.ClipID, platform, err)
-					dbFailed++
-					continue
-				}
-				success++
+			if !configured[post.platform] {
+				continue
 			}
+			resp, err := p.zernio.GetAnalytics(ctx, post.id, post.platform)
+			if err != nil {
+				log.Printf("FetchAnalytics FAIL clip=%s type=%s platform=%s post=%s: %v", cp.ClipID, post.label, post.platform, post.id, err)
+				failed++
+				continue
+			}
+			var metrics PostMetrics
+			found := false
+			for _, pa := range resp.PlatformAnalytics {
+				if pa.Platform == post.platform {
+					metrics = pa.Analytics
+					found = true
+					break
+				}
+			}
+			if !found {
+				log.Printf("FetchAnalytics NO_PLATFORM_DATA clip=%s platform=%s post=%s syncStatus=%s", cp.ClipID, post.platform, post.id, resp.SyncStatus)
+				failed++
+				continue
+			}
+			watchTime, retention := 0.0, 0.0
+			if post.platform == platformYouTube && metrics.Views > 0 {
+				watchTime, retention = p.fetchYouTubeWatchTime(ctx, cp.ClipID, ytAccountID, resp)
+			}
+			if err := p.analytics.Create(ctx, models.ClipAnalytics{
+				ClipID:           cp.ClipID,
+				Platform:         post.platform,
+				PostType:         post.label,
+				Views:            metrics.Views,
+				Likes:            metrics.Likes,
+				Comments:         metrics.Comments,
+				Shares:           metrics.Shares,
+				WatchTimeSeconds: watchTime,
+				RetentionRate:    retention,
+			}); err != nil {
+				log.Printf("FetchAnalytics DB_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err)
+				dbFailed++
+				continue
+			}
+			success++
 		}
 	}
 	log.Printf("FetchAnalytics done: %d clips, %d success, %d api_fail, %d db_fail", len(clips), success, failed, dbFailed)

@@ -128,8 +128,13 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
   })
 
   const platformMap = useMemo(() => {
+    // detail is ordered fetched_at DESC (newest first); keep the first (latest)
+    // record per platform/type so the expanded view matches the row's totals.
     const m = new Map<string, ClipPlatformDetail>()
-    detail?.forEach(d => m.set(`${d.platform}-${d.post_type}`, d))
+    detail?.forEach(d => {
+      const k = `${d.platform}-${d.post_type}`
+      if (!m.has(k)) m.set(k, d)
+    })
     return m
   }, [detail])
 
