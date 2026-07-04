@@ -408,6 +408,17 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	return filepath.Join(projectDir, "output.mp4"), boundsToDurations(bounds), inspectFlagged, nil
 }
 
+// uploadPersistent stores a rendered file at a durable URL. It prefers R2 (URLs
+// never expire); if R2 is disabled/unconfigured it falls back to kie.ai's
+// temporary upload so the pipeline keeps working. r2Key is the full object key;
+// kieDir is the legacy kie uploadPath.
+func (p *Producer) uploadPersistent(ctx context.Context, localPath, r2Key, kieDir string) (string, error) {
+	if p.r2 != nil && p.r2.Enabled(ctx) {
+		return p.r2.Upload(ctx, localPath, r2Key, "")
+	}
+	return p.kie.UploadFile(ctx, localPath, kieDir)
+}
+
 // ProduceHyperframes916 assembles a 9:16 multi-scene MP4 from scenes (per-scene
 // TTS + gpt-image-2 + render via AssembleHyperframes916), extracts a thumbnail
 // from the first frame, uploads both to kie.ai, and returns their URLs. It is the
@@ -430,12 +441,12 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 	}
 
 	uploadDir := "adsvance/" + clipID
-	video916URL, err := p.kie.UploadFile(ctx, mp4Path, uploadDir)
+	video916URL, err := p.uploadPersistent(ctx, mp4Path, "clips/"+clipID+"/video-916.mp4", uploadDir)
 	if err != nil {
 		p.tracker.FailStep("upload", err)
 		return nil, fmt.Errorf("upload video: %w", err)
 	}
-	thumbnailURL, err := p.kie.UploadFile(ctx, thumbPath, uploadDir)
+	thumbnailURL, err := p.uploadPersistent(ctx, thumbPath, "clips/"+clipID+"/thumbnail.png", uploadDir)
 	if err != nil {
 		p.tracker.FailStep("upload", err)
 		return nil, fmt.Errorf("upload thumbnail: %w", err)
