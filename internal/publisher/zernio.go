@@ -102,10 +102,12 @@ type PostMetrics struct {
 
 type PlatformAnalyticsEntry struct {
 	Platform       string      `json:"platform"`
+	Status         string      `json:"status"`
 	PlatformPostID string      `json:"platformPostId"`
 	AccountID      string      `json:"accountId"`
 	Analytics      PostMetrics `json:"analytics"`
 	SyncStatus     string      `json:"syncStatus"`
+	ErrorMessage   string      `json:"errorMessage"`
 }
 
 type AnalyticsResponse struct {
@@ -122,6 +124,7 @@ type DailyViewEntry struct {
 	Views                   int     `json:"views"`
 	EstimatedMinutesWatched float64 `json:"estimatedMinutesWatched"`
 	AverageViewDuration     float64 `json:"averageViewDuration"`
+	AverageViewPercentage   float64 `json:"averageViewPercentage"`
 	SubscribersGained       int     `json:"subscribersGained"`
 	SubscribersLost         int     `json:"subscribersLost"`
 	Likes                   int     `json:"likes"`

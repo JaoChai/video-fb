@@ -1,0 +1,22 @@
+{
+  "postId": "6a3c0d160cdd4abde1986dff",
+  "status": "failed",
+  "publishedAt": null,
+  "analytics": {
+    "impressions": 0, "reach": 0, "likes": 0, "comments": 0, "shares": 0,
+    "saves": 0, "clicks": 0, "views": 0, "engagementRate": 0, "lastUpdated": null
+  },
+  "platformAnalytics": [
+    {
+      "platform": "tiktok",
+      "status": "failed",
+      "platformPostId": null,
+      "accountId": "6a2aafab5f7d1751ab805933",
+      "analytics": null,
+      "syncStatus": "unavailable",
+      "errorMessage": "TikTok could not download the video. This may be a temporary network issue - please try again."
+    }
+  ],
+  "syncStatus": "unavailable",
+  "message": "This post failed to publish. Analytics are not available. Please check the error details for each platform."
+}

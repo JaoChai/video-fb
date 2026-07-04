@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "videoId": "vb0MWSQLw4g",
+  "durationSeconds": 61,
+  "totalViews": 30,
+  "dailyViews": [
+    {
+      "date": "2026-06-28", "views": 0, "estimatedMinutesWatched": 0,
+      "averageViewDuration": 0, "averageViewPercentage": 0,
+      "subscribersGained": 0, "subscribersLost": 0,
+      "likes": 0, "comments": 0, "shares": 0
+    },
+    {
+      "date": "2026-06-26", "views": 5, "estimatedMinutesWatched": 4,
+      "averageViewDuration": 294, "averageViewPercentage": 483.11,
+      "subscribersGained": 0, "subscribersLost": 0,
+      "likes": 0, "comments": 0, "shares": 0
+    },
+    {
+      "date": "2026-06-25", "views": 10, "estimatedMinutesWatched": 6,
+      "averageViewDuration": 36, "averageViewPercentage": 59.0,
+      "subscribersGained": 1, "subscribersLost": 0,
+      "likes": 1, "comments": 0, "shares": 0
+    }
+  ],
+  "scopeStatus": { "hasAnalyticsScope": true },
+  "lastSyncedAt": "2026-07-03T18:51:17.000Z"
+}

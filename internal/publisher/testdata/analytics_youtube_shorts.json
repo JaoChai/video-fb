@@ -1,0 +1,26 @@
+{
+  "postId": "6a28f171a4e37c2c37c3e9e5",
+  "status": "published",
+  "publishedAt": "2026-06-10T05:09:45.045Z",
+  "analytics": {
+    "impressions": 0, "reach": 0, "likes": 0, "comments": 0, "shares": 0,
+    "saves": 0, "clicks": 0, "views": 29,
+    "lastUpdated": "2026-07-03 18:51:17", "engagementRate": 0
+  },
+  "platformAnalytics": [
+    {
+      "platform": "youtube",
+      "status": "published",
+      "platformPostId": "vb0MWSQLw4g",
+      "accountId": "69eee157985e734bf3bd8128",
+      "analytics": {
+        "impressions": 0, "reach": 0, "likes": 0, "comments": 0, "shares": 0,
+        "saves": 0, "clicks": 0, "views": 29,
+        "engagementRate": 0, "lastUpdated": "2026-07-03 18:51:17"
+      },
+      "syncStatus": "synced",
+      "errorMessage": null
+    }
+  ],
+  "syncStatus": "synced"
+}

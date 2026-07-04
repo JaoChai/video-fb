@@ -1,0 +1,26 @@
+{
+  "postId": "6a45c62213915deb5bf73441",
+  "status": "published",
+  "publishedAt": "2026-07-02T02:00:20.183Z",
+  "analytics": {
+    "impressions": 0, "reach": 0, "likes": 1, "comments": 0, "shares": 0,
+    "saves": 0, "clicks": 0, "views": 120,
+    "lastUpdated": "2026-07-04 02:25:57", "engagementRate": 0.83
+  },
+  "platformAnalytics": [
+    {
+      "platform": "tiktok",
+      "status": "published",
+      "platformPostId": "7657744600987274516",
+      "accountId": "6a2aafab5f7d1751ab805933",
+      "analytics": {
+        "impressions": 0, "reach": 0, "likes": 1, "comments": 0, "shares": 0,
+        "saves": 0, "clicks": 0, "views": 120,
+        "engagementRate": 0.83, "lastUpdated": "2026-07-04 02:25:57"
+      },
+      "syncStatus": "synced",
+      "errorMessage": null
+    }
+  ],
+  "syncStatus": "synced"
+}
