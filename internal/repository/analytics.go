@@ -12,7 +12,8 @@ import (
 const latestAnalyticsCTE = `WITH latest AS (
 	SELECT DISTINCT ON (clip_id, platform, post_type)
 		clip_id, platform, post_type, views, likes, comments, shares,
-		watch_time_seconds, retention_rate
+		watch_time_seconds, retention_rate,
+		engagement_rate, avg_view_percentage, subscribers_gained
 	FROM clip_analytics
 	ORDER BY clip_id, platform, post_type, fetched_at DESC
 )`
@@ -149,7 +150,9 @@ func (r *AnalyticsRepo) SummaryByPlatform(ctx context.Context) ([]models.Platfor
 		       COALESCE(SUM(l.comments),0),
 		       COALESCE(SUM(l.shares),0),
 		       COALESCE(SUM(l.watch_time_seconds),0),
-		       COALESCE(AVG(NULLIF(l.retention_rate, 0)),0)
+		       COALESCE(AVG(NULLIF(l.avg_view_percentage, 0)), AVG(NULLIF(l.retention_rate, 0)), 0),
+		       COALESCE(AVG(NULLIF(l.engagement_rate, 0)), 0),
+		       COALESCE(SUM(l.subscribers_gained), 0)
 		FROM latest l
 		GROUP BY l.platform
 		ORDER BY SUM(l.views) DESC`)
@@ -161,7 +164,8 @@ func (r *AnalyticsRepo) SummaryByPlatform(ctx context.Context) ([]models.Platfor
 	for rows.Next() {
 		var p models.PlatformTotals
 		if err := rows.Scan(&p.Platform, &p.Views, &p.Likes, &p.Comments,
-			&p.Shares, &p.WatchTimeSeconds, &p.AvgRetention); err != nil {
+			&p.Shares, &p.WatchTimeSeconds, &p.AvgRetention,
+			&p.EngagementRate, &p.SubscribersGained); err != nil {
 			return nil, fmt.Errorf("scan platform row: %w", err)
 		}
 		out = append(out, p)
@@ -281,11 +285,61 @@ func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) erro
 		a.PostType = "regular"
 	}
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO clip_analytics (clip_id, platform, post_type, views, likes, comments, shares, watch_time_seconds, retention_rate)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		a.ClipID, a.Platform, a.PostType, a.Views, a.Likes, a.Comments, a.Shares, a.WatchTimeSeconds, a.RetentionRate)
+		`INSERT INTO clip_analytics (clip_id, platform, post_type, views, likes, comments, shares,
+		    watch_time_seconds, retention_rate, engagement_rate, avg_view_percentage,
+		    subscribers_gained, subscribers_lost)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		a.ClipID, a.Platform, a.PostType, a.Views, a.Likes, a.Comments, a.Shares,
+		a.WatchTimeSeconds, a.RetentionRate, a.EngagementRate, a.AvgViewPercentage,
+		a.SubscribersGained, a.SubscribersLost)
 	if err != nil {
 		return fmt.Errorf("create analytics: %w", err)
+	}
+	return nil
+}
+
+// UpsertDaily records one day of YouTube analytics for a post. Re-fetches
+// overwrite the same (clip, platform, post_type, date) row because Zernio's
+// recent days keep moving for ~48h.
+func (r *AnalyticsRepo) UpsertDaily(ctx context.Context, d models.ClipAnalyticsDaily) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO clip_analytics_daily
+		    (clip_id, platform, post_type, date, views, estimated_minutes_watched,
+		     average_view_duration, avg_view_percentage, subscribers_gained,
+		     subscribers_lost, likes, comments, shares)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		 ON CONFLICT (clip_id, platform, post_type, date) DO UPDATE SET
+		    views = EXCLUDED.views,
+		    estimated_minutes_watched = EXCLUDED.estimated_minutes_watched,
+		    average_view_duration = EXCLUDED.average_view_duration,
+		    avg_view_percentage = EXCLUDED.avg_view_percentage,
+		    subscribers_gained = EXCLUDED.subscribers_gained,
+		    subscribers_lost = EXCLUDED.subscribers_lost,
+		    likes = EXCLUDED.likes,
+		    comments = EXCLUDED.comments,
+		    shares = EXCLUDED.shares`,
+		d.ClipID, d.Platform, d.PostType, d.Date, d.Views, d.EstimatedMinutesWatched,
+		d.AverageViewDuration, d.AvgViewPercentage, d.SubscribersGained,
+		d.SubscribersLost, d.Likes, d.Comments, d.Shares)
+	if err != nil {
+		return fmt.Errorf("upsert daily analytics: %w", err)
+	}
+	return nil
+}
+
+// UpsertPublishStatus records the last-seen publish outcome of one Zernio post.
+func (r *AnalyticsRepo) UpsertPublishStatus(ctx context.Context, s models.ClipPublishStatus) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO clip_publish_status (clip_id, platform, post_type, zernio_post_id, status, error_message, checked_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,NOW())
+		 ON CONFLICT (clip_id, platform, post_type) DO UPDATE SET
+		    zernio_post_id = EXCLUDED.zernio_post_id,
+		    status = EXCLUDED.status,
+		    error_message = EXCLUDED.error_message,
+		    checked_at = NOW()`,
+		s.ClipID, s.Platform, s.PostType, s.ZernioPostID, s.Status, s.ErrorMessage)
+	if err != nil {
+		return fmt.Errorf("upsert publish status: %w", err)
 	}
 	return nil
 }
