@@ -23,7 +23,7 @@ func newSmokeProducer(t *testing.T, dbURL string) (*Producer, func()) {
 	kie := NewKieClient(pool, DefaultKieConfig())
 	or := NewOpenRouterClient(pool)
 	ffmpeg := NewFFmpegAssembler("ffmpeg", "") // unused by the hyperframes path
-	p := NewProducer(pool, kie, or, ffmpeg, "", t.TempDir(), nil)
+	p := NewProducer(pool, kie, NewR2Client(pool), or, ffmpeg, "", t.TempDir(), nil)
 	p.EnableHyperframes("assets/fonts")
 	return p, func() { pool.Close() }
 }
