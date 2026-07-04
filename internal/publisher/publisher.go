@@ -377,6 +377,13 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 					break
 				}
 			}
+			// TikTok (and some platforms) return a flat top-level "analytics"
+			// object with no platformAnalytics entry; fall back to it. LastUpdated
+			// is non-empty only when Zernio actually returned analytics.
+			if !found && resp.Analytics.LastUpdated != "" {
+				metrics = resp.Analytics
+				found = true
+			}
 			if !found {
 				log.Printf("FetchAnalytics NO_PLATFORM_DATA clip=%s platform=%s post=%s syncStatus=%s", cp.ClipID, post.platform, post.id, resp.SyncStatus)
 				failed++
