@@ -46,7 +46,7 @@ export function StatCard({
             {tooltip && <MetricTooltip text={tooltip} />}
           </div>
           <div className="text-3xl font-bold tabular-nums leading-none">{value}</div>
-          {hasDelta && (
+          {(positive || negative) && (
             <div className={cn('flex items-center gap-1 mt-2 text-xs font-medium', deltaColor)}>
               <ArrowIcon className="size-3.5" />
               <span className="tabular-nums">
@@ -79,7 +79,7 @@ export function StatCard({
           {tooltip && <MetricTooltip text={tooltip} />}
         </div>
         <div className="text-xl font-semibold tabular-nums leading-tight">{value}</div>
-        {hasDelta && (
+        {(positive || negative) && (
           <div className={cn('flex items-center gap-0.5 mt-1 text-[11px] font-medium', deltaColor)}>
             <ArrowIcon className="size-3" />
             <span className="tabular-nums">{Math.abs(delta!).toFixed(1)}{deltaUnit}</span>

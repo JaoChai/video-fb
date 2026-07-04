@@ -33,7 +33,6 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
   }
 
   const maxViews = Math.max(...segments.map(s => s.views), 1)
-  const maxWatch = Math.max(...segments.map(s => s.watch_time_seconds), 1)
 
   return (
     <Card>
@@ -42,23 +41,19 @@ export function SegmentCompare({ data }: SegmentCompareProps) {
           <h3 className="text-sm font-semibold">คลิปยาว vs Shorts</h3>
           <MetricTooltip text="เทียบผลระหว่างคลิปแบบยาวกับคลิปสั้น (Shorts) — ดูว่ารูปแบบไหนคนดูเยอะ/ดูจบมากกว่า" />
         </div>
-        <div className="space-y-3">
+        <div className="space-y-4">
           {segments.map(s => (
-            <div key={s.post_type} className="space-y-2">
+            <div key={s.post_type} className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-sm font-medium">{LABELS[s.post_type] ?? s.post_type}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {formatNum(s.views)} วิว · {formatWatch(s.watch_time_seconds)} · ดูจบ {(s.avg_retention_rate * 100).toFixed(0)}%
-                </span>
+                <span className="text-sm font-semibold tabular-nums">{formatNum(s.views)} วิว</span>
               </div>
-              <MiniBar value={s.views} max={maxViews} />
-              <MiniBar value={s.watch_time_seconds} max={maxWatch} barClass="bg-amber-500" />
+              <MiniBar value={s.views} max={maxViews} className="h-2" />
+              <div className="text-xs text-muted-foreground tabular-nums">
+                เวลาดู {formatWatch(s.watch_time_seconds)} · ดูจบเฉลี่ย {(s.avg_retention_rate * 100).toFixed(0)}%
+              </div>
             </div>
           ))}
-          <div className="flex gap-3 pt-2 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-primary" /> ยอดวิว</span>
-            <span className="flex items-center gap-1"><span className="size-2 rounded-sm bg-amber-500" /> เวลาดู</span>
-          </div>
         </div>
       </CardContent>
     </Card>

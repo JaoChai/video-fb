@@ -210,7 +210,7 @@ export default function AnalyticsPage() {
                 <h2 className="text-sm font-semibold">แยกตามแพลตฟอร์ม</h2>
                 <MetricTooltip text="ยอดวิวและการมีส่วนร่วมแยกตามแต่ละแพลตฟอร์มที่เผยแพร่" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-3">
                 {platforms.map(p => <PlatformCard key={p.platform} data={p} />)}
               </div>
             </div>
