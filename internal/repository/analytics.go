@@ -349,3 +349,50 @@ func (r *AnalyticsRepo) UpsertPublishStatus(ctx context.Context, s models.ClipPu
 	}
 	return nil
 }
+
+// TopicPerformance scores each clip category by its clips' mean within-platform
+// views percentile over the last windowDays, excluding failed publishes.
+// Categories with fewer than minClips measurable clips are omitted.
+func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minClips int) ([]models.CategoryScore, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH latest AS (
+			SELECT DISTINCT ON (ca.clip_id, ca.platform)
+				ca.clip_id, ca.platform, ca.views
+			FROM clip_analytics ca
+			WHERE ca.fetched_at >= NOW() - make_interval(days => $1)
+			  AND ca.platform IN ('youtube', 'tiktok')
+			ORDER BY ca.clip_id, ca.platform, ca.fetched_at DESC
+		), ranked AS (
+			SELECT l.clip_id, l.views,
+			       PERCENT_RANK() OVER (PARTITION BY l.platform ORDER BY l.views) AS pct
+			FROM latest l
+			WHERE NOT EXISTS (
+				SELECT 1 FROM clip_publish_status ps
+				WHERE ps.clip_id = l.clip_id AND ps.platform = l.platform AND ps.status = 'failed')
+		)
+		SELECT c.category,
+		       AVG(r.pct), AVG(r.views), COUNT(DISTINCT r.clip_id)
+		FROM ranked r
+		JOIN clips c ON c.id = r.clip_id
+		WHERE c.status = 'published'
+		GROUP BY c.category
+		HAVING COUNT(DISTINCT r.clip_id) >= $2
+		ORDER BY AVG(r.pct) DESC`, windowDays, minClips)
+	if err != nil {
+		return nil, fmt.Errorf("topic performance: %w", err)
+	}
+	defer rows.Close()
+
+	out := []models.CategoryScore{} // non-nil so an empty result marshals to [] not null
+	for rows.Next() {
+		var s models.CategoryScore
+		if err := rows.Scan(&s.Category, &s.AvgPercentile, &s.AvgViews, &s.N); err != nil {
+			return nil, fmt.Errorf("scan category score: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate category scores: %w", err)
+	}
+	return out, nil
+}

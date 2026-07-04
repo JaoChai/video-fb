@@ -138,6 +138,17 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("no categories configured")
 	}
 	category := categories[weekNum%len(categories)]
+	var topicStats string
+	if v, err := o.settingsRepo.Get(ctx, "topic_stats_enabled"); err != nil || v != "false" {
+		// Enabled by default; only the explicit value "false" disables it (kill switch).
+		if scores, err := o.analyticsRepo.TopicPerformance(ctx, 30, 3); err != nil {
+			log.Printf("topic performance unavailable, using round-robin category: %v", err)
+		} else {
+			category = PickCategoryWeighted(categories, scores, weekNum, rand.Intn)
+			topicStats = FormatTopicStats(scores)
+		}
+	}
+	_ = topicStats
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
 	if err != nil {
