@@ -46,7 +46,7 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, topicStats string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
 	var ragContext strings.Builder
 	if format.FormatName == "news" {
 		// News format: live web search for fresh, reliable updates.
@@ -122,6 +122,9 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	if err != nil {
 		return nil, fmt.Errorf("render question template: %w", err)
 	}
+
+	// Real-performance context (empty when the topic_stats kill switch is off).
+	userPrompt += topicStats
 
 	var questions []GeneratedQuestion
 	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &questions); err != nil {

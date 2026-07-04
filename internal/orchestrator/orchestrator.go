@@ -148,7 +148,6 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 			topicStats = FormatTopicStats(scores)
 		}
 	}
-	_ = topicStats
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
 	if err != nil {
@@ -189,7 +188,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, qaCfg)
+	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
 	if errors.Is(err, agent.ErrNoFreshNews) {
 		// No reliable news found — never fabricate news; produce a Q&A clip instead.
 		log.Println("No fresh news available, falling back to Q&A format")
@@ -198,7 +197,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 			o.tracker.FailStep("question", err)
 			return fmt.Errorf("fallback to qa format: %w", err)
 		}
-		questions, err = o.questionAgent.Generate(ctx, count, category, format, persona, qaCfg)
+		questions, err = o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
 	}
 	if err != nil {
 		o.tracker.FailStep("question", err)
