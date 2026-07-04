@@ -352,6 +352,7 @@ func (r *AnalyticsRepo) UpsertPublishStatus(ctx context.Context, s models.ClipPu
 
 // TopicPerformance scores each clip category by its clips' mean within-platform
 // views percentile over the last windowDays, excluding failed publishes.
+// Clips younger than 3 days are excluded — they have not had time to accumulate views.
 // Categories with fewer than minClips measurable clips are omitted.
 func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minClips int) ([]models.CategoryScore, error) {
 	rows, err := r.pool.Query(ctx, `
@@ -375,6 +376,7 @@ func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minCli
 		FROM ranked r
 		JOIN clips c ON c.id = r.clip_id
 		WHERE c.status = 'published'
+		  AND c.created_at <= NOW() - INTERVAL '3 days'
 		GROUP BY c.category
 		HAVING COUNT(DISTINCT r.clip_id) >= $2
 		ORDER BY AVG(r.pct) DESC`, windowDays, minClips)
