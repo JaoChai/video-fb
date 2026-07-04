@@ -252,6 +252,12 @@ func (r *AnalyticsRepo) PresetRetention(ctx context.Context, windowDays int) ([]
 				clip_id, platform, post_type, retention_rate, fetched_at
 			FROM clip_analytics
 			WHERE fetched_at >= NOW() - make_interval(days => $1)
+			  AND NOT EXISTS (
+				SELECT 1 FROM clip_publish_status ps
+				WHERE ps.clip_id = clip_analytics.clip_id
+				  AND ps.platform = clip_analytics.platform
+				  AND ps.post_type = clip_analytics.post_type
+				  AND ps.status = 'failed')
 			ORDER BY clip_id, platform, post_type, fetched_at DESC
 		)
 		SELECT c.style_preset,
