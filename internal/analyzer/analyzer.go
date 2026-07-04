@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
@@ -34,13 +35,15 @@ type agentImprovement struct {
 }
 
 func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
-	data, err := a.gatherData(ctx)
+	stats, err := a.gatherData(ctx)
 	if err != nil {
 		return fmt.Errorf("gather analytics data: %w", err)
 	}
 
-	if data == "" {
-		log.Println("Analyzer: not enough data to analyze (need at least 3 published clips with analytics)")
+	data, clipCount := BuildAnalysisData(stats)
+	// Small-sample gate: below 8 measurable clips the signal is noise.
+	if clipCount < 8 {
+		log.Printf("Analyzer: only %d measurable clips in window (need 8), skipping", clipCount)
 		return nil
 	}
 
@@ -49,22 +52,26 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 		return fmt.Errorf("get analytics agent config: %w", err)
 	}
 
-	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube channel for the last 14 days:
+	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube Shorts + TikTok posts for the last 14 days (n=%d clips — a small sample; calibrate your confidence accordingly):
 
 %s
+
+Notes on the data:
+- "P<n> within platform" is the views percentile compared to other clips on the SAME platform (P90 = top 10%%).
+- "Trend: rising" means most view growth happened in the last 2 days (likely entering the recommendation feed); "peaked" means growth stopped.
+- TikTok has no watch-time/retention data — judge TikTok clips by views percentile, shares, engagement, and trend.
 
 Current agent configurations:
 %s
 
-Analyze which STORYTELLING STYLES performed best (openings, hooks, pacing, tone, length).
+Analyze BOTH of these dimensions:
+1. STORYTELLING STYLE — openings, hooks (the "Hook" field is the clip's real first line), pacing, tone, length. Which styles earn high view percentiles and "rising" trends?
+2. TOPICS — which categories and question angles earn high views/shares on each platform?
 
-YOUR SCOPE IS STRICTLY LIMITED TO STYLE:
-- You may suggest: how to open videos, hook techniques, pacing, tone of voice, energy level
-- You may NOT mention any category name (account, payment, campaign, pixel) in your suggestions
-- You may NOT tell agents which topics to focus on, avoid, prioritize, or exclude
-- Topic selection is handled by a separate system — it is NOT your job
-
-Each insight must be under 1000 characters, written in Thai.
+Requirements for your insights:
+- Preserve content diversity: recommend leaning into winning topics for roughly HALF of future clips, never exclusively. Say this explicitly in the question agent's insights.
+- Ground every recommendation in the data (cite the pattern: views percentile, shares, or trend).
+- Each insight must be under 1000 characters, written in Thai.
 
 Return JSON only:
 {
@@ -73,7 +80,7 @@ Return JSON only:
     {"agent_name": "script", "new_insights": "...", "reason": "..."},
     {"agent_name": "image", "new_insights": "...", "reason": "..."}
   ]
-}`, data, a.currentPrompts(ctx))
+}`, clipCount, data, a.currentPrompts(ctx))
 
 	var result improvementResult
 	err = a.llm.GenerateJSON(ctx, analyticsAgent.Model, analyticsAgent.BuildSystemPrompt(), userPrompt, analyticsAgent.Temperature, &result)
@@ -122,54 +129,96 @@ Return JSON only:
 	return nil
 }
 
-func (a *Analyzer) gatherData(ctx context.Context) (string, error) {
+func (a *Analyzer) gatherData(ctx context.Context) ([]ClipStat, error) {
 	rows, err := a.pool.Query(ctx, `
-		SELECT DISTINCT ON (c.id) c.id, c.title, c.category,
-		       cm.youtube_title,
-		       ca.views, ca.likes, ca.comments, ca.shares,
-		       ca.watch_time_seconds, ca.retention_rate
-		FROM clips c
-		JOIN clip_metadata cm ON c.id = cm.clip_id
-		JOIN clip_analytics ca ON c.id = ca.clip_id
+		WITH latest AS (
+			SELECT DISTINCT ON (ca.clip_id, ca.platform)
+				ca.clip_id, ca.platform, ca.views, ca.likes, ca.comments, ca.shares,
+				ca.engagement_rate, ca.avg_view_percentage, ca.subscribers_gained
+			FROM clip_analytics ca
+			WHERE ca.fetched_at >= NOW() - INTERVAL '14 days'
+			  AND ca.platform IN ('youtube', 'tiktok')
+			ORDER BY ca.clip_id, ca.platform, ca.fetched_at DESC
+		)
+		SELECT c.id, c.title, c.category, COALESCE(s.voice_text, ''),
+		       l.platform, l.views, l.likes, l.comments, l.shares,
+		       l.engagement_rate, l.avg_view_percentage, l.subscribers_gained
+		FROM latest l
+		JOIN clips c ON c.id = l.clip_id
+		LEFT JOIN LATERAL (
+			SELECT voice_text FROM scenes WHERE clip_id = c.id ORDER BY scene_number ASC LIMIT 1
+		) s ON true
 		WHERE c.status = 'published'
-		  AND ca.platform = 'youtube'
-		  AND ca.fetched_at >= NOW() - INTERVAL '14 days'
-		ORDER BY c.id, ca.fetched_at DESC
-		LIMIT 100`)
+		  AND NOT EXISTS (
+			SELECT 1 FROM clip_publish_status ps
+			WHERE ps.clip_id = l.clip_id AND ps.platform = l.platform AND ps.status = 'failed')
+		ORDER BY l.platform, l.views DESC
+		LIMIT 200`)
 	if err != nil {
-		return "", fmt.Errorf("query recent analytics: %w", err)
+		return nil, fmt.Errorf("query recent analytics: %w", err)
 	}
 	defer rows.Close()
 
-	var lines []string
+	var stats []ClipStat
 	for rows.Next() {
-		var id, title, category string
-		var ytTitle *string
-		var views, likes, comments, shares int
-		var watchTime, retention float64
-
-		if err := rows.Scan(&id, &title, &category,
-			&ytTitle,
-			&views, &likes, &comments, &shares,
-			&watchTime, &retention); err != nil {
-			return "", fmt.Errorf("scan: %w", err)
+		var s ClipStat
+		if err := rows.Scan(&s.ID, &s.Title, &s.Category, &s.Hook,
+			&s.Platform, &s.Views, &s.Likes, &s.Comments, &s.Shares,
+			&s.EngagementRate, &s.AvgViewPct, &s.SubsGained); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
 		}
-
-		yt := ""
-		if ytTitle != nil {
-			yt = *ytTitle
-		}
-
-		lines = append(lines, fmt.Sprintf(
-			"- Clip: %s | Title: %s | YT Title: %s | Category: %s | Views: %d | Likes: %d | Comments: %d | Shares: %d | Watch Time: %.0fs | Retention: %.1f%%",
-			id[:8], title, yt, category, views, likes, comments, shares, watchTime, retention*100))
+		stats = append(stats, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate analytics: %w", err)
 	}
 
-	if len(lines) < 3 {
-		return "", nil
+	trends, err := a.fetchTrends(ctx)
+	if err != nil {
+		log.Printf("Analyzer: trend query failed (labels default to unknown): %v", err)
 	}
+	for i := range stats {
+		if label, ok := trends[stats[i].ID+"|"+stats[i].Platform]; ok {
+			stats[i].Trend = label
+		} else {
+			stats[i].Trend = "unknown"
+		}
+	}
+	FillPercentiles(stats)
+	return stats, nil
+}
 
-	return strings.Join(lines, "\n"), nil
+// fetchTrends derives a trend label per clip+platform from daily snapshot maxima
+// over the last 8 days (the daily 04:00 fetch gives one snapshot per day).
+func (a *Analyzer) fetchTrends(ctx context.Context) (map[string]string, error) {
+	rows, err := a.pool.Query(ctx, `
+		SELECT clip_id, platform, DATE_TRUNC('day', fetched_at)::date AS day, MAX(views)
+		FROM clip_analytics
+		WHERE fetched_at >= NOW() - INTERVAL '8 days'
+		  AND platform IN ('youtube', 'tiktok')
+		GROUP BY clip_id, platform, day
+		ORDER BY clip_id, platform, day ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	series := map[string][]int{}
+	for rows.Next() {
+		var clipID, platform string
+		var day time.Time
+		var views int
+		if err := rows.Scan(&clipID, &platform, &day, &views); err != nil {
+			return nil, err
+		}
+		key := clipID + "|" + platform
+		series[key] = append(series[key], views)
+	}
+	out := map[string]string{}
+	for key, views := range series {
+		out[key] = TrendLabel(views)
+	}
+	return out, rows.Err()
 }
 
 func (a *Analyzer) currentPrompts(ctx context.Context) string {
