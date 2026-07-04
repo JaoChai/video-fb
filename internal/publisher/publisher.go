@@ -389,24 +389,55 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				failed++
 				continue
 			}
+			status, errMsg := resolvePostStatus(resp, post.platform)
+			var errPtr *string
+			if errMsg != "" {
+				errPtr = &errMsg
+			}
+			if err := p.analytics.UpsertPublishStatus(ctx, models.ClipPublishStatus{
+				ClipID: cp.ClipID, Platform: post.platform, PostType: post.label,
+				ZernioPostID: post.id, Status: status, ErrorMessage: errPtr,
+			}); err != nil {
+				log.Printf("FetchAnalytics STATUS_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err) // non-fatal
+			}
 			watchTime, retention := 0.0, 0.0
+			var detail ytDetail
 			if post.platform == platformYouTube && metrics.Views > 0 {
-				watchTime, retention = p.fetchYouTubeWatchTime(ctx, cp.ClipID, ytAccountID, resp)
+				detail = p.fetchYouTubeDetail(ctx, cp.ClipID, ytAccountID, resp)
+				watchTime, retention = detail.WatchTime, detail.Retention
 			}
 			if err := p.analytics.Create(ctx, models.ClipAnalytics{
-				ClipID:           cp.ClipID,
-				Platform:         post.platform,
-				PostType:         post.label,
-				Views:            metrics.Views,
-				Likes:            metrics.Likes,
-				Comments:         metrics.Comments,
-				Shares:           metrics.Shares,
-				WatchTimeSeconds: watchTime,
-				RetentionRate:    retention,
+				ClipID:            cp.ClipID,
+				Platform:          post.platform,
+				PostType:          post.label,
+				Views:             metrics.Views,
+				Likes:             metrics.Likes,
+				Comments:          metrics.Comments,
+				Shares:            metrics.Shares,
+				WatchTimeSeconds:  watchTime,
+				RetentionRate:     retention,
+				EngagementRate:    metrics.EngagementRate,
+				AvgViewPercentage: detail.AvgViewPct,
+				SubscribersGained: detail.SubsGained,
+				SubscribersLost:   detail.SubsLost,
 			}); err != nil {
 				log.Printf("FetchAnalytics DB_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err)
 				dbFailed++
 				continue
+			}
+			for _, dv := range detail.Daily {
+				if err := p.analytics.UpsertDaily(ctx, models.ClipAnalyticsDaily{
+					ClipID: cp.ClipID, Platform: post.platform, PostType: post.label,
+					Date: dv.Date, Views: dv.Views,
+					EstimatedMinutesWatched: dv.EstimatedMinutesWatched,
+					AverageViewDuration:     dv.AverageViewDuration,
+					AvgViewPercentage:       dv.AverageViewPercentage / 100.0,
+					SubscribersGained:       dv.SubscribersGained,
+					SubscribersLost:         dv.SubscribersLost,
+					Likes:                   dv.Likes, Comments: dv.Comments, Shares: dv.Shares,
+				}); err != nil {
+					log.Printf("FetchAnalytics DAILY_FAIL clip=%s date=%s: %v", cp.ClipID, dv.Date, err) // non-fatal
+				}
 			}
 			success++
 		}
@@ -415,9 +446,43 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 	return nil
 }
 
-func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccountID string, resp *AnalyticsResponse) (watchTime, retention float64) {
+// normalizePublishStatus maps Zernio's status strings onto our 4-value enum.
+func normalizePublishStatus(s string) string {
+	switch s {
+	case "published", "failed", "scheduled":
+		return s
+	case "pending", "processing":
+		return "scheduled"
+	default:
+		return "unknown"
+	}
+}
+
+// resolvePostStatus prefers the matching platformAnalytics entry's status and
+// errorMessage, falling back to the response-level status.
+func resolvePostStatus(resp *AnalyticsResponse, platform string) (string, string) {
+	for _, pa := range resp.PlatformAnalytics {
+		if pa.Platform == platform && pa.Status != "" {
+			return normalizePublishStatus(pa.Status), pa.ErrorMessage
+		}
+	}
+	return normalizePublishStatus(resp.Status), ""
+}
+
+// ytDetail carries everything the daily-views endpoint gives us for one video.
+type ytDetail struct {
+	WatchTime  float64 // seconds, summed over the window
+	Retention  float64 // legacy: avg view duration / clip duration, capped at 1
+	AvgViewPct float64 // fraction from YouTube's own averageViewPercentage, view-weighted, NOT capped
+	SubsGained int
+	SubsLost   int
+	Daily      []DailyViewEntry
+}
+
+func (p *Publisher) fetchYouTubeDetail(ctx context.Context, clipID, ytAccountID string, resp *AnalyticsResponse) ytDetail {
+	var d ytDetail
 	if ytAccountID == "" {
-		return 0, 0
+		return d
 	}
 	var videoID string
 	for _, pa := range resp.PlatformAnalytics {
@@ -427,7 +492,7 @@ func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccount
 		}
 	}
 	if videoID == "" {
-		return 0, 0
+		return d
 	}
 	daily, err := p.zernio.GetYouTubeDailyViews(ctx, videoID, ytAccountID)
 	if err != nil {
@@ -436,32 +501,44 @@ func (p *Publisher) fetchYouTubeWatchTime(ctx context.Context, clipID, ytAccount
 		} else {
 			log.Printf("FetchAnalytics WATCHTIME_FAIL clip=%s video=%s: %v", clipID, videoID, err)
 		}
-		return 0, 0
+		return d
 	}
 	if len(daily.DailyViews) == 0 {
-		return 0, 0
+		return d
 	}
-	var totalMinutes, avgDurSum float64
+	d.Daily = daily.DailyViews
+
+	var totalMinutes, avgDurSum, pctWeighted float64
+	var viewSum int
 	for _, dv := range daily.DailyViews {
 		totalMinutes += dv.EstimatedMinutesWatched
 		avgDurSum += dv.AverageViewDuration
+		d.SubsGained += dv.SubscribersGained
+		d.SubsLost += dv.SubscribersLost
+		if dv.Views > 0 {
+			pctWeighted += dv.AverageViewPercentage * float64(dv.Views)
+			viewSum += dv.Views
+		}
 	}
-	watchTime = totalMinutes * 60
+	d.WatchTime = totalMinutes * 60
+	if viewSum > 0 {
+		d.AvgViewPct = pctWeighted / float64(viewSum) / 100.0
+	}
 
-	// AverageViewDuration is in seconds. Retention = avg view duration / total clip duration.
+	// Legacy retention: avg view duration / total clip duration, capped at 1.
 	var clipDuration float64
 	if err := p.pool.QueryRow(ctx,
 		`SELECT COALESCE(SUM(duration_seconds), 0) FROM scenes WHERE clip_id = $1`, clipID,
 	).Scan(&clipDuration); err != nil {
 		log.Printf("FetchAnalytics RETENTION_FAIL clip=%s: query clip duration: %v", clipID, err)
-		return watchTime, 0
+		return d
 	}
 	if clipDuration > 0 {
 		avgViewDuration := avgDurSum / float64(len(daily.DailyViews))
-		retention = avgViewDuration / clipDuration
-		if retention > 1.0 {
-			retention = 1.0
+		d.Retention = avgViewDuration / clipDuration
+		if d.Retention > 1.0 {
+			d.Retention = 1.0
 		}
 	}
-	return watchTime, retention
+	return d
 }
