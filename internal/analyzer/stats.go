@@ -20,25 +20,28 @@ type ClipStat struct {
 }
 
 // TrendLabel classifies a clip's daily cumulative view counts (oldest→newest)
-// by comparing the most recent day's growth to the average daily growth over
-// the whole window. "rising" = the last day grew at or above the average
-// pace; "peaked" = the window grew overall but the last day's growth fell to
-// under 20% of the average pace (i.e. it flattened out); otherwise "steady".
+// by comparing growth over the last TWO intervals to the average daily growth
+// over the whole window (two-day smoothing so one lagging/anomalous snapshot
+// can't flip the label). "rising" = the last two days grew at 2x+ the average
+// pace; "peaked" = the window grew overall but the last two days' growth fell
+// to at or under the average pace (i.e. it flattened out); otherwise "steady".
 func TrendLabel(dailyViews []int) string {
-	n := len(dailyViews)
-	if n < 3 {
+	if len(dailyViews) < 3 {
 		return "unknown"
 	}
+	n := len(dailyViews)
 	total := dailyViews[n-1] - dailyViews[0]
 	if total <= 0 {
 		return "steady"
 	}
+	// Compare the last two intervals' growth against the window's average
+	// daily pace — two-day smoothing so one lagging snapshot can't flip the label.
 	avgDelta := float64(total) / float64(n-1)
-	recent := float64(dailyViews[n-1] - dailyViews[n-2])
+	recent := float64(dailyViews[n-1] - dailyViews[n-3])
 	switch {
-	case recent >= avgDelta:
+	case recent >= 2*avgDelta:
 		return "rising"
-	case recent <= avgDelta/5:
+	case recent <= avgDelta:
 		return "peaked"
 	default:
 		return "steady"

@@ -16,6 +16,7 @@ func TestTrendLabel(t *testing.T) {
 		{"rising: most growth is recent", []int{100, 110, 150, 220}, "rising"},
 		{"peaked: growth stopped", []int{10, 80, 100, 102}, "peaked"},
 		{"steady climb", []int{10, 40, 70, 100}, "rising"},
+		{"noisy last snapshot on steady riser", []int{0, 1000, 2000, 3000, 4000, 5000, 6000, 6010}, "steady"},
 	}
 	for _, c := range cases {
 		if got := TrendLabel(c.views); got != c.want {
