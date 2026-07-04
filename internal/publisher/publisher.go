@@ -400,11 +400,9 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				failed++
 				continue
 			}
-			watchTime, retention := 0.0, 0.0
 			var detail ytDetail
 			if post.platform == platformYouTube && metrics.Views > 0 {
 				detail = p.fetchYouTubeDetail(ctx, cp.ClipID, ytAccountID, resp)
-				watchTime, retention = detail.WatchTime, detail.Retention
 			}
 			if err := p.analytics.Create(ctx, models.ClipAnalytics{
 				ClipID:            cp.ClipID,
@@ -414,8 +412,8 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				Likes:             metrics.Likes,
 				Comments:          metrics.Comments,
 				Shares:            metrics.Shares,
-				WatchTimeSeconds:  watchTime,
-				RetentionRate:     retention,
+				WatchTimeSeconds:  detail.WatchTime,
+				RetentionRate:     detail.Retention,
 				EngagementRate:    metrics.EngagementRate,
 				AvgViewPercentage: detail.AvgViewPct,
 				SubscribersGained: detail.SubsGained,
