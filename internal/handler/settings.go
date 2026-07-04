@@ -64,6 +64,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"zernio_tiktok_account_id":  true,
 		"content_preview_confirmed": true,
 		"express_consent_given":     true,
+		"topic_stats_enabled":       true,
 	}
 
 	for k, v := range req {
