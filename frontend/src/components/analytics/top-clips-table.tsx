@@ -54,6 +54,7 @@ const PLATFORM_TH: Record<string, string> = {
   facebook: 'Facebook',
 }
 const POST_TYPE_TH: Record<string, string> = { regular: 'คลิปยาว', shorts: 'Shorts' }
+const PLATFORM_LABEL: Record<string, string> = { youtube: 'YouTube', tiktok: 'TikTok' }
 
 /** รายละเอียดรายแพลตฟอร์มเมื่อกดขยาย — ใช้ร่วมกันทั้ง card และ table */
 function PlatformDetail({
@@ -180,13 +181,16 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                     {clip.title}
                     {(clip.failed_platforms?.length ?? 0) > 0 && (
                       <span className="ml-1.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
-                        โพสต์ไม่สำเร็จ: {clip.failed_platforms!.join(', ')}
+                        โพสต์ไม่สำเร็จ: {clip.failed_platforms!.map(p => PLATFORM_LABEL[p] ?? p).join(', ')}
                       </span>
                     )}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">{clip.category}</div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
-                    <span><span className="text-muted-foreground">วิว </span>{formatNum(clip.views)}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-muted-foreground">วิว </span>{formatNum(clip.views)}
+                      <Sparkline points={clip.sparkline ?? []} />
+                    </span>
                     <span><span className="text-muted-foreground">ไลก์ </span>{formatNum(clip.likes)}</span>
                     <span><span className="text-muted-foreground">ดูจบ </span>{(clip.retention_rate * 100).toFixed(0)}%</span>
                   </div>
@@ -234,7 +238,7 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                           {clip.title}
                           {(clip.failed_platforms?.length ?? 0) > 0 && (
                             <span className="ml-1.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
-                              โพสต์ไม่สำเร็จ: {clip.failed_platforms!.join(', ')}
+                              โพสต์ไม่สำเร็จ: {clip.failed_platforms!.map(p => PLATFORM_LABEL[p] ?? p).join(', ')}
                             </span>
                           )}
                         </div>

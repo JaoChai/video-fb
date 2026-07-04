@@ -58,7 +58,7 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 
 Notes on the data:
 - "P<n> within platform" is the views percentile compared to other clips on the SAME platform (P90 = top 10%%).
-- "Trend: rising" means most view growth happened in the last 2 days (likely entering the recommendation feed); "peaked" means growth stopped.
+- "Trend: rising" means most view growth happened in the last 2 days (likely entering the recommendation feed); "peaked" means growth stopped; "steady" means growth continues at an ordinary pace; "unknown" means too little data.
 - TikTok has no watch-time/retention data — judge TikTok clips by views percentile, shares, engagement, and trend.
 
 Current agent configurations:

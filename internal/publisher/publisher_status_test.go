@@ -37,10 +37,13 @@ func TestResolvePostStatus(t *testing.T) {
 		t.Errorf("status/err = %q/%q, want published/empty", status, errMsg)
 	}
 
-	// Platform entry missing entirely → fall back to top-level status.
-	empty := &AnalyticsResponse{Status: "scheduled"}
-	status, _ = resolvePostStatus(empty, "tiktok")
+	// Platform entry missing entirely → fall back to top-level status/message.
+	empty := &AnalyticsResponse{Status: "scheduled", Message: "sync pending"}
+	status, errMsg = resolvePostStatus(empty, "tiktok")
 	if status != "scheduled" {
 		t.Errorf("fallback status = %q, want scheduled", status)
+	}
+	if errMsg != "sync pending" {
+		t.Errorf("fallback errMsg = %q, want %q", errMsg, "sync pending")
 	}
 }

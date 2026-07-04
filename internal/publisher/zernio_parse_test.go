@@ -57,6 +57,9 @@ func TestParseTikTokFailed(t *testing.T) {
 	if resp.Analytics.LastUpdated != "" {
 		t.Errorf("flat lastUpdated = %q, want empty (failed post has no analytics)", resp.Analytics.LastUpdated)
 	}
+	if resp.Message == "" {
+		t.Error("message empty, want failed-post explanation")
+	}
 }
 
 func TestParseYouTubeDailyViews(t *testing.T) {

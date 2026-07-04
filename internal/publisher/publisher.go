@@ -464,7 +464,7 @@ func resolvePostStatus(resp *AnalyticsResponse, platform string) (string, string
 			return normalizePublishStatus(pa.Status), pa.ErrorMessage
 		}
 	}
-	return normalizePublishStatus(resp.Status), ""
+	return normalizePublishStatus(resp.Status), resp.Message
 }
 
 // ytDetail carries everything the daily-views endpoint gives us for one video.

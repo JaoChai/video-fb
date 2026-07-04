@@ -25,8 +25,11 @@ type ClipStat struct {
 // can't flip the label). "rising" = the last two days grew at 2x+ the average
 // pace; "peaked" = the window grew overall but the last two days' growth fell
 // to at or under the average pace (i.e. it flattened out); otherwise "steady".
+// At least 4 daily snapshots (3 intervals) are needed to judge a trend — with
+// only 3 points the "recent" and "average" windows overlap completely, so any
+// growth always looks "rising".
 func TrendLabel(dailyViews []int) string {
-	if len(dailyViews) < 3 {
+	if len(dailyViews) < 4 {
 		return "unknown"
 	}
 	n := len(dailyViews)

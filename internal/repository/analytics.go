@@ -352,13 +352,16 @@ func (r *AnalyticsRepo) UpsertPublishStatus(ctx context.Context, s models.ClipPu
 
 // TopicPerformance scores each clip category by its clips' mean within-platform
 // views percentile over the last windowDays, excluding failed publishes.
-// Clips younger than 3 days are excluded — they have not had time to accumulate views.
+// Posts whose analytics we first saw under 3 days ago are excluded — they have
+// not had time to accumulate views (first-snapshot age is the post-age proxy;
+// drip-published backlog clips were created long before they were posted).
 // Categories with fewer than minClips measurable clips are omitted.
 func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minClips int) ([]models.CategoryScore, error) {
 	rows, err := r.pool.Query(ctx, `
 		WITH latest AS (
 			SELECT DISTINCT ON (ca.clip_id, ca.platform)
-				ca.clip_id, ca.platform, ca.views
+				ca.clip_id, ca.platform, ca.views,
+				MIN(ca.fetched_at) OVER (PARTITION BY ca.clip_id, ca.platform) AS first_seen
 			FROM clip_analytics ca
 			WHERE ca.fetched_at >= NOW() - make_interval(days => $1)
 			  AND ca.platform IN ('youtube', 'tiktok')
@@ -367,7 +370,8 @@ func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minCli
 			SELECT l.clip_id, l.views,
 			       PERCENT_RANK() OVER (PARTITION BY l.platform ORDER BY l.views) AS pct
 			FROM latest l
-			WHERE NOT EXISTS (
+			WHERE l.first_seen <= NOW() - INTERVAL '3 days'
+			  AND NOT EXISTS (
 				SELECT 1 FROM clip_publish_status ps
 				WHERE ps.clip_id = l.clip_id AND ps.platform = l.platform AND ps.status = 'failed')
 		)
@@ -376,7 +380,6 @@ func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minCli
 		FROM ranked r
 		JOIN clips c ON c.id = r.clip_id
 		WHERE c.status = 'published'
-		  AND c.created_at <= NOW() - INTERVAL '3 days'
 		GROUP BY c.category
 		HAVING COUNT(DISTINCT r.clip_id) >= $2
 		ORDER BY AVG(r.pct) DESC`, windowDays, minClips)

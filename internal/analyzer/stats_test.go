@@ -12,6 +12,7 @@ func TestTrendLabel(t *testing.T) {
 		want  string
 	}{
 		{"too few points", []int{10, 20}, "unknown"},
+		{"three points always looked rising — now unknown", []int{100, 200, 201}, "unknown"},
 		{"no growth", []int{100, 100, 100, 100}, "steady"},
 		{"rising: most growth is recent", []int{100, 110, 150, 220}, "rising"},
 		{"peaked: growth stopped", []int{10, 80, 100, 102}, "peaked"},
