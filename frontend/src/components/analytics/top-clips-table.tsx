@@ -5,7 +5,6 @@ import { apiFetch } from '../../api'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table'
 import { Button } from '../ui/button'
 import { Skeleton } from '../ui/skeleton'
-import { MiniBar } from '../ui/mini-bar'
 import { cn } from '../../lib/utils'
 import { formatNum, formatWatch } from '../../lib/format'
 
@@ -119,7 +118,6 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
     return arr
   }, [clips, sortKey, sortDir])
 
-  const maxViews = Math.max(...sorted.map(c => c.views), 1)
 
   const { data: detail, isLoading: detailLoading } = useQuery({
     queryKey: ['clip-analytics', expandedId],
@@ -128,8 +126,13 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
   })
 
   const platformMap = useMemo(() => {
+    // detail is ordered fetched_at DESC (newest first); keep the first (latest)
+    // record per platform/type so the expanded view matches the row's totals.
     const m = new Map<string, ClipPlatformDetail>()
-    detail?.forEach(d => m.set(`${d.platform}-${d.post_type}`, d))
+    detail?.forEach(d => {
+      const k = `${d.platform}-${d.post_type}`
+      if (!m.has(k)) m.set(k, d)
+    })
     return m
   }, [detail])
 
@@ -177,9 +180,6 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                     <span><span className="text-muted-foreground">ไลก์ </span>{formatNum(clip.likes)}</span>
                     <span><span className="text-muted-foreground">ดูจบ </span>{(clip.retention_rate * 100).toFixed(0)}%</span>
                   </div>
-                  <div className="mt-1.5">
-                    <MiniBar value={clip.views} max={maxViews} />
-                  </div>
                 </div>
                 {isExpanded ? <ChevronUp className="size-4 shrink-0" /> : <ChevronDown className="size-4 shrink-0" />}
               </button>
@@ -198,12 +198,12 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="pl-4">ชื่อคลิป</TableHead>
-              <TableHead className="hidden sm:table-cell">หมวด</TableHead>
-              <TableHead className="text-right"><SortHeader k="views" /></TableHead>
-              <TableHead className="text-right"><SortHeader k="likes" /></TableHead>
-              <TableHead className="text-right"><SortHeader k="retention_rate" /></TableHead>
-              <TableHead className="hidden lg:table-cell text-right"><SortHeader k="watch_time_seconds" /></TableHead>
+              <TableHead className="pl-4 w-full">ชื่อคลิป</TableHead>
+              <TableHead className="whitespace-nowrap">หมวด</TableHead>
+              <TableHead className="text-right whitespace-nowrap"><SortHeader k="views" /></TableHead>
+              <TableHead className="text-right whitespace-nowrap"><SortHeader k="likes" /></TableHead>
+              <TableHead className="text-right whitespace-nowrap"><SortHeader k="retention_rate" /></TableHead>
+              <TableHead className="text-right whitespace-nowrap"><SortHeader k="watch_time_seconds" /></TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
           </TableHeader>
@@ -221,9 +221,6 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                       <span className="text-xs text-muted-foreground tabular-nums w-5">{idx + 1}</span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium line-clamp-1">{clip.title}</div>
-                        <div className="mt-1.5 max-w-[280px]">
-                          <MiniBar value={clip.views} max={maxViews} />
-                        </div>
                         {isExpanded && (
                           <div className="mt-3">
                             <PlatformDetail detailLoading={detailLoading} platformMap={platformMap} />
@@ -232,11 +229,11 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{clip.category}</TableCell>
-                  <TableCell className="text-right tabular-nums text-sm font-medium">{formatNum(clip.views)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatNum(clip.likes)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{(clip.retention_rate * 100).toFixed(0)}%</TableCell>
-                  <TableCell className="hidden lg:table-cell text-right tabular-nums text-sm text-muted-foreground">{formatWatch(clip.watch_time_seconds)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{clip.category}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm font-medium">{formatNum(clip.views)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{formatNum(clip.likes)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{(clip.retention_rate * 100).toFixed(0)}%</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{formatWatch(clip.watch_time_seconds)}</TableCell>
                   <TableCell className="pr-3">
                     <Button variant="ghost" size="icon" className="size-7">
                       {isExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}

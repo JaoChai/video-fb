@@ -19,12 +19,24 @@ const PLATFORM_LABEL: Record<string, string> = {
   facebook: 'Facebook',
 }
 
-// แถบสีบนหัวการ์ด = สีแบรนด์
+// แถบสีด้านซ้าย = สีแบรนด์
 const PLATFORM_ACCENT: Record<string, string> = {
   youtube: 'bg-rose-500',
   tiktok: 'bg-foreground',
   instagram: 'bg-pink-500',
   facebook: 'bg-blue-500',
+}
+
+function Stat({ icon: Icon, label, value }: { icon: typeof Heart; label: string; value: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="inline-flex items-center gap-1 text-sm font-semibold tabular-nums">
+        <Icon className="size-4 text-muted-foreground" />
+        {value}
+      </span>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+    </div>
+  )
 }
 
 export function PlatformCard({ data }: { data: PlatformTotals }) {
@@ -34,34 +46,33 @@ export function PlatformCard({ data }: { data: PlatformTotals }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className={`h-1.5 w-full ${accent}`} />
-      <CardContent className="p-4">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-base font-semibold">{label}</span>
-          {showRetention && (
-            <span className="text-xs text-muted-foreground">
-              ดูจบ {(data.avg_retention_rate * 100).toFixed(0)}%
-            </span>
-          )}
-        </div>
-        <div className="mt-1 text-2xl font-bold tabular-nums leading-none">{formatNum(data.views)}</div>
-        <div className="text-xs text-muted-foreground">ยอดวิว</div>
+      <div className="flex items-stretch">
+        <div className={`w-1.5 shrink-0 ${accent}`} aria-hidden />
+        <CardContent className="flex flex-1 flex-wrap items-center justify-between gap-x-6 gap-y-3 p-4">
+          {/* ชื่อแพลตฟอร์ม + ยอดวิว */}
+          <div className="flex items-center gap-4">
+            <span className={`inline-block size-2.5 rounded-full ${accent}`} aria-hidden />
+            <div>
+              <div className="text-base font-semibold leading-tight">{label}</div>
+              {showRetention && (
+                <div className="text-xs text-muted-foreground">ดูจบเฉลี่ย {(data.avg_retention_rate * 100).toFixed(0)}%</div>
+              )}
+            </div>
+            <div className="ml-2 border-l pl-4">
+              <div className="text-2xl font-bold tabular-nums leading-none">{formatNum(data.views)}</div>
+              <div className="text-xs text-muted-foreground">ยอดวิว</div>
+            </div>
+          </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <Heart className="size-3.5" /> <span className="tabular-nums">{formatNum(data.likes)}</span>
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <MessageCircle className="size-3.5" /> <span className="tabular-nums">{formatNum(data.comments)}</span>
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Repeat2 className="size-3.5" /> <span className="tabular-nums">{formatNum(data.shares)}</span>
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Clock className="size-3.5" /> <span className="tabular-nums">{formatWatch(data.watch_time_seconds)}</span>
-          </span>
-        </div>
-      </CardContent>
+          {/* การมีส่วนร่วม */}
+          <div className="flex items-center gap-5">
+            <Stat icon={Heart} label="ไลก์" value={formatNum(data.likes)} />
+            <Stat icon={MessageCircle} label="คอมเมนต์" value={formatNum(data.comments)} />
+            <Stat icon={Repeat2} label="แชร์" value={formatNum(data.shares)} />
+            <Stat icon={Clock} label="เวลาดู" value={formatWatch(data.watch_time_seconds)} />
+          </div>
+        </CardContent>
+      </div>
     </Card>
   )
 }
