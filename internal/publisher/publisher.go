@@ -368,6 +368,17 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				failed++
 				continue
 			}
+			status, errMsg := resolvePostStatus(resp, post.platform)
+			var errPtr *string
+			if errMsg != "" {
+				errPtr = &errMsg
+			}
+			if err := p.analytics.UpsertPublishStatus(ctx, models.ClipPublishStatus{
+				ClipID: cp.ClipID, Platform: post.platform, PostType: post.label,
+				ZernioPostID: post.id, Status: status, ErrorMessage: errPtr,
+			}); err != nil {
+				log.Printf("FetchAnalytics STATUS_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err)
+			}
 			var metrics PostMetrics
 			found := false
 			for _, pa := range resp.PlatformAnalytics {
@@ -388,17 +399,6 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				log.Printf("FetchAnalytics NO_PLATFORM_DATA clip=%s platform=%s post=%s syncStatus=%s", cp.ClipID, post.platform, post.id, resp.SyncStatus)
 				failed++
 				continue
-			}
-			status, errMsg := resolvePostStatus(resp, post.platform)
-			var errPtr *string
-			if errMsg != "" {
-				errPtr = &errMsg
-			}
-			if err := p.analytics.UpsertPublishStatus(ctx, models.ClipPublishStatus{
-				ClipID: cp.ClipID, Platform: post.platform, PostType: post.label,
-				ZernioPostID: post.id, Status: status, ErrorMessage: errPtr,
-			}); err != nil {
-				log.Printf("FetchAnalytics STATUS_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err) // non-fatal
 			}
 			watchTime, retention := 0.0, 0.0
 			var detail ytDetail
@@ -436,7 +436,7 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 					SubscribersLost:         dv.SubscribersLost,
 					Likes:                   dv.Likes, Comments: dv.Comments, Shares: dv.Shares,
 				}); err != nil {
-					log.Printf("FetchAnalytics DAILY_FAIL clip=%s date=%s: %v", cp.ClipID, dv.Date, err) // non-fatal
+					log.Printf("FetchAnalytics DAILY_FAIL clip=%s platform=%s date=%s: %v", cp.ClipID, post.platform, dv.Date, err)
 				}
 			}
 			success++
