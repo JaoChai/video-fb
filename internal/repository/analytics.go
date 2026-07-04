@@ -398,3 +398,83 @@ func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minCli
 	}
 	return out, nil
 }
+
+// PublishFailures lists posts whose last-seen Zernio status is 'failed'.
+func (r *AnalyticsRepo) PublishFailures(ctx context.Context) ([]models.PublishFailure, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT ps.clip_id, c.title, ps.platform, ps.post_type,
+		       COALESCE(ps.error_message, ''), ps.checked_at
+		FROM clip_publish_status ps
+		JOIN clips c ON c.id = ps.clip_id
+		WHERE ps.status = 'failed'
+		ORDER BY ps.checked_at DESC
+		LIMIT 50`)
+	if err != nil {
+		return nil, fmt.Errorf("publish failures: %w", err)
+	}
+	defer rows.Close()
+
+	out := []models.PublishFailure{} // non-nil so an empty result marshals to [] not null
+	for rows.Next() {
+		var f models.PublishFailure
+		if err := rows.Scan(&f.ClipID, &f.Title, &f.Platform, &f.PostType, &f.ErrorMessage, &f.CheckedAt); err != nil {
+			return nil, fmt.Errorf("scan publish failure: %w", err)
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate publish failures: %w", err)
+	}
+	return out, nil
+}
+
+// Sparklines returns per-clip daily view deltas (all platforms summed, oldest→newest)
+// over the last `days` days, derived from the daily snapshot maxima.
+func (r *AnalyticsRepo) Sparklines(ctx context.Context, days int) (map[string][]int, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH per_day AS (
+			SELECT clip_id, platform, post_type,
+			       DATE_TRUNC('day', fetched_at)::date AS day, MAX(views) AS views
+			FROM clip_analytics
+			WHERE fetched_at >= NOW() - make_interval(days => $1)
+			GROUP BY clip_id, platform, post_type, day
+		)
+		SELECT clip_id, day, SUM(views)::int
+		FROM per_day
+		GROUP BY clip_id, day
+		ORDER BY clip_id, day ASC`, days)
+	if err != nil {
+		return nil, fmt.Errorf("sparklines: %w", err)
+	}
+	defer rows.Close()
+
+	cumulative := map[string][]int{}
+	for rows.Next() {
+		var clipID string
+		var day time.Time
+		var views int
+		if err := rows.Scan(&clipID, &day, &views); err != nil {
+			return nil, fmt.Errorf("scan sparkline row: %w", err)
+		}
+		cumulative[clipID] = append(cumulative[clipID], views)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate sparkline rows: %w", err)
+	}
+
+	// Convert cumulative snapshots to daily deltas (clamped at 0 — platform
+	// corrections can shrink counts and a negative bar is meaningless).
+	out := map[string][]int{}
+	for clipID, series := range cumulative {
+		deltas := make([]int, 0, len(series))
+		for i := 1; i < len(series); i++ {
+			d := series[i] - series[i-1]
+			if d < 0 {
+				d = 0
+			}
+			deltas = append(deltas, d)
+		}
+		out[clipID] = deltas
+	}
+	return out, nil
+}

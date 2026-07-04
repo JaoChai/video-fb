@@ -81,17 +81,52 @@ func (h *AnalyticsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	}
 	lastFetched, _ := h.repo.LastFetchedAt(ctx)
 
+	failures, err := h.repo.PublishFailures(ctx)
+	if err != nil {
+		log.Printf("analytics summary: publish failures unavailable: %v", err)
+		failures = []models.PublishFailure{}
+	}
+	topics, err := h.repo.TopicPerformance(ctx, 30, 3)
+	if err != nil {
+		log.Printf("analytics summary: topic performance unavailable: %v", err)
+		topics = []models.CategoryScore{}
+	}
+	sparks, err := h.repo.Sparklines(ctx, 14)
+	if err != nil {
+		log.Printf("analytics summary: sparklines unavailable: %v", err)
+		sparks = map[string][]int{}
+	}
+
+	failedByClip := map[string][]string{}
+	for _, f := range failures {
+		failedByClip[f.ClipID] = append(failedByClip[f.ClipID], f.Platform)
+	}
+	for i := range topClips {
+		if s, ok := sparks[topClips[i].ClipID]; ok {
+			topClips[i].Sparkline = s
+		} else {
+			topClips[i].Sparkline = []int{}
+		}
+		if fp, ok := failedByClip[topClips[i].ClipID]; ok {
+			topClips[i].FailedPlatforms = fp
+		} else {
+			topClips[i].FailedPlatforms = []string{}
+		}
+	}
+
 	delta := computeDelta(summary, prev)
 
 	writeJSON(w, http.StatusOK, models.APIResponse{Data: map[string]any{
-		"summary":         summary,
-		"top_clips":       topClips,
-		"by_post_type":    byPostType,
-		"by_platform":     byPlatform,
-		"trend":           trend,
-		"delta":           delta,
-		"range_days":      days,
-		"last_fetched_at": lastFetched,
+		"summary":           summary,
+		"top_clips":         topClips,
+		"by_post_type":      byPostType,
+		"by_platform":       byPlatform,
+		"trend":             trend,
+		"delta":             delta,
+		"range_days":        days,
+		"last_fetched_at":   lastFetched,
+		"publish_failures":  failures,
+		"topic_performance": topics,
 	}})
 }
 
