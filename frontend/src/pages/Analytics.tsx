@@ -17,6 +17,8 @@ import { SegmentCompare } from '../components/analytics/segment-compare'
 import { PlatformCard } from '../components/analytics/platform-card'
 import { TopClipsTable, type ClipRow } from '../components/analytics/top-clips-table'
 import { MetricTooltip } from '../components/analytics/metric-tooltip'
+import { FailedPostsAlert, type PublishFailure } from '../components/analytics/failed-posts-alert'
+import { TopicPerformance, type CategoryScore } from '../components/analytics/topic-performance'
 import { formatNum, formatWatch } from '../lib/format'
 
 interface Summary {
@@ -66,6 +68,8 @@ interface PlatformTotals {
   shares: number
   watch_time_seconds: number
   avg_retention_rate: number
+  engagement_rate: number
+  subscribers_gained: number
 }
 
 interface SummaryResponse {
@@ -77,6 +81,8 @@ interface SummaryResponse {
   delta: Delta
   range_days: number
   last_fetched_at: string | null
+  publish_failures: PublishFailure[] | null
+  topic_performance: CategoryScore[] | null
 }
 
 type Range = '7d' | '30d' | 'all'
@@ -180,6 +186,8 @@ export default function AnalyticsPage() {
         />
       ) : (
         <div className="space-y-6">
+          <FailedPostsAlert failures={data?.publish_failures ?? []} />
+
           {/* คนดูทั้งหมด + ดูจบเฉลี่ย */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <StatCard
@@ -228,6 +236,9 @@ export default function AnalyticsPage() {
           <div>
             <SegmentCompare data={data?.by_post_type ?? []} />
           </div>
+
+          {/* หัวข้อไหนทำยอดดี */}
+          <TopicPerformance scores={data?.topic_performance ?? []} />
 
           {/* คลิปที่ดีที่สุด */}
           <div>

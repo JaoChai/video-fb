@@ -10,6 +10,8 @@ interface PlatformTotals {
   shares: number
   watch_time_seconds: number
   avg_retention_rate: number
+  engagement_rate: number
+  subscribers_gained: number
 }
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -55,7 +57,16 @@ export function PlatformCard({ data }: { data: PlatformTotals }) {
             <div>
               <div className="text-base font-semibold leading-tight">{label}</div>
               {showRetention && (
-                <div className="text-xs text-muted-foreground">ดูจบเฉลี่ย {(data.avg_retention_rate * 100).toFixed(0)}%</div>
+                <div className="text-xs text-muted-foreground">
+                  ดูจบเฉลี่ย {Math.min(data.avg_retention_rate * 100, 100).toFixed(0)}%
+                  {data.avg_retention_rate > 1 && ' (ดูวนซ้ำ)'}
+                </div>
+              )}
+              {data.engagement_rate > 0 && (
+                <div className="text-xs text-muted-foreground">มีส่วนร่วม {data.engagement_rate.toFixed(2)}%</div>
+              )}
+              {data.subscribers_gained > 0 && (
+                <div className="text-xs text-muted-foreground">ผู้ติดตามใหม่ +{data.subscribers_gained}</div>
               )}
             </div>
             <div className="ml-2 border-l pl-4">

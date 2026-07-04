@@ -7,6 +7,7 @@ import { Button } from '../ui/button'
 import { Skeleton } from '../ui/skeleton'
 import { cn } from '../../lib/utils'
 import { formatNum, formatWatch } from '../../lib/format'
+import { Sparkline } from './sparkline'
 
 export interface ClipRow {
   clip_id: string
@@ -18,6 +19,8 @@ export interface ClipRow {
   shares: number
   retention_rate: number
   watch_time_seconds: number
+  sparkline?: number[] | null
+  failed_platforms?: string[] | null
 }
 
 interface ClipPlatformDetail {
@@ -173,7 +176,14 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
               >
                 <span className="text-xs text-muted-foreground tabular-nums w-5 pt-0.5">{idx + 1}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium line-clamp-2">{clip.title}</div>
+                  <div className="text-sm font-medium line-clamp-2">
+                    {clip.title}
+                    {(clip.failed_platforms?.length ?? 0) > 0 && (
+                      <span className="ml-1.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
+                        โพสต์ไม่สำเร็จ: {clip.failed_platforms!.join(', ')}
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1 text-xs text-muted-foreground">{clip.category}</div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
                     <span><span className="text-muted-foreground">วิว </span>{formatNum(clip.views)}</span>
@@ -220,7 +230,14 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground tabular-nums w-5">{idx + 1}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium line-clamp-1">{clip.title}</div>
+                        <div className="text-sm font-medium line-clamp-1">
+                          {clip.title}
+                          {(clip.failed_platforms?.length ?? 0) > 0 && (
+                            <span className="ml-1.5 inline-flex items-center rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-400">
+                              โพสต์ไม่สำเร็จ: {clip.failed_platforms!.join(', ')}
+                            </span>
+                          )}
+                        </div>
                         {isExpanded && (
                           <div className="mt-3">
                             <PlatformDetail detailLoading={detailLoading} platformMap={platformMap} />
@@ -230,7 +247,12 @@ export function TopClipsTable({ clips }: TopClipsTableProps) {
                     </div>
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{clip.category}</TableCell>
-                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm font-medium">{formatNum(clip.views)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums text-sm font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      {formatNum(clip.views)}
+                      <Sparkline points={clip.sparkline ?? []} />
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{formatNum(clip.likes)}</TableCell>
                   <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{(clip.retention_rate * 100).toFixed(0)}%</TableCell>
                   <TableCell className="text-right whitespace-nowrap tabular-nums text-sm text-muted-foreground">{formatWatch(clip.watch_time_seconds)}</TableCell>
