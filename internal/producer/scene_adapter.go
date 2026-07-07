@@ -81,6 +81,7 @@ func buildSceneSpecs(scenes []agent.GeneratedScene, bounds []sceneBound) []Scene
 			Slots:          slots,
 			Content:        buildSceneContent(s, b),
 		}
+		specs[i].Content.Entrance = entranceForScene(i)
 	}
 	return specs
 }
@@ -105,6 +106,14 @@ func speedForLayout(layout string) string {
 	default:
 		return "normal"
 	}
+}
+
+// entranceForScene picks a rotating entrance geometry (punch/rise/slide) so
+// consecutive scenes never enter identically. Index-based, so a render is
+// deterministic. Scene 0 (the hook) gets "punch" for a snappy open.
+func entranceForScene(idx int) string {
+	variants := []string{"punch", "rise", "slide"}
+	return variants[((idx%3)+3)%3]
 }
 
 // buildSceneContent maps a GeneratedScene + its measured audio bound into the

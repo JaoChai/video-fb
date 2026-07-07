@@ -90,3 +90,24 @@ func TestBuildSceneSpecs_EmptyOnScreenTextYieldsNoSlot(t *testing.T) {
 		t.Errorf("blank on_screen_text should yield 0 slots, got %+v", specs[0].Slots)
 	}
 }
+
+func TestEntranceForSceneRotates(t *testing.T) {
+	got := make([]string, 0, 7)
+	for i := 0; i < 7; i++ {
+		got = append(got, entranceForScene(i))
+	}
+	want := []string{"punch", "rise", "slide", "punch", "rise", "slide", "punch"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("idx %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestEntranceForSceneNoConsecutiveRepeat(t *testing.T) {
+	for i := 1; i < 30; i++ {
+		if entranceForScene(i) == entranceForScene(i-1) {
+			t.Fatalf("idx %d and %d have the same entrance %q", i-1, i, entranceForScene(i))
+		}
+	}
+}

@@ -376,6 +376,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		Motion:          preset.Motion,
 	}
 
+	params.MotionV2 = SceneMotionV2Enabled()
+
 	if AudioMotionEnabled() {
 		params.AudioMotion = true
 
