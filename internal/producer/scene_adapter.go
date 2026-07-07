@@ -108,12 +108,14 @@ func speedForLayout(layout string) string {
 	}
 }
 
+var entranceVariants = []string{"punch", "rise", "slide"}
+
 // entranceForScene picks a rotating entrance geometry (punch/rise/slide) so
 // consecutive scenes never enter identically. Index-based, so a render is
-// deterministic. Scene 0 (the hook) gets "punch" for a snappy open.
+// deterministic. Scene 0 (the hook) gets "punch" for a snappy open. idx is a
+// non-negative loop index, so a plain modulo is enough.
 func entranceForScene(idx int) string {
-	variants := []string{"punch", "rise", "slide"}
-	return variants[((idx%3)+3)%3]
+	return entranceVariants[idx%3]
 }
 
 // buildSceneContent maps a GeneratedScene + its measured audio bound into the

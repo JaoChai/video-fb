@@ -239,11 +239,12 @@
       // geometry from sc.entrance (punch/rise/slide); slide alternates direction.
       function contentEntrance(sc, motionUp){
         const base = motionUp ? 60 : 46;
-        if(!MOTION_V2){ return {from:{y:base,opacity:0}, to:{y:0,opacity:1}}; }
+        const rise = {from:{y:base,opacity:0}, to:{y:0,opacity:1}};
+        if(!MOTION_V2) return rise;
         const v = sc.entrance || "rise";
         if(v==="slide"){ const dx = (sc.scene % 2 === 0) ? -80 : 80; return {from:{x:dx,opacity:0}, to:{x:0,opacity:1}}; }
         if(v==="punch"){ return {from:{scale:0.9,opacity:0}, to:{scale:1,opacity:1}}; }
-        return {from:{y:base,opacity:0}, to:{y:0,opacity:1}};
+        return rise;
       }
       // parseStatNumber extracts the leading number of a stat string ("80",
       // "1,200", "3.5") → {value, decimals, grouped}, or null if non-numeric.
@@ -274,10 +275,14 @@
         const span=Math.max(0.4,sc.end-inAt);
 
         const SPEED_FACTOR=SPEED_FACTORS[sc.speed]||1.0;
+        // entranceEnd = when the content entrance finishes; the MOTION_V2 drift
+        // reuses it so its start stays in sync with whichever entrance branch ran.
+        let entranceEnd = sc.start + 0.7;
 
         if (MOTION_UP) {
           // Upgraded: incoming scene slides up + scales in while fading; bg ken-burns.
           const durIn=ENTRANCE_DUR*SPEED_FACTOR;
+          entranceEnd = sc.start + 0.08 + durIn;
           tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:durIn,ease:ENTRANCE_EASE},inAt);
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
@@ -287,6 +292,7 @@
         } else {
           // Current behavior, now speed-scaled per scene.
           const contentDurIn=0.6*SPEED_FACTOR;
+          entranceEnd = sc.start + 0.1 + contentDurIn;
           tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55*SPEED_FACTOR,ease:"power2.out"},inAt);
           if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
           if(content){
@@ -312,11 +318,9 @@
         // dead-still. Starts after the entrance so it never fights the entrance's
         // own y/scale tween.
         if(MOTION_V2 && content){
-          // Start the drift only AFTER the content entrance finishes so it never
+          // Start the drift 0.1s AFTER the content entrance finishes so it never
           // fights the entrance's own y tween (the "rise" variant animates y too).
-          // Mirrors the two entrance branches' start offset + duration, + margin.
-          const entDur = MOTION_UP ? (ENTRANCE_DUR*SPEED_FACTOR) : (0.6*SPEED_FACTOR);
-          const driftStart = sc.start + (MOTION_UP?0.08:0.1) + entDur + 0.1;
+          const driftStart = entranceEnd + 0.1;
           const driftDur = sc.end - driftStart;
           if(driftDur > 0.3){
             tl.to(content,{y:-12,duration:driftDur,ease:"none"},driftStart);
