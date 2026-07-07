@@ -515,6 +515,26 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 			Frames:   frames,
 			Fast:     producer.PipelineFastEnabled(),
 		}, qaCfg)
+		if !qaRes.Passed {
+			// Two-strike confirm: re-sample every flagged scene later in the scene
+			// (past the entrance animation, on a different caption phrase) and
+			// re-judge. A scene only stays failed when BOTH frames show the defect.
+			flagged := make(map[int]bool)
+			for _, v := range qaRes.Verdicts {
+				if !v.OK {
+					flagged[v.SceneNumber] = true
+				}
+			}
+			confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, flagged)
+			confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
+				Question: q.Question,
+				Frames:   confirmFrames,
+				Fast:     producer.PipelineFastEnabled(),
+			}, qaCfg)
+			qaRes = agent.ConfirmMerge(qaRes, confirmRes)
+			log.Printf("visualqa: clip %s confirm pass done — %d scene(s) rechecked, passed=%v",
+				clipID, len(confirmFrames), qaRes.Passed)
+		}
 		if wErr := o.visualQARepo.Create(ctx, clipID, qaRes.Passed, agent.MarshalVerdicts(qaRes.Verdicts)); wErr != nil {
 			log.Printf("visualqa: persist result failed (non-fatal): %v", wErr)
 		}
@@ -763,6 +783,11 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 // before the next scene that it never lands on a transition/crossfade frame.
 const qaSceneFrac = 0.6
 
+// qaRecheckSceneFrac positions the confirm-pass sample late in the scene — past
+// every entrance animation and on a different karaoke caption phrase than the
+// first pass — so a defect must be visible at two independent times to fail.
+const qaRecheckSceneFrac = 0.85
+
 // autoReviewSceneFrac positions the auto-review sample at a DIFFERENT point in each
 // scene than QA (qaSceneFrac), so the second-opinion judge inspects an independent
 // frame and can overturn a QA false positive instead of re-confirming the same frame.
@@ -851,15 +876,16 @@ func qaFrameTargets(durs []float64) []bool {
 	return targets
 }
 
-// extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
-// it with the scene's text. A per-scene extraction failure is logged and that
-// frame is dropped (Visual QA fails open on missing frames).
-func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
+// extractQAFramesAt extracts one PNG frame per scene at `frac` into each scene
+// and pairs it with the scene's text. When `only` is non-nil, scenes not in it
+// are skipped (the confirm pass re-samples just the flagged scenes). A per-scene
+// extraction failure is logged and that frame is dropped (fail-open).
+func (o *Orchestrator) extractQAFramesAt(clipID, mp4Path string, scenes []agent.GeneratedScene, frac float64, only map[int]bool) []agent.QAFrame {
 	durs := make([]float64, len(scenes))
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs, qaSceneFrac)
+	mids := o.qaFrameTimestamps(mp4Path, durs, frac)
 	targets := qaFrameTargets(durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
@@ -869,7 +895,10 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		if !targets[i] {
 			continue // zero-duration scene: sampling it would hit a transition boundary
 		}
-		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
+		if only != nil && !only[s.SceneNumber] {
+			continue
+		}
+		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d-%02.0f.png", s.SceneNumber, frac*100))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
 			log.Printf("visualqa: clip %s scene %d frame extract failed (skip): %v", clipID, s.SceneNumber, err)
 			continue
@@ -888,6 +917,11 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		})
 	}
 	return frames
+}
+
+// extractQAFrames is the first-pass extractor (qaSceneFrac, all scenes).
+func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
+	return o.extractQAFramesAt(clipID, mp4Path, scenes, qaSceneFrac, nil)
 }
 
 // auto_review tuning: approve threshold matches AutoReviewAgent's normalization
