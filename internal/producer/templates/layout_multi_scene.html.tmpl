@@ -207,7 +207,7 @@
         else if(sc.type==="stat"){
           const card=el("div","card");
           const meta=MOTION_V2?parseStatNumber(sc.stat):null;
-          const numHTML=meta?'<span class="stat-num">0</span>':(sc.stat||"");
+          const numHTML=meta?'<span class="stat-num" data-final="'+sc.stat+'">0</span>':(sc.stat||"");
           card.appendChild(el("div","stat",numHTML+(sc.unit?'<span class="unit">'+sc.unit+'</span>':'')));
           card.appendChild(el("div","stat-label",sc.statLabel));
           c.appendChild(card);
@@ -227,6 +227,27 @@
           c.appendChild(el("div","brandbig",sc.brand));
           if(sc.sub)c.appendChild(el("div","sub",sc.sub));
         }
+      });
+
+      // ── auto-fit: Kanit/Prompt Thai glyphs run wider than the Sarabun these px
+      // sizes were tuned for. Nowrap blocks (.stat, .chip .n) can overflow their
+      // box; shrink font-size until they fit (floor 55%). Layout is computed even
+      // while scenes sit at opacity:0, so measuring here is safe. The MOTION_V2
+      // stat counts up from "0", so measure at its widest (final) value first.
+      function fitText(el){
+        let size=parseFloat(getComputedStyle(el).fontSize);
+        const min=size*0.55;
+        let guard=40;
+        while(guard-->0&&size>min&&el.scrollWidth>el.clientWidth+1){
+          size=Math.max(min,size-2);
+          el.style.fontSize=size+"px";
+        }
+      }
+      document.querySelectorAll(".scene-content .stat,.scene-content .chip .n").forEach(function(el){
+        const num=el.querySelector(".stat-num");
+        if(num)num.textContent=num.getAttribute("data-final")||"0";
+        fitText(el);
+        if(num)num.textContent="0";
       });
 
       // ── continuous overlays ──

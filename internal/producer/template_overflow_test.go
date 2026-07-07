@@ -60,3 +60,20 @@ func TestTemplateThaiWrapRules(t *testing.T) {
 		t.Error(".chip .t line-height must be >=1.25 (Thai tone-mark collision)")
 	}
 }
+
+// The auto-fit pass shrinks nowrap text (.stat, .chip .n) that overflows its
+// box — Kanit/Prompt digits+unit run wider than Sarabun. The MOTION_V2 stat
+// counts up from "0", so it must be measured at its widest (final) value.
+func TestTemplateHasAutoFit(t *testing.T) {
+	out, err := RenderCompositionScenes(overflowTestParams())
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, "function fitText") {
+		t.Error("template is missing the fitText auto-fit pass")
+	}
+	if !strings.Contains(html, `data-final=`) {
+		t.Error("stat-num span is missing data-final (auto-fit would measure the count-up '0')")
+	}
+}
