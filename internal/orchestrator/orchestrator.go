@@ -477,8 +477,26 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
-	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
+
+	// A render that emitted browser errors is silently frozen (exits 0, looks fine
+	// to still-frame QA). Retry once via the failed-clip tick; if it's still broken
+	// after a retry, route to human review instead of publishing.
+	if result.RenderFlagged {
+		retryCount := 0
+		if clip, gErr := o.clipsRepo.GetByID(ctx, clipID); gErr == nil && clip != nil {
+			retryCount = clip.RetryCount
+		}
+		switch producer.RenderGateDecision(true, producer.RenderErrorGateEnabled(), retryCount) {
+		case producer.RenderGateRetry:
+			return o.failClip(ctx, clipID, fmt.Errorf("render emitted browser errors — retrying"))
+		case producer.RenderGateReview:
+			status = "needs_review"
+			log.Printf("clip %s: render browser errors persisted after retry — status=needs_review (publish blocked)", clipID)
+		}
+	}
+
+	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
 		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)

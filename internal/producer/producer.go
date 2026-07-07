@@ -78,8 +78,8 @@ type ProduceResult struct {
 	// (QA audio check). The orchestrator routes such clips to needs_review when
 	// QA_AUDIO_CHECK_ENABLED is on.
 	AudioFlagged bool
-	// RenderFlagged is true when the render browser-error gate detected a
-	// problem (populated by a later gate; unset — always false — here).
+	// RenderFlagged is true when the render emitted browser errors (a silently
+	// frozen render). The orchestrator retries once, then routes to needs_review.
 	RenderFlagged bool
 }
 
@@ -419,7 +419,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		inspectFlagged = true
 		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, err)
 	}
-	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
+	renderIssues, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
+	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
 	audioFlagged := probeVoiceSilent(voicePath)
@@ -428,6 +429,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		sceneDurations: boundsToDurations(bounds),
 		inspectFlagged: inspectFlagged,
 		audioFlagged:   audioFlagged,
+		renderFlagged:  len(renderIssues) > 0,
 	}, nil
 }
 

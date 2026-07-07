@@ -108,7 +108,7 @@ func TestRenderSampleA1A4(t *testing.T) {
 	if err := r.Inspect(ctx, dir); err != nil {
 		t.Fatalf("inspect (overflow/clip): %v", err)
 	}
-	if err := r.Render(ctx, dir, out); err != nil {
+	if _, err := r.Render(ctx, dir, out); err != nil {
 		t.Fatalf("render mp4: %v", err)
 	}
 	if fi, err := os.Stat(out); err != nil || fi.Size() == 0 {
