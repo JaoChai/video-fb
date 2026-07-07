@@ -249,7 +249,7 @@
       // parseStatNumber extracts the leading number of a stat string ("80",
       // "1,200", "3.5") → {value, decimals, grouped}, or null if non-numeric.
       function parseStatNumber(s){
-        const m = String(s||"").match(/^\s*([\d.,]+)/);
+        const m = String(s||"").match(/^\s*([\d.,]+)\s*$/);
         if(!m) return null;
         const raw = m[1];
         const grouped = raw.indexOf(",") >= 0;
