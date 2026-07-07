@@ -76,4 +76,7 @@ func TestTemplateHasAutoFit(t *testing.T) {
 	if !strings.Contains(html, `data-final=`) {
 		t.Error("stat-num span is missing data-final (auto-fit would measure the count-up '0')")
 	}
+	if !strings.Contains(html, "document.fonts.ready") {
+		t.Error("auto-fit must run after fonts load (fallback-font metrics mis-measure)")
+	}
 }
