@@ -761,6 +761,18 @@ func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64, fr
 	return evenFrameTimestamps(probed, len(durations))
 }
 
+// qaFrameTargets marks which scenes should have a QA frame sampled. Zero- (or
+// negative-) duration scenes are skipped: they come from an empty VoiceText
+// placeholder and their sampled timestamp lands exactly on a transition
+// boundary, producing a blank frame that QA false-flags.
+func qaFrameTargets(durs []float64) []bool {
+	targets := make([]bool, len(durs))
+	for i, d := range durs {
+		targets[i] = d > 0
+	}
+	return targets
+}
+
 // extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
 // it with the scene's text. A per-scene extraction failure is logged and that
 // frame is dropped (Visual QA fails open on missing frames).
@@ -770,10 +782,14 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		durs[i] = s.DurationSeconds
 	}
 	mids := o.qaFrameTimestamps(mp4Path, durs, qaSceneFrac)
+	targets := qaFrameTargets(durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
 			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
+		if !targets[i] {
+			continue // zero-duration scene: sampling it would hit a transition boundary
 		}
 		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
