@@ -156,3 +156,37 @@ func MarshalVerdicts(verdicts []SceneVerdict) []byte {
 	}
 	return b
 }
+
+// ConfirmMerge resolves a two-strike QA: a scene flagged by the first pass stays
+// failed only if the confirm pass (a frame sampled later in the same scene) also
+// flagged it. This kills timing false positives — karaoke captions mid-reveal,
+// entrance animations still settling — while a baked-in defect (an overflowing
+// headline is wrong at every timestamp) survives both passes. A flagged scene
+// the confirm pass has no verdict for (frame extraction failed) is cleared:
+// fail-open, matching reviewFrame's infra policy.
+func ConfirmMerge(first, confirm VisualQAResult) VisualQAResult {
+	if first.Passed {
+		return first
+	}
+	confirmFailed := make(map[int][]string)
+	for _, v := range confirm.Verdicts {
+		if !v.OK {
+			confirmFailed[v.SceneNumber] = v.Issues
+		}
+	}
+	out := make([]SceneVerdict, len(first.Verdicts))
+	for i, v := range first.Verdicts {
+		if v.OK {
+			out[i] = v
+			continue
+		}
+		if issues, still := confirmFailed[v.SceneNumber]; still {
+			merged := append(append([]string{}, v.Issues...), issues...)
+			out[i] = SceneVerdict{SceneNumber: v.SceneNumber, OK: false, Issues: merged}
+			continue
+		}
+		note := append([]string{"เฟรมยืนยัน (recheck) ไม่พบปัญหา — เคลียร์ผลรอบแรก"}, v.Issues...)
+		out[i] = SceneVerdict{SceneNumber: v.SceneNumber, OK: true, Issues: note}
+	}
+	return VisualQAResult{Verdicts: out, Passed: summarizeVerdicts(out)}
+}
