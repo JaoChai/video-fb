@@ -175,6 +175,23 @@ func TestRenderCompositionScenes_LayoutComposition(t *testing.T) {
 	)
 }
 
+// MOTION_V2: the JS const must reflect the params flag, and the contentEntrance
+// helper must always be emitted (it's runtime-gated on MOTION_V2, not compiled
+// out), so both on and off renders carry the helper function.
+func TestRenderCompositionScenes_MotionV2(t *testing.T) {
+	on := sampleScenesParams("9:16")
+	on.MotionV2 = true
+	assertRenderContains(t, on, "const MOTION_V2 = true", "function contentEntrance")
+
+	off := sampleScenesParams("9:16")
+	off.MotionV2 = false
+	s := assertRenderContains(t, off, "const MOTION_V2 = false")
+	// helper JS is always present (runtime-gated), only the const value differs:
+	if !strings.Contains(s, "function contentEntrance") {
+		t.Error("contentEntrance helper should always be emitted (runtime-gated by MOTION_V2)")
+	}
+}
+
 // All presets share Palette: Brand, so palette alone no longer varies by
 // theme (see presets.go). This asserts the property that DOES vary per theme
 // instead: the rendered --font-heading value tracks the preset's HeadingFont.

@@ -164,6 +164,7 @@
       const tl = gsap.timeline({ paused: true });
       const TOTAL = {{.DurationSeconds}};
       const MOTION_UP = {{if .AudioMotion}}true{{else}}false{{end}};
+      const MOTION_V2 = {{if .MotionV2}}true{{else}}false{{end}};
       const ENTRANCE_DUR = {{.EntranceDur}} || 0.6;
       const ENTRANCE_EASE = "{{.EntranceEase}}" || "power3.out";
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;
@@ -231,6 +232,17 @@
       // A1 entrance pacing factors (multiply base entrance durations):
       // fast = snappy hook, slow = premium hero/stat reveal, absent = normal (1.0).
       const SPEED_FACTORS={fast:0.7,slow:1.35};
+      // contentEntrance returns the from/to vars for a scene's content entrance.
+      // MOTION_V2 off → the legacy rise (y-based). MOTION_V2 on → per-scene
+      // geometry from sc.entrance (punch/rise/slide); slide alternates direction.
+      function contentEntrance(sc, motionUp){
+        const base = motionUp ? 60 : 46;
+        if(!MOTION_V2){ return {from:{y:base,opacity:0}, to:{y:0,opacity:1}}; }
+        const v = sc.entrance || "rise";
+        if(v==="slide"){ const dx = (sc.scene % 2 === 0) ? -80 : 80; return {from:{x:dx,opacity:0}, to:{x:0,opacity:1}}; }
+        if(v==="punch"){ return {from:{scale:0.9,opacity:0}, to:{scale:1,opacity:1}}; }
+        return {from:{y:base,opacity:0}, to:{y:0,opacity:1}};
+      }
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
@@ -248,7 +260,8 @@
           tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:durIn,ease:ENTRANCE_EASE},inAt);
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
-            tl.fromTo(content,{y:60,opacity:0},{y:0,opacity:1,duration:durIn,ease:ENTRANCE_EASE},sc.start+0.08);
+            const ce=contentEntrance(sc,true);
+            tl.fromTo(content,ce.from,Object.assign({},ce.to,{duration:durIn,ease:ENTRANCE_EASE}),sc.start+0.08);
           }
         } else {
           // Current behavior, now speed-scaled per scene.
@@ -256,7 +269,8 @@
           tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55*SPEED_FACTOR,ease:"power2.out"},inAt);
           if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
           if(content){
-            tl.fromTo(content,{y:46,opacity:0},{y:0,opacity:1,duration:contentDurIn,ease:"power3.out"},sc.start+0.1);
+            const ce=contentEntrance(sc,false);
+            tl.fromTo(content,ce.from,Object.assign({},ce.to,{duration:contentDurIn,ease:"power3.out"}),sc.start+0.1);
           }
         }
 
