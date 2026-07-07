@@ -20,6 +20,11 @@ func AudioMotionEnabled() bool { return os.Getenv("AUDIO_MOTION_ENABLED") == "tr
 // entrance variety, stat count-up). Off → current motion behavior.
 func SceneMotionV2Enabled() bool { return os.Getenv("SCENE_MOTION_V2_ENABLED") == "true" }
 
+// PipelineFastEnabled turns on the fast pipeline: parallel per-scene image gen,
+// fail-fast image timeouts (75s, no retry → css fallback), and parallel visual
+// QA. Off → current sequential behavior.
+func PipelineFastEnabled() bool { return os.Getenv("PIPELINE_FAST_ENABLED") == "true" }
+
 func listAudio(dir string) []string {
 	entries, err := fs.ReadDir(audioAssetsFS, dir)
 	if err != nil {

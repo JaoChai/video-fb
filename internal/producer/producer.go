@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/agent"
@@ -300,6 +302,46 @@ type assembleOutput struct {
 	renderFlagged  bool // populated by the render browser-error gate
 }
 
+// generateSceneImagesParallel is the PIPELINE_FAST_ENABLED variant of the
+// per-scene background gen: up to 4 concurrent kie calls instead of one at a
+// time (~5 min → ~1 min for 10 scenes). Keeps the circuit-breaker semantics of
+// the sequential loop — the first failure stops scenes that haven't started
+// (they fall back to css), but images already generated are still used.
+// Populates bgPaths (sceneNumber → file); errors are non-fatal by design.
+func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string) {
+	var mu sync.Mutex
+	var degraded atomic.Bool
+	var g errgroup.Group
+	g.SetLimit(4)
+	for _, s := range scenes {
+		if strings.TrimSpace(s.ImagePrompt) == "" {
+			continue
+		}
+		s := s
+		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
+		g.Go(func() error {
+			if !fileExists(bgFile) {
+				if degraded.Load() {
+					return nil
+				}
+				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
+				if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
+					log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, unstarted scenes use css: %v", s.SceneNumber, genErr)
+					degraded.Store(true)
+					return nil
+				}
+			}
+			if fileExists(bgFile) {
+				mu.Lock()
+				bgPaths[s.SceneNumber] = bgFile
+				mu.Unlock()
+			}
+			return nil
+		})
+	}
+	g.Wait() // goroutines never return errors — Wait is just the barrier
+}
+
 // AssembleHyperframes916 turns SceneAgent scenes into a 9:16 multi-scene MP4 via
 // the hyperframes engine and returns an assembleOutput (local output.mp4 path,
 // per-scene durations, and the inspect/audio/render health flags). Steps:
@@ -333,22 +375,26 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	//    remaining scenes (css) instead of grinding through retries one by one —
 	//    turns a "kie is down" run from ~hours into ~minutes.
 	bgPaths := map[int]string{}
-	imageDegraded := false
-	for _, s := range scenes {
-		if strings.TrimSpace(s.ImagePrompt) == "" {
-			continue
-		}
-		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
-		if !fileExists(bgFile) && !imageDegraded {
-			prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
-			if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
-				log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
-				imageDegraded = true
+	if PipelineFastEnabled() {
+		p.generateSceneImagesParallel(ctx, scenes, preset, clipID, clipDir, bgPaths)
+	} else {
+		imageDegraded := false
+		for _, s := range scenes {
+			if strings.TrimSpace(s.ImagePrompt) == "" {
 				continue
 			}
-		}
-		if fileExists(bgFile) {
-			bgPaths[s.SceneNumber] = bgFile
+			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
+			if !fileExists(bgFile) && !imageDegraded {
+				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
+				if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
+					log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
+					imageDegraded = true
+					continue
+				}
+			}
+			if fileExists(bgFile) {
+				bgPaths[s.SceneNumber] = bgFile
+			}
 		}
 	}
 

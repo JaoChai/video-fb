@@ -224,6 +224,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	}
 
 	o.tracker.SetTotalClips(len(questions))
+	anyFailed := false
 	for i, q := range questions {
 		if ctx.Err() != nil {
 			log.Printf("Production cancelled, stopping at clip %d/%d", i+1, len(questions))
@@ -236,9 +237,13 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
+			anyFailed = true
 			continue
 		}
 		o.tracker.CompleteStep("complete")
+	}
+	if anyFailed {
+		o.nudgeRetry()
 	}
 
 	log.Println("Weekly production complete")
@@ -507,6 +512,7 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		qaRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
 			Question: q.Question,
 			Frames:   frames,
+			Fast:     producer.PipelineFastEnabled(),
 		}, qaCfg)
 		if wErr := o.visualQARepo.Create(ctx, clipID, qaRes.Passed, agent.MarshalVerdicts(qaRes.Verdicts)); wErr != nil {
 			log.Printf("visualqa: persist result failed (non-fatal): %v", wErr)
@@ -712,6 +718,26 @@ func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) e
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &status})
 	o.clipsRepo.IncrementRetry(ctx, clipID, err.Error())
 	return err
+}
+
+// nudgeRetry kicks the existing retry path shortly after a produce run that
+// failed a clip, instead of leaving the clip to wait up to a full tick of the
+// retry_failed schedule. Called ONCE at the edge of a produce run — never from
+// failClip/retry paths, so a retry that fails again cannot re-arm a nudge (its
+// second chance comes from the tick, whose 10-min cooldown gives a broken
+// upstream time to recover). RetryAllFailed is gate-protected and idempotent —
+// if another production is running it skips silently. 15s comfortably outlives
+// the caller's deferred gate release; cooldown 0 is deliberate (speed first):
+// worst case is ONE quick extra attempt before retry_count>=2 parks the clip.
+func (o *Orchestrator) nudgeRetry() {
+	go func() {
+		time.Sleep(15 * time.Second)
+		nctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		if rerr := o.RetryAllFailed(nctx, 2, 0); rerr != nil {
+			log.Printf("retry nudge failed: %v", rerr)
+		}
+	}()
 }
 
 // evenFrameTimestamps returns n timestamps evenly spread over a video of the

@@ -30,7 +30,7 @@ type KieConfig struct {
 }
 
 func DefaultKieConfig() KieConfig {
-	return KieConfig{
+	cfg := KieConfig{
 		ImageTaskTimeout: 180 * time.Second,
 		VoiceTaskTimeout: 300 * time.Second,
 		PollInterval:     3 * time.Second,
@@ -39,6 +39,14 @@ func DefaultKieConfig() KieConfig {
 		HTTPTimeout:      30 * time.Second,
 		UploadTimeout:    5 * time.Minute,
 	}
+	if PipelineFastEnabled() {
+		// Speed over image quality (user-chosen): one short attempt, then the
+		// scene falls back to a css background instead of grinding ~6.6 min
+		// (180s + 30s backoff + 180s) per scene when kie is degraded.
+		cfg.ImageTaskTimeout = 75 * time.Second
+		cfg.ImageMaxRetries = 0
+	}
+	return cfg
 }
 
 type KieClient struct {

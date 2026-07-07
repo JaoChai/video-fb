@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/jaochai/video-fb/internal/models"
+	"golang.org/x/sync/errgroup"
 )
 
 // QAFrame is one extracted scene frame plus the metadata the model needs to
@@ -23,6 +24,10 @@ type QAFrame struct {
 type VisualQAInput struct {
 	Question string
 	Frames   []QAFrame
+	// Fast judges frames concurrently (cap 4). Set by the orchestrator from
+	// producer.PipelineFastEnabled() — this package must stay env-free and
+	// cannot import producer (import direction is producer → agent).
+	Fast bool
 }
 
 // SceneVerdict is the model's judgement for one scene. OK=false means a
@@ -84,9 +89,25 @@ func NewVisualQAAgent(llm *KieLLMClient) *VisualQAAgent {
 // confident visual defect (model says ok=false) can fail the clip. cfg is the
 // `visual_qa` AgentConfig fetched by the caller via GetByName.
 func (a *VisualQAAgent) Review(ctx context.Context, in VisualQAInput, cfg *models.AgentConfig) VisualQAResult {
-	verdicts := make([]SceneVerdict, 0, len(in.Frames))
-	for _, f := range in.Frames {
-		verdicts = append(verdicts, a.reviewFrame(ctx, in.Question, f, cfg))
+	verdicts := make([]SceneVerdict, len(in.Frames))
+	if in.Fast {
+		// Judge frames concurrently (cap 4) — ~3.4 min → ~1 min for 10 scenes.
+		// Each slot is index-assigned so verdict order stays stable, and
+		// reviewFrame is already fail-open per scene.
+		var g errgroup.Group
+		g.SetLimit(4)
+		for i, f := range in.Frames {
+			i, f := i, f
+			g.Go(func() error {
+				verdicts[i] = a.reviewFrame(ctx, in.Question, f, cfg)
+				return nil
+			})
+		}
+		g.Wait() // reviewFrame never returns an error — Wait is just the barrier
+	} else {
+		for i, f := range in.Frames {
+			verdicts[i] = a.reviewFrame(ctx, in.Question, f, cfg)
+		}
 	}
 	return VisualQAResult{Verdicts: verdicts, Passed: summarizeVerdicts(verdicts)}
 }
