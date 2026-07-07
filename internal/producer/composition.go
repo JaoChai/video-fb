@@ -31,6 +31,7 @@ type scenesTemplateData struct {
 	AmbientSrc     string
 	AudioMotion    bool
 	TransitionCues []TransitionCue
+	MotionV2       bool
 
 	ThemeKey     string
 	EntranceDur  float64
@@ -137,6 +138,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		AmbientSrc:      p.AmbientSrc,
 		AudioMotion:     p.AudioMotion,
 		TransitionCues:  p.TransitionCues,
+		MotionV2:        p.MotionV2,
 		ThemeKey:        p.ThemeKey,
 		EntranceDur:     motion.EntranceDur,
 		EntranceEase:    motion.EntranceEase,

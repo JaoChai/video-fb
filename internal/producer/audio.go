@@ -16,6 +16,10 @@ const (
 // hyperframes path renders voice-only with today's motion (see presets.go pattern).
 func AudioMotionEnabled() bool { return os.Getenv("AUDIO_MOTION_ENABLED") == "true" }
 
+// SceneMotionV2Enabled turns on the v2 scene motion (mid-scene parallax drift,
+// entrance variety, stat count-up). Off → current motion behavior.
+func SceneMotionV2Enabled() bool { return os.Getenv("SCENE_MOTION_V2_ENABLED") == "true" }
+
 func listAudio(dir string) []string {
 	entries, err := fs.ReadDir(audioAssetsFS, dir)
 	if err != nil {

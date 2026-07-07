@@ -41,10 +41,11 @@ type SceneContent struct {
 	SceneNumber     int     `json:"scene"`
 	Start           float64 `json:"start"`
 	End             float64 `json:"end"`
-	Layout          string  `json:"type"`          // hook|hero|stat|step|tip|cta
-	CaptionStyle    string  `json:"caption_style"` // word_pop|phrase_block
-	Speed           string  `json:"speed"`         // fast|normal|slow — entrance pacing, derived from layout
-	BackgroundImage string  `json:"bg"`            // relative assets path, "" = gradient only
+	Layout          string  `json:"type"`               // hook|hero|stat|step|tip|cta
+	CaptionStyle    string  `json:"caption_style"`      // word_pop|phrase_block
+	Speed           string  `json:"speed"`              // fast|normal|slow — entrance pacing, derived from layout
+	BackgroundImage string  `json:"bg"`                 // relative assets path, "" = gradient only
+	Entrance        string  `json:"entrance,omitempty"` // punch|rise|slide — entrance geometry (MOTION_V2)
 
 	Kicker    string        `json:"kicker,omitempty"`
 	Title     string        `json:"title,omitempty"` // may contain <span class="acc"> from emphasis
@@ -114,4 +115,6 @@ type ScenesParams struct {
 	AmbientSrc       string          // project-relative path; set by BuildScenes
 	TransitionCues   []TransitionCue // scene-transition SFX placements
 	AudioMotion      bool            // enable upgraded GSAP transitions
+
+	MotionV2 bool // enable v2 scene motion (parallax drift, entrance variety, count-up)
 }

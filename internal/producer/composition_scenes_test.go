@@ -175,6 +175,57 @@ func TestRenderCompositionScenes_LayoutComposition(t *testing.T) {
 	)
 }
 
+// MOTION_V2: the JS const must reflect the params flag, and the contentEntrance
+// helper must always be emitted (it's runtime-gated on MOTION_V2, not compiled
+// out), so both on and off renders carry the helper function.
+func TestRenderCompositionScenes_MotionV2(t *testing.T) {
+	on := sampleScenesParams("9:16")
+	on.MotionV2 = true
+	assertRenderContains(t, on, "const MOTION_V2 = true", "function contentEntrance")
+
+	off := sampleScenesParams("9:16")
+	off.MotionV2 = false
+	s := assertRenderContains(t, off, "const MOTION_V2 = false")
+	// helper JS is always present (runtime-gated), only the const value differs:
+	if !strings.Contains(s, "function contentEntrance") {
+		t.Error("contentEntrance helper should always be emitted (runtime-gated by MOTION_V2)")
+	}
+}
+
+func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	p.MotionV2 = true
+	assertRenderContains(t, p, "MOTION_V2 && content", "y:-12")
+}
+
+func TestRenderCompositionScenes_CountUp(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	p.MotionV2 = true
+	assertRenderContains(t, p, "function parseStatNumber", "stat-num")
+}
+
+// TestRenderCompositionScenes_CountUpSkipsSuffixedStat guards the fix for a
+// review finding: parseStatNumber used to match the LEADING number even when
+// the stat string had a non-numeric suffix (e.g. "80%"), so the count-up span
+// silently dropped the suffix. The regex must now be anchored to match only
+// when the ENTIRE trimmed string is numeric, so a suffixed stat like "80%"
+// falls back to the static render (full string, suffix intact) instead of
+// being torn apart into a counting "80" + a vanished "%".
+func TestRenderCompositionScenes_CountUpSkipsSuffixedStat(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	p.MotionV2 = true
+	p.Scenes[0].Content.Layout = "stat"
+	p.Scenes[0].Content.Stat = "80%"
+	s := assertRenderContains(t, p,
+		`"stat":"80%"`, // suffixed value passed through to SCENES JSON verbatim
+	)
+	// The anchored regex literal must ship in the template's JS source — this
+	// is what actually prevents "80%" from matching as a leading-number stat.
+	if !strings.Contains(s, `/^\s*([\d.,]+)\s*$/`) {
+		t.Errorf("parseStatNumber regex is not anchored to the full string — suffixed stats like %q would have their suffix dropped by the count-up span", "80%")
+	}
+}
+
 // All presets share Palette: Brand, so palette alone no longer varies by
 // theme (see presets.go). This asserts the property that DOES vary per theme
 // instead: the rendered --font-heading value tracks the preset's HeadingFont.
