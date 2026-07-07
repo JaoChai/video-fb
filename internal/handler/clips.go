@@ -57,6 +57,14 @@ func (h *ClipsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, models.APIResponse{Error: "invalid request body"})
 		return
 	}
+	// 'published' is written only by the publisher (it records a real Zernio
+	// upload) and 'producing' only by the orchestrator — a raw PATCH to either
+	// would bypass the publish gate / production tracker.
+	if req.Status != nil && (*req.Status == "published" || *req.Status == "producing") {
+		writeJSON(w, http.StatusBadRequest, models.APIResponse{
+			Error: "status '" + *req.Status + "' ตั้งได้โดย pipeline เท่านั้น"})
+		return
+	}
 	clip, err := h.repo.Update(r.Context(), id, req)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
