@@ -285,6 +285,18 @@
             }
           }
         }
+
+        // MOTION_V2: after the entrance settles, drift the whole content block
+        // slowly upward (opposite the bg ken-burns) so the focal content is never
+        // dead-still. Starts after the entrance so it never fights the entrance's
+        // own y/scale tween.
+        if(MOTION_V2 && content){
+          const driftStart = sc.start + 0.7;
+          const driftDur = sc.end - driftStart;
+          if(driftDur > 0.3){
+            tl.to(content,{y:-12,duration:driftDur,ease:"none"},driftStart);
+          }
+        }
         tl.set(sceneEl,{opacity:0},sc.end);
       });
 

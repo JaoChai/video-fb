@@ -192,6 +192,12 @@ func TestRenderCompositionScenes_MotionV2(t *testing.T) {
 	}
 }
 
+func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	p.MotionV2 = true
+	assertRenderContains(t, p, "MOTION_V2 && content", "y:-12")
+}
+
 // All presets share Palette: Brand, so palette alone no longer varies by
 // theme (see presets.go). This asserts the property that DOES vary per theme
 // instead: the rendered --font-heading value tracks the preset's HeadingFont.
