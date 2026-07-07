@@ -132,3 +132,27 @@ func TestQAFrameTargetsNegativeIsSkipped(t *testing.T) {
 		t.Errorf("got %v, want [false true]", got)
 	}
 }
+
+// Content entrance animations run up to ~1.5s into a scene; a sample inside that
+// window sees elements mid-motion (looks cropped/overlapping → false positive).
+// Samples must sit at least min(1.6s, half the scene) after the scene start.
+func TestSceneAwareTimestamps_EntranceGuard(t *testing.T) {
+	durs := []float64{3, 10}
+	ts := sceneAwareTimestamps(durs, 13, 0.45) // raw scene0 = 1.35 < guard 1.5
+	if ts[0] < 1.5-1e-9 {
+		t.Errorf("scene 0 sampled at %.3f, want >= 1.5 (entrance guard)", ts[0])
+	}
+	if ts[0] >= 3 {
+		t.Errorf("scene 0 sampled at %.3f, must stay inside the scene (< 3)", ts[0])
+	}
+}
+
+// A sample too close to the scene end lands on the crossfade into the next
+// scene (blank/blended frame). Keep at least 0.4s clear of the scene end.
+func TestSceneAwareTimestamps_ExitGuard(t *testing.T) {
+	durs := []float64{2, 10}
+	ts := sceneAwareTimestamps(durs, 12, 0.9) // raw scene0 = 1.8 > hi 1.6
+	if ts[0] > 2-0.4+1e-9 {
+		t.Errorf("scene 0 sampled at %.3f, want <= 1.6 (exit guard)", ts[0])
+	}
+}

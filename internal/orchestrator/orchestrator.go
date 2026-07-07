@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
@@ -767,6 +768,16 @@ const qaSceneFrac = 0.6
 // frame and can overturn a QA false positive instead of re-confirming the same frame.
 const autoReviewSceneFrac = 0.45
 
+// qaEntranceGuardSec / qaExitGuardSec clamp each per-scene sample away from the
+// content entrance animation (runs up to ~1.5s into a scene — a mid-animation
+// frame looks cropped/overlapping to vision QA) and away from the scene-end
+// crossfade. The entrance guard is capped at half the scene so a short scene
+// still gets sampled inside its own window.
+const (
+	qaEntranceGuardSec = 1.6
+	qaExitGuardSec     = 0.4
+)
+
 // sceneAwareTimestamps returns one timestamp per scene, each positioned `frac` into
 // its own scene using the real per-scene durations, then rescaled so the estimated
 // total maps onto the probed video duration. This keeps every sample inside its
@@ -793,7 +804,19 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 		if d < 0 {
 			d = 0
 		}
-		ts[i] = (acc + d*frac) * scale
+		t := acc + d*frac
+		lo := acc + math.Min(qaEntranceGuardSec, d*0.5)
+		hi := acc + d - qaExitGuardSec
+		if hi < lo {
+			hi = lo
+		}
+		if t < lo {
+			t = lo
+		}
+		if t > hi {
+			t = hi
+		}
+		ts[i] = t * scale
 		acc += d
 	}
 	return ts
