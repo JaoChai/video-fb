@@ -287,18 +287,11 @@ func (p *Producer) EnableHyperframes(fontsDir string) {
 	}
 }
 
-// AssembleHyperframes916 turns SceneAgent scenes into a 9:16 multi-scene MP4 via
-// the hyperframes engine and returns the LOCAL output.mp4 path. Steps: per-scene
-// TTS (measured) → per-scene gpt-image-2 backgrounds (kie.ai; missing/failed →
-// css) → GeneratedScene→SceneSpec → fill the multi-scene template → render.
-// Upload / thumbnail / clip-status are the caller's job (orchestrator).
-// Requires EnableHyperframes to have been called.
-// The returned []float64 is each scene's real rendered duration (from measured
-// voice bounds), in scene order — persisted by the caller as the accurate
-// scenes.duration_seconds (the scene agent never emits durations). It is nil on
-// any error return.
 // assembleOutput carries the render products and post-render health signals from
-// AssembleHyperframes916 up to ProduceHyperframes916.
+// AssembleHyperframes916 up to ProduceHyperframes916. It is nil on any error
+// return. sceneDurations is each scene's real rendered duration (from measured
+// voice bounds), in scene order — persisted by the caller as the accurate
+// scenes.duration_seconds (the scene agent never emits durations).
 type assembleOutput struct {
 	mp4Path        string
 	sceneDurations []float64
@@ -307,6 +300,13 @@ type assembleOutput struct {
 	renderFlagged  bool // populated by the render browser-error gate
 }
 
+// AssembleHyperframes916 turns SceneAgent scenes into a 9:16 multi-scene MP4 via
+// the hyperframes engine and returns an assembleOutput (local output.mp4 path,
+// per-scene durations, and the inspect/audio/render health flags). Steps:
+// per-scene TTS (measured) → per-scene gpt-image-2 backgrounds (kie.ai;
+// missing/failed → css) → GeneratedScene→SceneSpec → fill the multi-scene
+// template → render. Upload / thumbnail / clip-status are the caller's job
+// (orchestrator). Requires EnableHyperframes to have been called.
 func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*assembleOutput, error) {
 	if p.hf == nil {
 		return nil, fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")

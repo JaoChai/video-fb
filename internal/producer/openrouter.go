@@ -171,11 +171,11 @@ func generateVoicePCMWithGate(textRunes int, gateEnabled bool, gen func() ([]byt
 	if err != nil {
 		return nil, err
 	}
-	if !voiceTooShort(pcmDurationSeconds(pcm), textRunes) {
+	dur := pcmDurationSeconds(pcm)
+	if !voiceTooShort(dur, textRunes) {
 		return pcm, nil
 	}
-	log.Printf("WARNING: TTS audio unusually short (%.1fs for %d runes) — possible truncation",
-		pcmDurationSeconds(pcm), textRunes)
+	log.Printf("WARNING: TTS audio unusually short (%.1fs for %d runes) — possible truncation", dur, textRunes)
 	if !gateEnabled {
 		return pcm, nil
 	}
@@ -184,9 +184,9 @@ func generateVoicePCMWithGate(textRunes int, gateEnabled bool, gen func() ([]byt
 	if err != nil {
 		return nil, err
 	}
-	if voiceTooShort(pcmDurationSeconds(pcm), textRunes) {
-		return nil, fmt.Errorf("TTS audio too short after retry (%.1fs for %d runes) — likely truncation",
-			pcmDurationSeconds(pcm), textRunes)
+	dur = pcmDurationSeconds(pcm)
+	if voiceTooShort(dur, textRunes) {
+		return nil, fmt.Errorf("TTS audio too short after retry (%.1fs for %d runes) — likely truncation", dur, textRunes)
 	}
 	return pcm, nil
 }
@@ -321,7 +321,6 @@ func saveBase64Image(dataURL, outputPath string) error {
 	log.Printf("Saved image (%d bytes) to %s", len(decoded), outputPath)
 	return nil
 }
-
 
 func wrapPCMAsWAV(pcmData []byte, sampleRate, numChannels, bitsPerSample int) []byte {
 	dataSize := len(pcmData)

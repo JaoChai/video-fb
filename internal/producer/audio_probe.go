@@ -31,20 +31,17 @@ func silenceRatio(pcm []byte, threshold int32) float64 {
 // voiceSilent flags a rendered voice track that is effectively empty — too short
 // overall, or almost entirely below the near-silence threshold.
 func voiceSilent(pcm []byte, durationSec float64) bool {
-	return durationSec < 1.0 || silenceRatio(pcm, 500) > 0.98
+	return durationSec < 1.0 || silenceRatio(pcm, silenceThreshold) > 0.98
 }
 
 // probeVoiceSilent reads voice.wav and reports whether it is silent/too short.
-// A read/probe error returns false (fail-open — the audio gate never invents a
-// problem out of an unreadable file).
+// A read error returns false (fail-open — the audio gate never invents a problem
+// out of an unreadable file). Duration is derived from the PCM length (24kHz
+// 16-bit mono), so the file is read only once.
 func probeVoiceSilent(voicePath string) bool {
-	dur, err := wavDurationSeconds(voicePath)
-	if err != nil {
-		return false
-	}
 	pcm, err := readWAVPCM(voicePath)
 	if err != nil {
 		return false
 	}
-	return voiceSilent(pcm, dur)
+	return voiceSilent(pcm, pcmDurationSeconds(pcm))
 }
