@@ -291,7 +291,11 @@
         // dead-still. Starts after the entrance so it never fights the entrance's
         // own y/scale tween.
         if(MOTION_V2 && content){
-          const driftStart = sc.start + 0.7;
+          // Start the drift only AFTER the content entrance finishes so it never
+          // fights the entrance's own y tween (the "rise" variant animates y too).
+          // Mirrors the two entrance branches' start offset + duration, + margin.
+          const entDur = MOTION_UP ? (ENTRANCE_DUR*SPEED_FACTOR) : (0.6*SPEED_FACTOR);
+          const driftStart = sc.start + (MOTION_UP?0.08:0.1) + entDur + 0.1;
           const driftDur = sc.end - driftStart;
           if(driftDur > 0.3){
             tl.to(content,{y:-12,duration:driftDur,ease:"none"},driftStart);
