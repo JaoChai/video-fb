@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -26,7 +27,34 @@ func NewHyperframesRenderer() *HyperframesRenderer {
 	return &HyperframesRenderer{timeout: 20 * time.Minute}
 }
 
-func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...string) error {
+// RenderErrorGateEnabled turns on treating a browser-error-flagged render as a
+// failure (retry) then routing to needs_review. Off → legacy log-only behavior.
+func RenderErrorGateEnabled() bool { return os.Getenv("RENDER_ERROR_GATE_ENABLED") == "true" }
+
+// RenderGateAction is what to do about a render that tripped browser-error detection.
+type RenderGateAction int
+
+const (
+	RenderGateNone   RenderGateAction = iota // do nothing (not flagged, or gate off)
+	RenderGateRetry                          // fail the clip so the retry tick re-renders
+	RenderGateReview                         // still broken after a retry → human review
+)
+
+// RenderGateDecision decides how to handle a render flagged with browser errors.
+// First offense (retryCount 0) retries; a render still broken after at least one
+// retry goes to human review. A frozen render exits 0 and looks fine to the
+// still-frame vision QA, so this is the only place it can be caught.
+func RenderGateDecision(flagged, gateEnabled bool, retryCount int) RenderGateAction {
+	if !flagged || !gateEnabled {
+		return RenderGateNone
+	}
+	if retryCount == 0 {
+		return RenderGateRetry
+	}
+	return RenderGateReview
+}
+
+func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, h.timeout)
 	defer cancel()
 
@@ -37,13 +65,14 @@ func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...strin
 	// froze every animation, producing a static video). Hyperframes prints those
 	// as "[Browser:PAGEERROR]" / CDN-fetch warnings — surface them either way so
 	// a "successful" but broken render is never invisible.
-	if issues := scanBrowserIssues(out); len(issues) > 0 {
+	issues := scanBrowserIssues(out)
+	if len(issues) > 0 {
 		log.Printf("hyperframes %v browser issues:\n%s", args, strings.Join(issues, "\n"))
 	}
 	if err != nil {
-		return fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
+		return issues, fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
 	}
-	return nil
+	return issues, nil
 }
 
 // scanBrowserIssues pulls the lines that signal a silent in-page failure (a JS
@@ -75,14 +104,16 @@ func hyperframesCmd(ctx context.Context, args ...string) *exec.Cmd {
 // Lint runs lint+validate+inspect; use it as a guardrail before Render so a
 // broken composition can fall back to a simpler layout instead of producing junk.
 func (h *HyperframesRenderer) Lint(ctx context.Context, dir string) error {
-	return h.run(ctx, dir, "lint")
+	_, err := h.run(ctx, dir, "lint")
+	return err
 }
 
 // Inspect runs Hyperframes' collision/overflow auditor (canvas_overflow,
 // container_overflow, clipped_text) in headless Chrome. Use it as a gate after
 // Lint so a layout with overlapping or clipped elements is caught before render.
 func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
-	return h.run(ctx, dir, "inspect")
+	_, err := h.run(ctx, dir, "inspect")
+	return err
 }
 
 // renderWorkers parallelizes frame capture across Chrome instances on the ~8GB /
@@ -95,10 +126,11 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
 // only if the container's CPU is actually raised.
 const renderWorkers = "3"
 
-// Render produces an MP4 at outputPath from the composition in dir. Quality is
-// standard/24fps (not high/30) so the memory-heavy multi-scene render fits the
-// ~8GB container without OOM; parallel workers keep it within the timeout.
-func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) error {
+// Render produces an MP4 at outputPath from the composition in dir. It returns
+// any browser-error lines the render emitted (a render can exit 0 while a JS
+// exception froze every animation into a static video). Quality is standard/24fps
+// so the memory-heavy multi-scene render fits the ~8GB container without OOM.
+func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) ([]string, error) {
 	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
 }
 

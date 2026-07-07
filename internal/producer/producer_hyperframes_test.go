@@ -52,17 +52,17 @@ func TestAssembleHyperframes916_Smoke(t *testing.T) {
 			Content: json.RawMessage(`{"title":"เจอปัญหานี้อยู่?","cta":"ทักหาเราเลย","brand":"ADS VANCE"}`)},
 	}
 
-	out, _, _, err := p.AssembleHyperframes916(context.Background(), "smoke-clip", scenes, PresetByKey("editorial-bold"))
+	out, err := p.AssembleHyperframes916(context.Background(), "smoke-clip", scenes, PresetByKey("editorial-bold"))
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}
-	fi, err := os.Stat(out)
+	fi, err := os.Stat(out.mp4Path)
 	if err != nil || fi.Size() < 10_000 {
-		t.Fatalf("expected a non-trivial MP4 at %s (size=%d, err=%v)", out, fi.Size(), err)
+		t.Fatalf("expected a non-trivial MP4 at %s (size=%d, err=%v)", out.mp4Path, fi.Size(), err)
 	}
-	t.Logf("rendered %s (%d bytes)", out, fi.Size())
+	t.Logf("rendered %s (%d bytes)", out.mp4Path, fi.Size())
 
-	htmlBytes, herr := os.ReadFile(filepath.Join(filepath.Dir(out), "index.html"))
+	htmlBytes, herr := os.ReadFile(filepath.Join(filepath.Dir(out.mp4Path), "index.html"))
 	if herr != nil {
 		t.Fatalf("read index.html: %v", herr)
 	}

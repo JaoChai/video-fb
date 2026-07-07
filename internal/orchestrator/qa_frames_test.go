@@ -112,3 +112,23 @@ func TestSceneAwareTimestamps_QAandAutoReviewDiffer(t *testing.T) {
 		}
 	}
 }
+
+func TestQAFrameTargetsSkipsZeroDuration(t *testing.T) {
+	got := qaFrameTargets([]float64{3.0, 0.0, 5.0})
+	want := []bool{true, false, true}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("scene %d: got %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestQAFrameTargetsNegativeIsSkipped(t *testing.T) {
+	got := qaFrameTargets([]float64{-1.0, 2.0})
+	if got[0] || !got[1] {
+		t.Errorf("got %v, want [false true]", got)
+	}
+}

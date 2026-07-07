@@ -477,8 +477,30 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
-	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	status := "ready"
+
+	// A render that emitted browser errors is silently frozen (exits 0, looks fine
+	// to still-frame QA). Retry once via the failed-clip tick; if it's still broken
+	// after a retry, route to human review instead of publishing.
+	if result.RenderFlagged {
+		retryCount := 0
+		if clip, gErr := o.clipsRepo.GetByID(ctx, clipID); gErr == nil && clip != nil {
+			retryCount = clip.RetryCount
+		} else if gErr != nil {
+			// Defaulting to 0 (retry) is safe (bounded by maxClipRetries), but log it
+			// so a DB blip that mislabels a repeat failure as a first offense is visible.
+			log.Printf("clip %s: render gate could not read retry_count (%v) — treating as first offense", clipID, gErr)
+		}
+		switch producer.RenderGateDecision(true, producer.RenderErrorGateEnabled(), retryCount) {
+		case producer.RenderGateRetry:
+			return o.failClip(ctx, clipID, fmt.Errorf("render emitted browser errors — retrying"))
+		case producer.RenderGateReview:
+			status = "needs_review"
+			log.Printf("clip %s: render browser errors persisted after retry — status=needs_review (publish blocked)", clipID)
+		}
+	}
+
+	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
 		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)
@@ -502,6 +524,13 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 	if result.InspectFlagged && status == "ready" {
 		status = "needs_review"
 		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
+	}
+
+	// A silent/too-short voice track can't be seen by the still-frame vision QA —
+	// route to needs_review when the audio gate is on.
+	if result.AudioFlagged && producer.QAAudioCheckEnabled() && status == "ready" {
+		status = "needs_review"
+		log.Printf("clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
 	}
 
 	renderedStage := stageRendered
@@ -761,6 +790,18 @@ func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64, fr
 	return evenFrameTimestamps(probed, len(durations))
 }
 
+// qaFrameTargets marks which scenes should have a QA frame sampled. Zero- (or
+// negative-) duration scenes are skipped: they come from an empty VoiceText
+// placeholder and their sampled timestamp lands exactly on a transition
+// boundary, producing a blank frame that QA false-flags.
+func qaFrameTargets(durs []float64) []bool {
+	targets := make([]bool, len(durs))
+	for i, d := range durs {
+		targets[i] = d > 0
+	}
+	return targets
+}
+
 // extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
 // it with the scene's text. A per-scene extraction failure is logged and that
 // frame is dropped (Visual QA fails open on missing frames).
@@ -770,10 +811,14 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		durs[i] = s.DurationSeconds
 	}
 	mids := o.qaFrameTimestamps(mp4Path, durs, qaSceneFrac)
+	targets := qaFrameTargets(durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
 			break // sampler returned no usable timestamps (missing durations + probe fail) — fail-open
+		}
+		if !targets[i] {
+			continue // zero-duration scene: sampling it would hit a transition boundary
 		}
 		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {

@@ -145,62 +145,106 @@ func (o *OpenRouterClient) generateImageOnce(ctx context.Context, prompt, aspect
 	return saveBase64Image(result.Choices[0].Message.Images[0].ImageURL.URL, outputPath)
 }
 
+// TTSLengthGateEnabled turns on retry-then-fail when TTS output is implausibly
+// short for its input (likely truncation). Off → legacy warning-only behavior.
+func TTSLengthGateEnabled() bool { return os.Getenv("TTS_LENGTH_GATE_ENABLED") == "true" }
+
+// pcmDurationSeconds returns the play length of raw 24kHz 16-bit mono PCM.
+func pcmDurationSeconds(pcm []byte) float64 {
+	const sampleRate = 24000
+	const bytesPerSample = 2
+	return float64(len(pcm)) / float64(sampleRate*bytesPerSample)
+}
+
+// voiceTooShort flags audio that is implausibly short for its input text.
+func voiceTooShort(durationSec float64, textRunes int) bool {
+	return durationSec < 5.0 && textRunes > 100
+}
+
+// generateVoicePCMWithGate calls gen to synthesize PCM. It always warns when the
+// result is implausibly short for the input (legacy behavior). When the length
+// gate is on it additionally retries once and, if still too short, returns an
+// error so the caller fails the clip (→ retry tick) instead of shipping missing
+// narration.
+func generateVoicePCMWithGate(textRunes int, gateEnabled bool, gen func() ([]byte, error)) ([]byte, error) {
+	pcm, err := gen()
+	if err != nil {
+		return nil, err
+	}
+	dur := pcmDurationSeconds(pcm)
+	if !voiceTooShort(dur, textRunes) {
+		return pcm, nil
+	}
+	log.Printf("WARNING: TTS audio unusually short (%.1fs for %d runes) — possible truncation", dur, textRunes)
+	if !gateEnabled {
+		return pcm, nil
+	}
+	log.Printf("TTS length gate on — retrying once")
+	pcm, err = gen()
+	if err != nil {
+		return nil, err
+	}
+	dur = pcmDurationSeconds(pcm)
+	if voiceTooShort(dur, textRunes) {
+		return nil, fmt.Errorf("TTS audio too short after retry (%.1fs for %d runes) — likely truncation", dur, textRunes)
+	}
+	return pcm, nil
+}
+
 func (o *OpenRouterClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
 	chunks := splitVoiceText(text, ttsMaxChunkRunes)
 	if len(chunks) == 0 {
 		return fmt.Errorf("no text to generate voice for")
 	}
-
 	if len(chunks) > 1 {
 		log.Printf("Splitting voice text into %d chunks for TTS (%d chars total)", len(chunks), len([]rune(text)))
 	}
 
-	var allPCM []byte
-	for i, chunk := range chunks {
-		if len(chunks) > 1 {
-			log.Printf("Generating TTS chunk %d/%d (%d chars)", i+1, len(chunks), len([]rune(chunk)))
-		}
-
-		var pcm []byte
-		err := retryableCall(ctx, "openrouter-tts", func() error {
-			var genErr error
-			pcm, genErr = o.generatePCM(ctx, chunk, voice)
-			return genErr
-		})
-		if err != nil {
-			return fmt.Errorf("TTS chunk %d/%d: %w", i+1, len(chunks), err)
-		}
-
-		if len(chunks) > 1 {
-			trimLeading := i > 0
-			trimTrailing := i < len(chunks)-1
-			pcm = trimPCMSilence(pcm, trimLeading, trimTrailing)
-			if i > 0 {
-				allPCM = append(allPCM, make([]byte, gapBytes)...)
+	// gen synthesizes the full PCM for the text once (all chunks concatenated with
+	// trims/gaps). It is a closure so the length gate can invoke it twice.
+	gen := func() ([]byte, error) {
+		var allPCM []byte
+		for i, chunk := range chunks {
+			if len(chunks) > 1 {
+				log.Printf("Generating TTS chunk %d/%d (%d chars)", i+1, len(chunks), len([]rune(chunk)))
 			}
+			var pcm []byte
+			err := retryableCall(ctx, "openrouter-tts", func() error {
+				var genErr error
+				pcm, genErr = o.generatePCM(ctx, chunk, voice)
+				return genErr
+			})
+			if err != nil {
+				return nil, fmt.Errorf("TTS chunk %d/%d: %w", i+1, len(chunks), err)
+			}
+			if len(chunks) > 1 {
+				trimLeading := i > 0
+				trimTrailing := i < len(chunks)-1
+				pcm = trimPCMSilence(pcm, trimLeading, trimTrailing)
+				if i > 0 {
+					allPCM = append(allPCM, make([]byte, gapBytes)...)
+				}
+			}
+			allPCM = append(allPCM, pcm...)
 		}
-		allPCM = append(allPCM, pcm...)
+		return allPCM, nil
 	}
 
-	// Validate audio duration
+	allPCM, err := generateVoicePCMWithGate(len([]rune(text)), TTSLengthGateEnabled(), gen)
+	if err != nil {
+		return err
+	}
+
 	const sampleRate = 24000
-	const bytesPerSample = 2 // 16-bit mono
-	durationSec := float64(len(allPCM)) / float64(sampleRate*bytesPerSample)
-	if durationSec < 5.0 && len([]rune(text)) > 100 {
-		log.Printf("WARNING: TTS audio unusually short (%.1fs for %d chars) — possible truncation", durationSec, len([]rune(text)))
-	}
-
 	wavData := wrapPCMAsWAV(allPCM, sampleRate, 1, 16)
-
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 	if err := os.WriteFile(outputPath, wavData, 0644); err != nil {
 		return fmt.Errorf("write audio: %w", err)
 	}
-
 	log.Printf("Saved TTS audio (%d bytes PCM → %d bytes WAV, %.1fs, %d chunks) to %s",
-		len(allPCM), len(wavData), durationSec, len(chunks), outputPath)
+		len(allPCM), len(wavData), pcmDurationSeconds(allPCM), len(chunks), outputPath)
 	return nil
 }
 
@@ -277,7 +321,6 @@ func saveBase64Image(dataURL, outputPath string) error {
 	log.Printf("Saved image (%d bytes) to %s", len(decoded), outputPath)
 	return nil
 }
-
 
 func wrapPCMAsWAV(pcmData []byte, sampleRate, numChannels, bitsPerSample int) []byte {
 	dataSize := len(pcmData)
