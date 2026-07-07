@@ -190,9 +190,15 @@ func (r *ClipsRepo) ListNeedsReview(ctx context.Context, retryCap, limit int) ([
 	return clips, nil
 }
 
-// SetAutoReviewHeld marks a clip as held so the auto-review tick stops re-judging it.
+// SetAutoReviewHeld marks a clip as held so the auto-review tick stops re-judging
+// it. Guarded to status='needs_review': the judge snapshots its batch before a
+// slow vision call, so by the time it decides "hold" a human may already have
+// approved/published the clip — a late hold must not clobber that (seen in prod:
+// a published clip carrying auto_review_held=TRUE).
 func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE clips SET auto_review_held = TRUE, updated_at = NOW() WHERE id = $1`, id)
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET auto_review_held = TRUE, updated_at = NOW()
+		 WHERE id = $1 AND status = 'needs_review'`, id)
 	return err
 }
 
