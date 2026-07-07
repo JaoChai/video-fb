@@ -511,11 +511,10 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 	// error / zero frames) routes to needs_review instead of publishing unseen.
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
-		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)
-		if len(frames) == 0 && producer.QAFailClosedEnabled() && status == "ready" {
-			status = "needs_review"
-			log.Printf("visualqa: clip %s produced no QA frames — fail-closed → needs_review", clipID)
-		}
+		probedDur := o.probeQADuration(result.LocalVideo916Path)
+		frames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaSceneFrac, probedDur, nil)
+		downgradeIfReady(&status, len(frames) == 0 && producer.QAFailClosedEnabled(),
+			"visualqa: clip %s produced no QA frames — fail-closed → needs_review", clipID)
 		qaRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
 			Question: q.Question,
 			Frames:   frames,
@@ -531,7 +530,7 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 					flagged[v.SceneNumber] = true
 				}
 			}
-			confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, flagged)
+			confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, probedDur, flagged)
 			confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
 				Question: q.Question,
 				Frames:   confirmFrames,
@@ -550,24 +549,20 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 				clipID, string(agent.MarshalVerdicts(qaRes.Verdicts)))
 		}
 		o.tracker.CompleteStep("visual_qa")
-	} else if qErr != nil && producer.QAFailClosedEnabled() && status == "ready" {
-		status = "needs_review"
-		log.Printf("visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
+	} else if qErr != nil {
+		downgradeIfReady(&status, producer.QAFailClosedEnabled(),
+			"visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
 	}
 
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
 	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
-	if result.InspectFlagged && status == "ready" {
-		status = "needs_review"
-		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
-	}
+	downgradeIfReady(&status, result.InspectFlagged,
+		"clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
 
 	// A silent/too-short voice track can't be seen by the still-frame vision QA —
 	// route to needs_review when the audio gate is on.
-	if result.AudioFlagged && producer.QAAudioCheckEnabled() && status == "ready" {
-		status = "needs_review"
-		log.Printf("clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
-	}
+	downgradeIfReady(&status, result.AudioFlagged && producer.QAAudioCheckEnabled(),
+		"clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
 
 	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
@@ -838,39 +833,38 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 		if d < 0 {
 			d = 0
 		}
-		t := acc + d*frac
 		lo := acc + math.Min(qaEntranceGuardSec, d*0.5)
-		hi := acc + d - qaExitGuardSec
-		if hi < lo {
-			hi = lo
-		}
-		if t < lo {
-			t = lo
-		}
-		if t > hi {
-			t = hi
-		}
-		ts[i] = t * scale
+		hi := math.Max(acc+d-qaExitGuardSec, lo)
+		ts[i] = math.Max(lo, math.Min(hi, acc+d*frac)) * scale
 		acc += d
 	}
 	return ts
 }
 
-// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
-// positioned frac into its scene via real per-scene durations rescaled to
-// the probed video length. Falls back to naive even slicing when per-scene
-// durations are unavailable (all zero); if the probe ALSO fails it returns a
-// short/nil slice, and callers must guard their index (fail-open on missing frames).
-func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64, frac float64) []float64 {
+// probeQADuration probes the mp4 container duration ONCE so every QA sampling
+// pass on the same file (first pass, confirm pass) shares it instead of each
+// spawning its own ffprobe. Returns 0 when the probe is unusable — samplers
+// then fall back to estimated scene durations.
+func (o *Orchestrator) probeQADuration(mp4Path string) float64 {
 	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
 	if err != nil || probed <= 0 {
 		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); sampling from estimated scene durations", err, probed)
-		probed = 0
+		return 0
 	}
-	if ts := sceneAwareTimestamps(durations, probed, frac); ts != nil {
+	return probed
+}
+
+// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
+// positioned frac into its scene via real per-scene durations rescaled to
+// probedDur (0 = probe failed, don't rescale). Falls back to naive even slicing
+// when per-scene durations are unavailable (all zero); if the probe ALSO failed
+// it returns a short/nil slice, and callers must guard their index (fail-open
+// on missing frames).
+func qaFrameTimestamps(probedDur float64, durations []float64, frac float64) []float64 {
+	if ts := sceneAwareTimestamps(durations, probedDur, frac); ts != nil {
 		return ts
 	}
-	return evenFrameTimestamps(probed, len(durations))
+	return evenFrameTimestamps(probedDur, len(durations))
 }
 
 // qaFrameTargets marks which scenes should have a QA frame sampled. Zero- (or
@@ -886,15 +880,17 @@ func qaFrameTargets(durs []float64) []bool {
 }
 
 // extractQAFramesAt extracts one PNG frame per scene at `frac` into each scene
-// and pairs it with the scene's text. When `only` is non-nil, scenes not in it
-// are skipped (the confirm pass re-samples just the flagged scenes). A per-scene
-// extraction failure is logged and that frame is dropped (fail-open).
-func (o *Orchestrator) extractQAFramesAt(clipID, mp4Path string, scenes []agent.GeneratedScene, frac float64, only map[int]bool) []agent.QAFrame {
+// and pairs it with the scene's text. probedDur is the caller-probed container
+// duration (see probeQADuration) so multi-pass extraction probes only once.
+// When `only` is non-nil, scenes not in it are skipped (the confirm pass
+// re-samples just the flagged scenes). A per-scene extraction failure is logged
+// and that frame is dropped (fail-open).
+func (o *Orchestrator) extractQAFramesAt(clipID, mp4Path string, scenes []agent.GeneratedScene, frac, probedDur float64, only map[int]bool) []agent.QAFrame {
 	durs := make([]float64, len(scenes))
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs, frac)
+	mids := qaFrameTimestamps(probedDur, durs, frac)
 	targets := qaFrameTargets(durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
@@ -928,9 +924,15 @@ func (o *Orchestrator) extractQAFramesAt(clipID, mp4Path string, scenes []agent.
 	return frames
 }
 
-// extractQAFrames is the first-pass extractor (qaSceneFrac, all scenes).
-func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
-	return o.extractQAFramesAt(clipID, mp4Path, scenes, qaSceneFrac, nil)
+// downgradeIfReady routes a still-publishable clip to needs_review when cond
+// holds, logging why. The *status == "ready" guard is the load-bearing
+// invariant shared by every gate in renderAndFinalize: the first gate to fire
+// wins and a later gate never clobbers an earlier downgrade.
+func downgradeIfReady(status *string, cond bool, format string, args ...any) {
+	if cond && *status == "ready" {
+		*status = "needs_review"
+		log.Printf(format, args...)
+	}
 }
 
 // auto_review tuning: approve threshold matches AutoReviewAgent's normalization
@@ -983,7 +985,7 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs, autoReviewSceneFrac)
+	mids := qaFrameTimestamps(o.probeQADuration(mp4Path), durs, autoReviewSceneFrac)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
