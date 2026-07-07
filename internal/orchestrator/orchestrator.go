@@ -506,10 +506,16 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
-	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
+	// Visual QA gate. Historically fail-OPEN on any infra error; with
+	// QA_FAIL_CLOSED_ENABLED=true a clip QA couldn't see at all (config fetch
+	// error / zero frames) routes to needs_review instead of publishing unseen.
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
 		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)
+		if len(frames) == 0 && producer.QAFailClosedEnabled() && status == "ready" {
+			status = "needs_review"
+			log.Printf("visualqa: clip %s produced no QA frames — fail-closed → needs_review", clipID)
+		}
 		qaRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
 			Question: q.Question,
 			Frames:   frames,
@@ -544,6 +550,9 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 				clipID, string(agent.MarshalVerdicts(qaRes.Verdicts)))
 		}
 		o.tracker.CompleteStep("visual_qa")
+	} else if qErr != nil && producer.QAFailClosedEnabled() && status == "ready" {
+		status = "needs_review"
+		log.Printf("visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
 	}
 
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
