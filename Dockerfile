@@ -11,17 +11,20 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /server cmd/server/main.go
 # 9:16 multi-scene videos (Approach A — single image bundling the toolchain).
 FROM node:22-bookworm-slim
 
-# Freeze the Debian package repo to a 2026-07-06 snapshot. `apt install chromium`
+# Freeze the Debian package repo to a 2026-07-04 snapshot. `apt install chromium`
 # is version-unpinned, so a rebuild on 2026-07-07 pulled a NEWER bookworm chromium
 # that fails to launch under headless Puppeteer on Railway (renders had worked for
-# weeks on the prior image). Pinning apt to the snapshot from BEFORE that break
-# restores the exact chromium that rendered fine AND makes future rebuilds
-# reproducible. Snapshot repos carry an old Valid-Until, so disable that check.
+# weeks on the prior image). The broken chromium 150.0.7871.46-1~deb12u1 entered
+# bookworm-security on 2026-07-05, so the snapshot must be pinned to 2026-07-04 or
+# earlier to get chromium 149.0.7827.196-1~deb12u1 (the previous security build,
+# accepted 2026-06-26). The exact last-good version is unknown (it came from an
+# old Docker layer cache), so if 149 also fails to launch, move this date earlier.
+# Snapshot repos carry an old Valid-Until, so disable that check.
 RUN rm -f /etc/apt/sources.list.d/debian.sources \
  && printf '%s\n' \
-    'deb http://snapshot.debian.org/archive/debian/20260706T000000Z/ bookworm main' \
-    'deb http://snapshot.debian.org/archive/debian/20260706T000000Z/ bookworm-updates main' \
-    'deb http://snapshot.debian.org/archive/debian-security/20260706T000000Z/ bookworm-security main' \
+    'deb http://snapshot.debian.org/archive/debian/20260704T000000Z/ bookworm main' \
+    'deb http://snapshot.debian.org/archive/debian/20260704T000000Z/ bookworm-updates main' \
+    'deb http://snapshot.debian.org/archive/debian-security/20260704T000000Z/ bookworm-security main' \
     > /etc/apt/sources.list \
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && apt-get install -y --no-install-recommends \
