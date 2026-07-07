@@ -121,12 +121,13 @@ func (r *ClipsRepo) Delete(ctx context.Context, id string) error {
 // so a restart/crash/deploy mid-production orphans its clip in 'producing' forever
 // — the goroutine dies before it can set 'ready'/'failed'. Called once at startup,
 // where any 'producing' clip is necessarily stale. Returns the number reset.
+// A restart is infrastructure, not a content failure, so retry_count is left
+// unchanged — an interrupted render must not consume the clip's retry budget.
 func (r *ClipsRepo) ResetStaleProducing(ctx context.Context) (int64, error) {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE clips
 		 SET status = 'failed',
 		     fail_reason = 'การผลิตถูกขัดจังหวะ (เซิร์ฟเวอร์รีสตาร์ท) — กด Retry เพื่อลองใหม่',
-		     retry_count = retry_count + 1,
 		     updated_at = NOW()
 		 WHERE status = 'producing'`)
 	if err != nil {
