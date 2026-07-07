@@ -486,6 +486,10 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		retryCount := 0
 		if clip, gErr := o.clipsRepo.GetByID(ctx, clipID); gErr == nil && clip != nil {
 			retryCount = clip.RetryCount
+		} else if gErr != nil {
+			// Defaulting to 0 (retry) is safe (bounded by maxClipRetries), but log it
+			// so a DB blip that mislabels a repeat failure as a first offense is visible.
+			log.Printf("clip %s: render gate could not read retry_count (%v) — treating as first offense", clipID, gErr)
 		}
 		switch producer.RenderGateDecision(true, producer.RenderErrorGateEnabled(), retryCount) {
 		case producer.RenderGateRetry:
