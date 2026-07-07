@@ -304,13 +304,15 @@ type assembleOutput struct {
 
 // generateSceneImagesParallel is the PIPELINE_FAST_ENABLED variant of the
 // per-scene background gen: up to 4 concurrent kie calls instead of one at a
-// time (~5 min → ~1 min for 10 scenes). Keeps the circuit-breaker semantics of
-// the sequential loop — the first failure stops scenes that haven't started
-// (they fall back to css), but images already generated are still used.
-// Populates bgPaths (sceneNumber → file); errors are non-fatal by design.
+// time (~5 min → ~1 min for 10 scenes). Two-stage fallback chain per scene:
+// gpt-image-2 → nano-banana-2-lite → css, each stage with its own circuit
+// breaker — the first failure of a stage stops LATER scenes from attempting
+// that stage (they start at the next one), but images already generated are
+// still used. Populates bgPaths (sceneNumber → file); errors are non-fatal by
+// design (BuildScenes renders a css background for any scene without a file).
 func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string) {
 	var mu sync.Mutex
-	var degraded atomic.Bool
+	var primaryDown, fallbackDown atomic.Bool
 	var g errgroup.Group
 	g.SetLimit(4)
 	for _, s := range scenes {
@@ -321,14 +323,21 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 		g.Go(func() error {
 			if !fileExists(bgFile) {
-				if degraded.Load() {
-					return nil
-				}
 				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
-				if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
-					log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, unstarted scenes use css: %v", s.SceneNumber, genErr)
-					degraded.Store(true)
-					return nil
+				generated := false
+				if !primaryDown.Load() {
+					if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
+						log.Printf("AssembleHyperframes916: scene %d primary image gen failed — unstarted scenes go straight to fallback model: %v", s.SceneNumber, genErr)
+						primaryDown.Store(true)
+					} else {
+						generated = true
+					}
+				}
+				if !generated && !fallbackDown.Load() {
+					if genErr := p.kie.GenerateImageFallback(ctx, prompt, "9:16", bgFile); genErr != nil {
+						log.Printf("AssembleHyperframes916: scene %d fallback image gen failed — unstarted scenes use css: %v", s.SceneNumber, genErr)
+						fallbackDown.Store(true)
+					}
 				}
 			}
 			if fileExists(bgFile) {

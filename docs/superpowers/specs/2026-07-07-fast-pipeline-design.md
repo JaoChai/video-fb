@@ -20,7 +20,7 @@
 ### Flag-gated: `PIPELINE_FAST_ENABLED` (env, default OFF — flag off = พฤติกรรมเดิม 100%)
 
 1. **Parallel image gen** — `AssembleHyperframes916` step 2 (producer.go:337): ยิง `GenerateImage` ขนานทุก scene, จำกัด 4 พร้อมกัน (kie rate limit) circuit breaker เดิมคงไว้แบบ atomic: scene แรกที่ fail → scene ที่ยังไม่เริ่มข้ามเป็น CSS, ภาพที่เสร็จแล้วใช้ต่อ
-2. **Image fail-fast** — เมื่อ flag on: `ImageTaskTimeout` 180s → 75s, `ImageMaxRetries` 1 → 0 (worst case ต่อ scene: ~80s แทน ~6.6 นาที)
+2. **Image fail-fast + fallback chain** — เมื่อ flag on: `ImageTaskTimeout` 180s → 150s (แก้จาก 75s หลังวัดจริง 2026-07-07: kie วันช้าเสร็จใน 108-140s — 75s พลาดภาพที่เกือบเสร็จ), `ImageMaxRetries` 1 → 0. ต่อ scene: gpt-image-2 (150s, 2K, 10 เครดิต) → fail → **nano-banana-2-lite** (60s, วัดจริง ~24-28s, 4 เครดิต, 768px) → fail → css เป็นทางหนีสุดท้าย. Breaker แยกต่อ stage: primary ล่ม → scene ถัดไปเริ่มที่ nano เลย; nano ล่มด้วย → css. Worst case ทั้งคู่ล่ม: ~210s/wave
 3. **Parallel visual QA** — `visualqa.go Review` (loop line 88): ตรวจ frame ขนาน จำกัด 4, fail-open ต่อ scene คงเดิม
 
 ### ไม่ gate (ปลอดภัย + rollback ง่าย)

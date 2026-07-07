@@ -21,29 +21,35 @@ const kieAPI = "https://api.kie.ai/api/v1"
 
 type KieConfig struct {
 	ImageTaskTimeout time.Duration
-	VoiceTaskTimeout time.Duration
-	PollInterval     time.Duration
-	MaxRetries       int
-	ImageMaxRetries  int // image gen is non-fatal (css fallback) → fail fast, don't grind 5×
-	HTTPTimeout      time.Duration
-	UploadTimeout    time.Duration
+	// FallbackImageTimeout bounds the nano-banana-2-lite attempt made after the
+	// primary image model fails; measured ~24-28s per task on 2026-07-07.
+	FallbackImageTimeout time.Duration
+	VoiceTaskTimeout     time.Duration
+	PollInterval         time.Duration
+	MaxRetries           int
+	ImageMaxRetries      int // image gen is non-fatal (fallback chain) → fail fast, don't grind 5×
+	HTTPTimeout          time.Duration
+	UploadTimeout        time.Duration
 }
 
 func DefaultKieConfig() KieConfig {
 	cfg := KieConfig{
-		ImageTaskTimeout: 180 * time.Second,
-		VoiceTaskTimeout: 300 * time.Second,
-		PollInterval:     3 * time.Second,
-		MaxRetries:       5,
-		ImageMaxRetries:  1,
-		HTTPTimeout:      30 * time.Second,
-		UploadTimeout:    5 * time.Minute,
+		ImageTaskTimeout:     180 * time.Second,
+		FallbackImageTimeout: 60 * time.Second,
+		VoiceTaskTimeout:     300 * time.Second,
+		PollInterval:         3 * time.Second,
+		MaxRetries:           5,
+		ImageMaxRetries:      1,
+		HTTPTimeout:          30 * time.Second,
+		UploadTimeout:        5 * time.Minute,
 	}
 	if PipelineFastEnabled() {
-		// Speed over image quality (user-chosen): one short attempt, then the
-		// scene falls back to a css background instead of grinding ~6.6 min
-		// (180s + 30s backoff + 180s) per scene when kie is degraded.
-		cfg.ImageTaskTimeout = 75 * time.Second
+		// Speed over image quality (user-chosen): one bounded attempt, then the
+		// scene falls back instead of grinding ~6.6 min (180s + 30s backoff +
+		// 180s) per scene when kie is degraded. 150s (not 75s) because on
+		// degraded-but-alive days kie completes in ~110-140s (measured
+		// 2026-07-07) — 75s missed images that were seconds from done.
+		cfg.ImageTaskTimeout = 150 * time.Second
 		cfg.ImageMaxRetries = 0
 	}
 	return cfg
@@ -122,6 +128,33 @@ func (k *KieClient) GenerateImage(ctx context.Context, prompt, aspectRatio, outp
 
 		return k.downloadFile(ctx, imageURL, outputPath)
 	})
+}
+
+// GenerateImageFallback renders a scene background with nano-banana-2-lite —
+// the cheap fast fallback (measured 2026-07-07: ~24-28s and 4 credits vs
+// gpt-image-2's 108-400s and 10 credits) used after the primary model fails,
+// so a degraded primary downgrades the image instead of dropping to css.
+// Single attempt, no retry — the caller's css path is the last resort.
+func (k *KieClient) GenerateImageFallback(ctx context.Context, prompt, aspectRatio, outputPath string) error {
+	taskID, err := k.createTask(ctx, "nano-banana-2-lite", map[string]any{
+		"prompt":       prompt,
+		"aspect_ratio": aspectRatio,
+	})
+	if err != nil {
+		return fmt.Errorf("create fallback image task: %w", err)
+	}
+
+	result, err := k.pollTask(ctx, taskID, k.cfg.FallbackImageTimeout)
+	if err != nil {
+		return fmt.Errorf("poll fallback image task: %w", err)
+	}
+
+	imageURL := extractFirstURL(result)
+	if imageURL == "" {
+		return fmt.Errorf("no image URL in result: %v", result)
+	}
+
+	return k.downloadFile(ctx, imageURL, outputPath)
 }
 
 func (k *KieClient) GenerateVoice(ctx context.Context, text, voice, outputPath string) error {
