@@ -504,6 +504,13 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
 	}
 
+	// A silent/too-short voice track can't be seen by the still-frame vision QA —
+	// route to needs_review when the audio gate is on.
+	if result.AudioFlagged && producer.QAAudioCheckEnabled() && status == "ready" {
+		status = "needs_review"
+		log.Printf("clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
+	}
+
 	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
 		Status:          &status,

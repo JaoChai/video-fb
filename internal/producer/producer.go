@@ -74,6 +74,13 @@ type ProduceResult struct {
 	// overflow/clip issue for this clip. Surfaced so the orchestrator can route
 	// the clip to needs_review instead of publishing a visibly-broken layout.
 	InspectFlagged bool
+	// AudioFlagged is true when the rendered voice track is silent/too short
+	// (QA audio check). The orchestrator routes such clips to needs_review when
+	// QA_AUDIO_CHECK_ENABLED is on.
+	AudioFlagged bool
+	// RenderFlagged is true when the render browser-error gate detected a
+	// problem (populated by a later gate; unset — always false — here).
+	RenderFlagged bool
 }
 
 // FFmpeg exposes the assembler so callers (Visual QA) can extract frames from a
@@ -290,24 +297,34 @@ func (p *Producer) EnableHyperframes(fontsDir string) {
 // voice bounds), in scene order — persisted by the caller as the accurate
 // scenes.duration_seconds (the scene agent never emits durations). It is nil on
 // any error return.
-func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (string, []float64, bool, error) {
+// assembleOutput carries the render products and post-render health signals from
+// AssembleHyperframes916 up to ProduceHyperframes916.
+type assembleOutput struct {
+	mp4Path        string
+	sceneDurations []float64
+	inspectFlagged bool
+	audioFlagged   bool
+	renderFlagged  bool // populated by the render browser-error gate
+}
+
+func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*assembleOutput, error) {
 	if p.hf == nil {
-		return "", nil, false, fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")
+		return nil, fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")
 	}
 	if len(scenes) == 0 {
-		return "", nil, false, fmt.Errorf("no scenes")
+		return nil, fmt.Errorf("no scenes")
 	}
 
 	clipDir := filepath.Join(p.workDir, clipID)
 	if err := os.MkdirAll(clipDir, 0o755); err != nil {
-		return "", nil, false, fmt.Errorf("mkdir clipDir: %w", err)
+		return nil, fmt.Errorf("mkdir clipDir: %w", err)
 	}
 	voice := p.getVoice(ctx)
 
 	// 1) per-scene TTS → combined voice.wav + measured [start,end) bounds.
 	voicePath, bounds, err := p.synthScenesVoice(ctx, scenes, voice, clipDir)
 	if err != nil {
-		return "", nil, false, fmt.Errorf("synth scenes voice: %w", err)
+		return nil, fmt.Errorf("synth scenes voice: %w", err)
 	}
 
 	// 2) per-scene gpt-image-2 backgrounds (kie.ai). A missing/failed image is
@@ -338,7 +355,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	// 3) map scenes → SceneSpec, build captions, assemble ScenesParams.
 	specs := buildSceneSpecs(scenes, bounds)
 	if len(specs) == 0 {
-		return "", nil, false, fmt.Errorf("buildSceneSpecs returned empty (scenes=%d bounds=%d)", len(scenes), len(bounds))
+		return nil, fmt.Errorf("buildSceneSpecs returned empty (scenes=%d bounds=%d)", len(scenes), len(bounds))
 	}
 	segments := captionSegmentsFromScenes(scenes, bounds)
 	total := 0.0
@@ -392,10 +409,10 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	// 4) build the project dir and render the MP4.
 	projectDir := filepath.Join(clipDir, "composition-916")
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		return "", nil, false, fmt.Errorf("mkdir projectDir: %w", err)
+		return nil, fmt.Errorf("mkdir projectDir: %w", err)
 	}
 	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
-		return "", nil, false, fmt.Errorf("build scenes: %w", err)
+		return nil, fmt.Errorf("build scenes: %w", err)
 	}
 	inspectFlagged := false
 	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
@@ -403,9 +420,15 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, err)
 	}
 	if err := p.hf.renderer.Render(ctx, projectDir, "output.mp4"); err != nil {
-		return "", nil, false, fmt.Errorf("render: %w", err)
+		return nil, fmt.Errorf("render: %w", err)
 	}
-	return filepath.Join(projectDir, "output.mp4"), boundsToDurations(bounds), inspectFlagged, nil
+	audioFlagged := probeVoiceSilent(voicePath)
+	return &assembleOutput{
+		mp4Path:        filepath.Join(projectDir, "output.mp4"),
+		sceneDurations: boundsToDurations(bounds),
+		inspectFlagged: inspectFlagged,
+		audioFlagged:   audioFlagged,
+	}, nil
 }
 
 // uploadWithFallback runs primary; on error it logs and runs fallback. Used so a
@@ -440,11 +463,12 @@ func (p *Producer) uploadPersistent(ctx context.Context, localPath, r2Key, kieDi
 // non-nil tracker (the production path always provides one).
 func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*ProduceResult, error) {
 	p.tracker.StartStep("assembly")
-	mp4Path, sceneDurations, inspectFlagged, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset)
+	out, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset)
 	if err != nil {
 		p.tracker.FailStep("assembly", err)
 		return nil, fmt.Errorf("assemble hyperframes: %w", err)
 	}
+	mp4Path := out.mp4Path
 	p.tracker.CompleteStep("assembly")
 
 	p.tracker.StartStep("upload")
@@ -467,5 +491,13 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 	}
 	p.tracker.CompleteStep("upload")
 
-	return &ProduceResult{Video916URL: video916URL, ThumbnailURL: thumbnailURL, LocalVideo916Path: mp4Path, SceneDurations: sceneDurations, InspectFlagged: inspectFlagged}, nil
+	return &ProduceResult{
+		Video916URL:       video916URL,
+		ThumbnailURL:      thumbnailURL,
+		LocalVideo916Path: mp4Path,
+		SceneDurations:    out.sceneDurations,
+		InspectFlagged:    out.inspectFlagged,
+		AudioFlagged:      out.audioFlagged,
+		RenderFlagged:     out.renderFlagged,
+	}, nil
 }
