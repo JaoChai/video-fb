@@ -11,7 +11,20 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /server cmd/server/main.go
 # 9:16 multi-scene videos (Approach A — single image bundling the toolchain).
 FROM node:22-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Freeze the Debian package repo to a 2026-07-06 snapshot. `apt install chromium`
+# is version-unpinned, so a rebuild on 2026-07-07 pulled a NEWER bookworm chromium
+# that fails to launch under headless Puppeteer on Railway (renders had worked for
+# weeks on the prior image). Pinning apt to the snapshot from BEFORE that break
+# restores the exact chromium that rendered fine AND makes future rebuilds
+# reproducible. Snapshot repos carry an old Valid-Until, so disable that check.
+RUN rm -f /etc/apt/sources.list.d/debian.sources \
+ && printf '%s\n' \
+    'deb http://snapshot.debian.org/archive/debian/20260706T000000Z/ bookworm main' \
+    'deb http://snapshot.debian.org/archive/debian/20260706T000000Z/ bookworm-updates main' \
+    'deb http://snapshot.debian.org/archive/debian-security/20260706T000000Z/ bookworm-security main' \
+    > /etc/apt/sources.list \
+ && apt-get -o Acquire::Check-Valid-Until=false update \
+ && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     tzdata \
@@ -23,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     libpangocairo-1.0-0 libcairo2 libxshmfence1 \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
 # Warm the npx cache with the pinned Hyperframes CLI instead of a global install.
 # `npm install -g hyperframes` lays down the bin but NOT the core runtime manifest
