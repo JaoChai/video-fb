@@ -161,20 +161,25 @@ func voiceTooShort(durationSec float64, textRunes int) bool {
 	return durationSec < 5.0 && textRunes > 100
 }
 
-// generateVoicePCMWithGate calls gen to synthesize PCM. If the length gate is on
-// and the result is too short for the input, it retries once; if it is still too
-// short it returns an error so the caller fails the clip (→ retry tick) instead
-// of shipping missing narration.
+// generateVoicePCMWithGate calls gen to synthesize PCM. It always warns when the
+// result is implausibly short for the input (legacy behavior). When the length
+// gate is on it additionally retries once and, if still too short, returns an
+// error so the caller fails the clip (→ retry tick) instead of shipping missing
+// narration.
 func generateVoicePCMWithGate(textRunes int, gateEnabled bool, gen func() ([]byte, error)) ([]byte, error) {
 	pcm, err := gen()
 	if err != nil {
 		return nil, err
 	}
-	if !gateEnabled || !voiceTooShort(pcmDurationSeconds(pcm), textRunes) {
+	if !voiceTooShort(pcmDurationSeconds(pcm), textRunes) {
 		return pcm, nil
 	}
-	log.Printf("WARNING: TTS audio unusually short (%.1fs for %d runes) — retrying once",
+	log.Printf("WARNING: TTS audio unusually short (%.1fs for %d runes) — possible truncation",
 		pcmDurationSeconds(pcm), textRunes)
+	if !gateEnabled {
+		return pcm, nil
+	}
+	log.Printf("TTS length gate on — retrying once")
 	pcm, err = gen()
 	if err != nil {
 		return nil, err
