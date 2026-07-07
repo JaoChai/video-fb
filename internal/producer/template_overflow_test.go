@@ -44,4 +44,19 @@ func TestTemplateThaiWrapRules(t *testing.T) {
 	if !strings.Contains(html, "white-space:nowrap;font-variant-numeric:tabular-nums") {
 		t.Error(".stat must be white-space:nowrap so auto-fit (not wrapping) handles overflow")
 	}
+
+	// Every selector newly allowed to wrap must carry a Thai-safe line-height
+	// (>=1.25) — wrapped Thai tone marks collide on tight leading.
+	for _, rule := range []string{
+		".kicker{font-weight:800;font-size:30px;line-height:1.3",
+		".step-of{font-weight:700;font-size:30px;line-height:1.3",
+		".brandbig{font-weight:800;font-size:88px;line-height:1.3",
+	} {
+		if !strings.Contains(html, rule) {
+			t.Errorf("missing Thai-safe line-height rule: %s", rule)
+		}
+	}
+	if strings.Contains(html, "line-height:1.22") {
+		t.Error(".chip .t line-height must be >=1.25 (Thai tone-mark collision)")
+	}
 }
