@@ -408,13 +408,27 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	return filepath.Join(projectDir, "output.mp4"), boundsToDurations(bounds), inspectFlagged, nil
 }
 
+// uploadWithFallback runs primary; on error it logs and runs fallback. Used so a
+// transient R2 outage degrades to kie's temporary URL instead of failing the clip.
+func uploadWithFallback(primary, fallback func() (string, error)) (string, error) {
+	url, err := primary()
+	if err == nil {
+		return url, nil
+	}
+	log.Printf("uploadPersistent: primary (R2) upload failed, falling back to kie: %v", err)
+	return fallback()
+}
+
 // uploadPersistent stores a rendered file at a durable URL. It prefers R2 (URLs
-// never expire); if R2 is disabled/unconfigured it falls back to kie.ai's
-// temporary upload so the pipeline keeps working. r2Key is the full object key;
-// kieDir is the legacy kie uploadPath.
+// never expire); if R2 is disabled/unconfigured OR the R2 upload errors at
+// runtime it falls back to kie.ai's temporary upload so the pipeline keeps
+// working. r2Key is the full object key; kieDir is the legacy kie uploadPath.
 func (p *Producer) uploadPersistent(ctx context.Context, localPath, r2Key, kieDir string) (string, error) {
 	if p.r2 != nil && p.r2.Enabled(ctx) {
-		return p.r2.Upload(ctx, localPath, r2Key, "")
+		return uploadWithFallback(
+			func() (string, error) { return p.r2.Upload(ctx, localPath, r2Key, "") },
+			func() (string, error) { return p.kie.UploadFile(ctx, localPath, kieDir) },
+		)
 	}
 	return p.kie.UploadFile(ctx, localPath, kieDir)
 }
