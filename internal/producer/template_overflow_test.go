@@ -79,4 +79,31 @@ func TestTemplateHasAutoFit(t *testing.T) {
 	if !strings.Contains(html, "document.fonts.ready") {
 		t.Error("auto-fit must run after fonts load (fallback-font metrics mis-measure)")
 	}
+	// The fitText while-condition must survive template rendering intact.
+	// html/template treats "-->" inside <script> as an HTML comment close and
+	// silently truncates the rest of the line ("guard-->0" did exactly this),
+	// producing a JS syntax error that kills the whole inline script — every
+	// scene then stays at opacity:0 and the rendered video is blank.
+	if !strings.Contains(html, "while(guard>0&&size>min&&node.scrollWidth>node.clientWidth+1)") {
+		t.Error("fitText while-condition was mangled by html/template (script would be broken)")
+	}
+	if strings.Contains(html, "-->0") {
+		t.Error(`template contains "-->0" — html/template truncates the line inside <script>`)
+	}
+}
+
+// The whole inline <script> must be valid JS after template rendering — a
+// single syntax error leaves every scene at opacity:0 (blank video). Guard
+// against truncation artifacts like a while-condition losing its closing brace.
+func TestTemplateScriptNotTruncated(t *testing.T) {
+	out, err := RenderCompositionScenes(overflowTestParams())
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	for _, frag := range []string{"while(guard\n", "while(guard\r"} {
+		if strings.Contains(html, frag) {
+			t.Fatal("inline script is truncated mid-statement (html/template comment handling)")
+		}
+	}
 }

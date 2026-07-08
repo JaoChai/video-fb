@@ -240,7 +240,11 @@
         let size=parseFloat(getComputedStyle(node).fontSize);
         const min=size*0.55;
         let guard=60;
-        while(guard-->0&&size>min&&node.scrollWidth>node.clientWidth+1){
+        // never write "guard-->0" here: html/template treats "-->" inside <script>
+        // as an HTML comment close and truncates the rest of the line, killing the
+        // whole inline script (blank video, audio only).
+        while(guard>0&&size>min&&node.scrollWidth>node.clientWidth+1){
+          guard--;
           size=Math.max(min,size-2);
           node.style.fontSize=size+"px";
         }
