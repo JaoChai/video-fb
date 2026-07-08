@@ -199,12 +199,17 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 
 	var clipID, title string
 	var description, video916, clipTitle *string
+	// Only drip clips whose video lives on permanent storage (R2). Pre-R2 clips
+	// point at kie temp URLs that expire in ~1 day — the drip reaches them days
+	// later, TikTok fails to fetch the file, and the file is gone for good
+	// (52 backlog clips hit this after the 2026-07-04 R2 cutover).
 	err := p.pool.QueryRow(ctx,
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_9_16_url, c.title
 		 FROM clips c JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.video_9_16_url IS NOT NULL AND c.video_9_16_url <> ''
 		   AND c.status IN ('ready','published') AND c.auto_review_held = FALSE
 		   AND (cm.zernio_tiktok_post_id IS NULL OR cm.zernio_tiktok_post_id = '')
+		   AND c.video_9_16_url LIKE (SELECT value || '%' FROM settings WHERE key = 'r2_public_base_url')
 		 ORDER BY c.created_at DESC LIMIT 1`).
 		Scan(&clipID, &title, &description, &video916, &clipTitle)
 	if err != nil {
