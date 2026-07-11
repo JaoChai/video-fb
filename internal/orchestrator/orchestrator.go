@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,10 +77,12 @@ type Orchestrator struct {
 	critiquesRepo   *repository.CritiquesRepo
 	visualQARepo    *repository.VisualQARepo
 	autoReviewsRepo *repository.AutoReviewsRepo
-	themesRepo      *repository.ThemesRepo
-	agentsRepo      *repository.AgentsRepo
-	analyticsRepo   *repository.AnalyticsRepo
-	tracker         *progress.Tracker
+	themesRepo          *repository.ThemesRepo
+	agentsRepo          *repository.AgentsRepo
+	analyticsRepo       *repository.AnalyticsRepo
+	topicCategoriesRepo *repository.TopicCategoriesRepo
+	titleArchetypesRepo *repository.TitleArchetypesRepo
+	tracker             *progress.Tracker
 }
 
 func New(
@@ -101,6 +104,8 @@ func New(
 	analytics *repository.AnalyticsRepo,
 	settings *repository.SettingsRepo,
 	formats *repository.FormatsRepo,
+	topicCategories *repository.TopicCategoriesRepo,
+	titleArchetypes *repository.TitleArchetypesRepo,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
@@ -108,7 +113,9 @@ func New(
 		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
 		autoReviewsRepo: autoreviews,
-		themesRepo:      themes, agentsRepo: agents, analyticsRepo: analytics, tracker: tracker,
+		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
+		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
+		tracker: tracker,
 	}
 }
 
@@ -129,25 +136,93 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		log.Printf("kie credits OK: %d", credits)
 	}
 
-	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+	// ===== content brain v2 flag =====
+	v2Raw, _ := o.settingsRepo.Get(ctx, "content_brain_v2_enabled")
+	v2 := v2Raw == "true"
 
-	categories, err := o.settingsRepo.GetCategories(ctx)
-	if err != nil {
-		return fmt.Errorf("read categories: %w", err)
-	}
-	if len(categories) == 0 {
-		return fmt.Errorf("no categories configured")
-	}
-	category := categories[weekNum%len(categories)]
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var category, categoryAngle string
+	var archetype models.TitleArchetype
+	var role, persona string
 	var topicStats string
-	if v, err := o.settingsRepo.Get(ctx, "topic_stats_enabled"); err != nil || v != "false" {
-		// Enabled by default; only the explicit value "false" disables it (kill switch).
-		if scores, err := o.analyticsRepo.TopicPerformance(ctx, 30, 3); err != nil {
-			log.Printf("topic performance unavailable, using round-robin category: %v", err)
+
+	if v2 {
+		// ---- category: least-used/7d+weight, exclude หมวดที่ใช้ในวันนี้ ----
+		usedToday, _ := o.clipsRepo.CategoriesUsedToday(ctx)
+		if tcat, terr := o.topicCategoriesRepo.PickNextExclude(ctx, usedToday); terr != nil || tcat == nil {
+			log.Printf("Orchestrator: topic_categories pick failed, legacy fallback: %v", terr)
+			v2 = false // ลดระดับกลับ legacy
 		} else {
-			category = PickCategoryWeighted(categories, scores, weekNum, rand.Intn)
+			category = tcat.CategoryName
+			categoryAngle = tcat.AngleInstruction
+		}
+	}
+
+	if v2 {
+		// ---- archetype: least-used/7d+weight ----
+		if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
+			log.Printf("Orchestrator: archetype pick failed, using empty: %v", aerr)
+		} else {
+			archetype = *a
+		}
+
+		// ---- role 70/30 ----
+		ratioStr, _ := o.settingsRepo.Get(ctx, "clip_role_convert_ratio")
+		ratio, rerr := strconv.ParseFloat(ratioStr, 64)
+		if rerr != nil || ratio <= 0 || ratio >= 1 {
+			ratio = 0.30
+		}
+		role = PickClipRole(ratio, rng)
+
+		// ---- persona rotation (fallback ใช้ audience_persona เดิม) ----
+		personasJSON, _ := o.settingsRepo.Get(ctx, "audience_personas")
+		var personas []string
+		if json.Unmarshal([]byte(personasJSON), &personas) == nil && len(personas) > 0 {
+			persona = PickPersona(personas, rng)
+		} else {
+			persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+		}
+
+		// ---- dedup threshold + cooldown จาก setting ----
+		if tStr, _ := o.settingsRepo.Get(ctx, "dedup_threshold"); tStr != "" {
+			if t, perr := strconv.ParseFloat(tStr, 64); perr == nil {
+				o.questionAgent.Deduper().SetThreshold(t)
+			}
+		}
+		if cdStr, _ := o.settingsRepo.Get(ctx, "pain_point_cooldown_days"); cdStr != "" {
+			if cd, cerr := strconv.Atoi(cdStr); cerr == nil {
+				o.questionAgent.SetPainCooldownDays(cd)
+			}
+		}
+
+		// v2: topicStats เป็นข้อมูลประกอบ (แนบใน prompt แต่ไม่บังคับทิศ)
+		if scores, serr := o.analyticsRepo.TopicPerformance(ctx, 30, 3); serr == nil {
 			topicStats = FormatTopicStats(scores)
 		}
+	}
+
+	if !v2 {
+		// ---- legacy: weekNum round-robin + PickCategoryWeighted ----
+		weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+		categories, cerr := o.settingsRepo.GetCategories(ctx)
+		if cerr != nil {
+			return fmt.Errorf("read categories: %w", cerr)
+		}
+		if len(categories) == 0 {
+			return fmt.Errorf("no categories configured")
+		}
+		category = categories[weekNum%len(categories)]
+		if v, verr := o.settingsRepo.Get(ctx, "topic_stats_enabled"); verr != nil || v != "false" {
+			// Enabled by default; only the explicit value "false" disables it (kill switch).
+			if scores, serr := o.analyticsRepo.TopicPerformance(ctx, 30, 3); serr != nil {
+				log.Printf("topic performance unavailable, using round-robin category: %v", serr)
+			} else {
+				category = PickCategoryWeighted(categories, scores, weekNum, rand.Intn)
+				topicStats = FormatTopicStats(scores)
+			}
+		}
+		persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
 	}
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
@@ -158,12 +233,6 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	format, err := o.formatsRepo.PickNext(ctx)
 	if err != nil {
 		return fmt.Errorf("pick content format: %w", err)
-	}
-
-	persona, err := o.settingsRepo.Get(ctx, "audience_persona")
-	if err != nil {
-		log.Printf("Warning: audience_persona not set, using empty: %v", err)
-		persona = ""
 	}
 
 	log.Printf("Producing %d clips — category: %s, format: %s", count, category, format.DisplayName)
@@ -189,16 +258,26 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
+	questions, err := o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
 	if errors.Is(err, agent.ErrNoFreshNews) {
-		// No reliable news found — never fabricate news; produce a Q&A clip instead.
-		log.Println("No fresh news available, falling back to Q&A format")
-		format, err = o.formatsRepo.GetByName(ctx, "qa")
-		if err != nil {
-			o.tracker.FailStep("question", err)
-			return fmt.Errorf("fallback to qa format: %w", err)
+		// No reliable news found — never fabricate news; produce a non-news clip instead.
+		if v2 {
+			// v2: fall back to the least-used format (not hard-pinned to qa).
+			log.Println("No fresh news available, falling back to least-used format")
+			if f, ferr := o.formatsRepo.PickNext(ctx); ferr == nil && f != nil {
+				format = f
+			} else {
+				format, _ = o.formatsRepo.GetByName(ctx, "qa") // last resort
+			}
+		} else {
+			log.Println("No fresh news available, falling back to Q&A format")
+			format, err = o.formatsRepo.GetByName(ctx, "qa")
+			if err != nil {
+				o.tracker.FailStep("question", err)
+				return fmt.Errorf("fallback to qa format: %w", err)
+			}
 		}
-		questions, err = o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
+		questions, err = o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
 	}
 	if err != nil {
 		o.tracker.FailStep("question", err)
@@ -234,7 +313,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -251,7 +330,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	preset := producer.PresetByKey("editorial-bold")
 	if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
@@ -271,12 +350,15 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
-		Title:          q.Question,
-		Question:       q.Question,
-		QuestionerName: q.QuestionerName,
-		Category:       q.Category,
-		PublishDate:    &today,
-		ContentFormat:  format.FormatName,
+		Title:           q.Question,
+		Question:        q.Question,
+		QuestionerName:  q.QuestionerName,
+		Category:        q.Category,
+		PublishDate:     &today,
+		ContentFormat:   format.FormatName,
+		ClipRole:        role,
+		TitleArchetype:  archetype.ArchetypeName,
+		AudiencePersona: persona,
 	})
 	if err != nil {
 		return fmt.Errorf("create clip: %w", err)
@@ -285,7 +367,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status, StylePreset: &preset.Key})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role)
 }
 
 // Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
@@ -342,7 +424,7 @@ func validateScript(script *agent.GeneratedScript) {
 	script.YoutubeTitle = title + suffix
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
 	// rendered. When the flag is off clipTheme == theme — no behavior change.
 	clipTheme := theme
@@ -351,7 +433,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, scriptCfg)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetype.Instruction, role, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -699,7 +781,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	// Retried clips keep their original visual identity. PresetByKey falls back to
 	// editorial-bold (Presets[0]) if the stored key is empty (pre-flag clips have no stored preset).
 	retryPreset := producer.PresetByKey(clip.StylePreset)
-	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "")
 }
 
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {

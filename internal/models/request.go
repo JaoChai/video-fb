@@ -3,12 +3,15 @@ package models
 import "encoding/json"
 
 type CreateClipRequest struct {
-	Title          string  `json:"title"`
-	Question       string  `json:"question"`
-	QuestionerName string  `json:"questioner_name"`
-	Category       string  `json:"category"`
-	PublishDate    *string `json:"publish_date"`
-	ContentFormat  string  `json:"content_format"`
+	Title           string  `json:"title"`
+	Question        string  `json:"question"`
+	QuestionerName  string  `json:"questioner_name"`
+	Category        string  `json:"category"`
+	PublishDate     *string `json:"publish_date"`
+	ContentFormat   string  `json:"content_format"`
+	ClipRole        string  `json:"clip_role"`
+	TitleArchetype  string  `json:"title_archetype"`
+	AudiencePersona string  `json:"audience_persona"`
 }
 
 type UpdateClipRequest struct {

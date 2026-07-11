@@ -48,6 +48,9 @@ func NewQuestionAgent(llm *KieLLMClient, ragEngine *rag.Engine, pool *pgxpool.Po
 // SetPainCooldownDays — orchestrator เรียกเมื่อ flag on (ค่าจาก setting pain_point_cooldown_days).
 func (a *QuestionAgent) SetPainCooldownDays(days int) { a.painCooldownDays = days }
 
+// Deduper — expose ให้ orchestrator set threshold ตอน flag on.
+func (a *QuestionAgent) Deduper() *Deduper { return a.deduper }
+
 type GeneratedQuestion struct {
 	Question       string `json:"question"`
 	QuestionerName string `json:"questioner_name"`
