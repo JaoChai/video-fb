@@ -223,6 +223,11 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 			}
 		}
 		persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+
+		// reset v2 dedup state กัน setter leak: ถ้า flag เคย on ใน process เดียวกันแล้ว flip off
+		// (DB UPDATE โดยไม่ restart) ต้องกลับเป็น legacy จริง — threshold 0.78, ไม่มี pain cooldown
+		o.questionAgent.Deduper().SetThreshold(0.78)
+		o.questionAgent.SetPainCooldownDays(0)
 	}
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
@@ -264,10 +269,11 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		if v2 {
 			// v2: fall back to the least-used format (not hard-pinned to qa).
 			log.Println("No fresh news available, falling back to least-used format")
-			if f, ferr := o.formatsRepo.PickNext(ctx); ferr == nil && f != nil {
+			// ข้าม "news" (เพิ่งล้มไปแล้ว — PickNext อาจคืน news ซ้ำเพราะ count ไม่เปลี่ยน) → ไม่งั้น loop fail
+			if f, ferr := o.formatsRepo.PickNext(ctx); ferr == nil && f != nil && f.FormatName != "news" {
 				format = f
 			} else {
-				format, _ = o.formatsRepo.GetByName(ctx, "qa") // last resort
+				format, _ = o.formatsRepo.GetByName(ctx, "qa") // last resort (ข้าม news)
 			}
 		} else {
 			log.Println("No fresh news available, falling back to Q&A format")
