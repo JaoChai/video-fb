@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/models"
@@ -47,4 +48,27 @@ func FormatTopicStats(scores []models.CategoryScore) string {
 	}
 	b.WriteString("\nใช้ข้อมูลนี้เป็นบริบท: เลือกประเด็น/มุมที่ใกล้เคียงหมวดผลงานดีราวครึ่งหนึ่ง ที่เหลือกระจายมุมใหม่เพื่อความหลากหลาย และห้ามซ้ำกับหัวข้อเดิมตามรายการห้ามซ้ำ")
 	return b.String()
+}
+
+// PickClipRole — "reach" (prob 1-convertRatio) / "convert" (prob convertRatio).
+// Pure: caller ส่ง *rand.Rand เพื่อให้ทดสอบได้.
+func PickClipRole(convertRatio float64, rng *rand.Rand) string {
+	if convertRatio <= 0 {
+		return "reach"
+	}
+	if convertRatio >= 1 {
+		return "convert"
+	}
+	if rng.Float64() < convertRatio {
+		return "convert"
+	}
+	return "reach"
+}
+
+// PickPersona — สุ่ม 1 จาก personas (empty list → "")
+func PickPersona(personas []string, rng *rand.Rand) string {
+	if len(personas) == 0 {
+		return ""
+	}
+	return personas[rng.Intn(len(personas))]
 }
