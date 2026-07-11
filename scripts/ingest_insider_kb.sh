@@ -25,7 +25,7 @@ for f in "${files[@]}"; do
 		-H "Content-Type: application/json" \
 		-d "$(jq -n --arg n "$name" --arg c "$category" --arg ct "$content" '{name:$n, category:$c, content:$ct}')") || true
 
-	id=$(echo "$resp" | jq -r '.data.id // empty')
+	id=$(echo "$resp" | jq -r '.data.id // empty' 2>/dev/null) || true
 	if [ -z "$id" ]; then
 		echo "  FAIL: no id in response: $resp" >&2
 		continue
