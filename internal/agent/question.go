@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
@@ -32,16 +33,20 @@ type QuestionTemplateData struct {
 }
 
 type QuestionAgent struct {
-	llm      *KieLLMClient
-	rag      *rag.Engine
-	pool     *pgxpool.Pool
-	deduper  *Deduper
-	research *ResearchAgent
+	llm              *KieLLMClient
+	rag              *rag.Engine
+	pool             *pgxpool.Pool
+	deduper          *Deduper
+	research         *ResearchAgent
+	painCooldownDays int // 0 = skip cooldown (legacy); set จาก setting pain_point_cooldown_days
 }
 
 func NewQuestionAgent(llm *KieLLMClient, ragEngine *rag.Engine, pool *pgxpool.Pool, research *ResearchAgent) *QuestionAgent {
 	return &QuestionAgent{llm: llm, rag: ragEngine, pool: pool, deduper: NewDeduper(pool, ragEngine), research: research}
 }
+
+// SetPainCooldownDays — orchestrator เรียกเมื่อ flag on (ค่าจาก setting pain_point_cooldown_days).
+func (a *QuestionAgent) SetPainCooldownDays(days int) { a.painCooldownDays = days }
 
 type GeneratedQuestion struct {
 	Question       string `json:"question"`
@@ -144,16 +149,32 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	for attempt := 0; ; attempt++ {
 		similarities, embeddings, err := a.deduper.CheckQuestions(ctx, questions)
 		if err != nil {
-			// Embedding service down — accept as-is rather than block production.
-			log.Printf("QuestionAgent: dedup check failed, accepting without dedup: %v", err)
-			accepted = append(accepted, questions...)
+			// Embedding ล่ม → retry 1 ครั้ง ก่อน fallback lexical
+			log.Printf("QuestionAgent: dedup embedding error, retrying once: %v", err)
+			time.Sleep(500 * time.Millisecond)
+			similarities, embeddings, err = a.deduper.CheckQuestions(ctx, questions)
+		}
+		if err != nil {
+			// ยังล่ม → lexical guard (pg_trgm) แทน ห้ามรับมั่ว
+			log.Printf("QuestionAgent: dedup still failing, using lexical fallback: %v", err)
+			blocked, lexErr := a.deduper.LexicalCheck(ctx, questions)
+			if lexErr != nil {
+				log.Printf("QuestionAgent: lexical fallback also failed, accepting all (last resort): %v", lexErr)
+				accepted = append(accepted, questions...)
+			} else {
+				for _, q := range questions {
+					if !blocked[q.Question] {
+						accepted = append(accepted, q)
+					}
+				}
+			}
 			break
 		}
 		for k, v := range embeddings {
 			allEmbeddings[k] = v
 		}
 
-		passed, rejected := filterBySimilarity(questions, similarities, similarityThreshold)
+		passed, rejected := filterBySimilarity(questions, similarities, a.deduper.threshold)
 		accepted = append(accepted, passed...)
 
 		if len(rejected) == 0 || len(accepted) >= count || attempt >= maxDedupRetries {
@@ -183,6 +204,25 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	// Cap to the requested count so unused questions don't pollute topic_history.
 	if len(accepted) > count {
 		accepted = accepted[:count]
+	}
+
+	// pain_point cooldown: กันหัวข้อเดิมเปลี่ยนมุม (flag on เท่านั้น — painCooldownDays > 0)
+	if a.painCooldownDays > 0 && len(accepted) > 0 {
+		filtered := accepted[:0]
+		for _, q := range accepted {
+			inCD, err := a.deduper.PainPointInCooldown(ctx, q.PainPoint, a.painCooldownDays)
+			if err != nil {
+				log.Printf("QuestionAgent: pain_point cooldown check error (fail-open): %v", err)
+				filtered = append(filtered, q) // fail-open สำหรับ cooldown
+				continue
+			}
+			if !inCD {
+				filtered = append(filtered, q)
+			} else {
+				log.Printf("QuestionAgent: pain_point %q in cooldown, dropped", q.PainPoint)
+			}
+		}
+		accepted = filtered
 	}
 
 	// Store accepted questions with embeddings for future dedup checks.
