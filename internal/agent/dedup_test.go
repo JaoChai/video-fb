@@ -64,3 +64,29 @@ func TestDeduper_SetThreshold(t *testing.T) {
 		t.Errorf("zero threshold should not overwrite, got %v", d.threshold)
 	}
 }
+
+// lexicalCheckIsSystemicFailure ต้องแยก "ไม่มีอะไรให้เทียบ" (past ว่าง) ออกจาก
+// "เทียบไม่ได้เลยสักคู่" (pg_trgm ล่มทั้งระบบ) — เคสหลังต้อง propagate error
+// ไม่ใช่คืน map ว่างเงียบๆ (มิฉะนั้นจะเหมือน accept-all แบบไม่มี log)
+func TestLexicalCheckIsSystemicFailure(t *testing.T) {
+	cases := []struct {
+		name                        string
+		pastLen, attempted, errored int
+		want                        bool
+	}{
+		{"no past titles yet (brand new system)", 0, 0, 0, false},
+		{"all pairs succeeded", 5, 5, 0, false},
+		{"some pairs errored, some succeeded (transient)", 5, 5, 3, false},
+		{"every attempted pair errored (systemic pg_trgm failure)", 5, 5, 5, true},
+		{"past titles exist but nothing attempted (no questions)", 5, 0, 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := lexicalCheckIsSystemicFailure(c.pastLen, c.attempted, c.errored)
+			if got != c.want {
+				t.Errorf("lexicalCheckIsSystemicFailure(%d, %d, %d) = %v, want %v",
+					c.pastLen, c.attempted, c.errored, got, c.want)
+			}
+		})
+	}
+}

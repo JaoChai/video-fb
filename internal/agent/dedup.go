@@ -122,11 +122,16 @@ func (d *Deduper) LexicalCheck(ctx context.Context, questions []GeneratedQuestio
 		return nil, err
 	}
 	out := map[string]bool{}
+	var attempted, errored int
+	var lastErr error
 	for _, q := range questions {
 		for _, p := range past {
 			var sim float64
+			attempted++
 			if err := d.pool.QueryRow(ctx, `SELECT similarity($1, $2)`, q.Question, p).Scan(&sim); err != nil {
-				continue // ข้าม pair ที่ error ไม่ block มั่ว
+				errored++
+				lastErr = err
+				continue // ข้าม pair ที่ error ไม่ block มั่ว — แต่นับไว้เช็ค systemic failure
 			}
 			if sim > 0.5 {
 				out[q.Question] = true
@@ -134,5 +139,23 @@ func (d *Deduper) LexicalCheck(ctx context.Context, questions []GeneratedQuestio
 			}
 		}
 	}
+	if lexicalCheckIsSystemicFailure(len(past), attempted, errored) {
+		return nil, fmt.Errorf("LexicalCheck: all %d similarity() calls failed (likely pg_trgm unavailable): last error: %w", attempted, lastErr)
+	}
 	return out, nil
+}
+
+// lexicalCheckIsSystemicFailure decides whether LexicalCheck should surface
+// an error instead of returning an (empty) result map. It's a systemic
+// failure only when there WERE past titles to compare against (pastLen > 0),
+// pairs were actually attempted, and every single similarity() call errored —
+// i.e. not one comparison succeeded. That distinguishes "couldn't determine"
+// (pg_trgm unavailable, DB dropped mid-fallback) from the legitimate
+// "nothing to compare" case (pastLen == 0, brand new system), which must
+// keep returning (map[string]bool{}, nil).
+//
+// Pure function — extracted so the failure-detection logic is testable
+// without mocking the DB pool.
+func lexicalCheckIsSystemicFailure(pastLen, attempted, errored int) bool {
+	return pastLen > 0 && attempted > 0 && errored == attempted
 }
