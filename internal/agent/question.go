@@ -18,13 +18,17 @@ import (
 var ErrNoFreshNews = errors.New("no fresh news found from research")
 
 type QuestionTemplateData struct {
-	Count             int
-	Category          string
-	RAGContext        string
-	PreviousTopics    string
-	PreviousNames     string
-	FormatInstruction string
-	AudiencePersona   string
+	Count                int
+	Category             string
+	CategoryAngle        string
+	ArchetypeInstruction string
+	RoleInstruction      string
+	TopicStats           string
+	RAGContext           string
+	PreviousTopics       string
+	PreviousNames        string
+	FormatInstruction    string
+	AudiencePersona      string
 }
 
 type QuestionAgent struct {
@@ -46,7 +50,7 @@ type GeneratedQuestion struct {
 	PainPoint      string `json:"pain_point"`
 }
 
-func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, format *models.ContentFormat, persona string, topicStats string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
+func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, categoryAngle string, format *models.ContentFormat, persona string, archetypeInstr string, roleInstr string, topicStats string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
 	var ragContext strings.Builder
 	if format.FormatName == "news" {
 		// News format: live web search for fresh, reliable updates.
@@ -111,20 +115,21 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	}
 
 	userPrompt, err := renderTemplate(cfg.PromptTemplate, QuestionTemplateData{
-		Count:             count,
-		Category:          category,
-		RAGContext:        ragContext.String(),
-		PreviousTopics:    previousList,
-		PreviousNames:     previousNames,
-		FormatInstruction: format.QuestionInstruction,
-		AudiencePersona:   persona,
+		Count:                count,
+		Category:             category,
+		CategoryAngle:        categoryAngle,
+		ArchetypeInstruction: archetypeInstr,
+		RoleInstruction:      roleInstr,
+		TopicStats:           topicStats,
+		RAGContext:           ragContext.String(),
+		PreviousTopics:       previousList,
+		PreviousNames:        previousNames,
+		FormatInstruction:    format.QuestionInstruction,
+		AudiencePersona:      persona,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render question template: %w", err)
 	}
-
-	// Real-performance context (empty when the topic_stats kill switch is off).
-	userPrompt += topicStats
 
 	var questions []GeneratedQuestion
 	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &questions); err != nil {
@@ -184,12 +189,12 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	for _, q := range accepted {
 		if emb, ok := allEmbeddings[q.Question]; ok {
 			a.pool.Exec(ctx,
-				`INSERT INTO topic_history (title, category, embedding) VALUES ($1, $2, $3::vector)`,
-				q.Question, q.Category, rag.FormatVector(emb))
+				`INSERT INTO topic_history (title, category, pain_point, embedding) VALUES ($1, $2, $3, $4::vector)`,
+				q.Question, q.Category, q.PainPoint, rag.FormatVector(emb))
 		} else {
 			a.pool.Exec(ctx,
-				`INSERT INTO topic_history (title, category) VALUES ($1, $2)`,
-				q.Question, q.Category)
+				`INSERT INTO topic_history (title, category, pain_point) VALUES ($1, $2, $3)`,
+				q.Question, q.Category, q.PainPoint)
 		}
 	}
 
