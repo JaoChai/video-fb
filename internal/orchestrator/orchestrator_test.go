@@ -7,21 +7,21 @@ import (
 )
 
 func TestScriptNarration(t *testing.T) {
-	t.Run("single scene", func(t *testing.T) {
-		s := &agent.GeneratedScript{Scenes: []agent.GeneratedScene{{VoiceText: "สวัสดีครับ วันนี้มาเล่าเรื่องแอด"}}}
+	// The content_brain_v2 script prompt emits voice_script (the voiceover text
+	// the SceneAgent breaks into scenes), not a scenes[] array.
+	t.Run("uses voice_script", func(t *testing.T) {
+		s := &agent.GeneratedScript{VoiceScript: "  สวัสดีครับ วันนี้มาเล่าเรื่องแอด  "}
 		if got := scriptNarration(s); got != "สวัสดีครับ วันนี้มาเล่าเรื่องแอด" {
 			t.Errorf("got %q", got)
 		}
 	})
-	t.Run("joins multiple, trims, skips empty", func(t *testing.T) {
-		s := &agent.GeneratedScript{Scenes: []agent.GeneratedScene{
-			{VoiceText: "  ตอนแรก  "}, {VoiceText: ""}, {VoiceText: "ตอนสอง"},
-		}}
-		if got := scriptNarration(s); got != "ตอนแรก ตอนสอง" {
-			t.Errorf("got %q, want %q", got, "ตอนแรก ตอนสอง")
+	t.Run("falls back to answer_script when voice_script blank", func(t *testing.T) {
+		s := &agent.GeneratedScript{VoiceScript: "  ", AnswerScript: "บทเต็ม"}
+		if got := scriptNarration(s); got != "บทเต็ม" {
+			t.Errorf("got %q, want %q", got, "บทเต็ม")
 		}
 	})
-	t.Run("no scenes", func(t *testing.T) {
+	t.Run("empty when both blank", func(t *testing.T) {
 		if got := scriptNarration(&agent.GeneratedScript{}); got != "" {
 			t.Errorf("got %q, want empty", got)
 		}

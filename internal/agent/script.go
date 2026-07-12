@@ -53,6 +53,13 @@ type GeneratedScene struct {
 }
 
 type GeneratedScript struct {
+	// AnswerScript/VoiceScript are the content_brain_v2 script output: the full
+	// answer and the (shorter) voiceover narration. The SceneAgent breaks the
+	// narration into scenes downstream, so the ScriptAgent no longer emits a
+	// scenes[] array itself. Scenes/TotalDuration are retained for the legacy
+	// single-scene prompt shape and are unused by the current prompt.
+	AnswerScript       string           `json:"answer_script"`
+	VoiceScript        string           `json:"voice_script"`
 	Scenes             []GeneratedScene `json:"scenes"`
 	TotalDuration      float64          `json:"total_duration_seconds"`
 	YoutubeTitle       string           `json:"youtube_title"`
@@ -110,19 +117,13 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 }
 
 // validateGeneratedScript rejects a script that would produce empty narration.
-// The LLM occasionally returns JSON that parses cleanly but carries no scenes
-// (or scenes with blank voice_text); passing it on yields an empty narration
-// that makes the downstream scene breakdown fail with a confusing error. Failing
-// here keeps the failure at the script stage where it belongs and lets the
-// clip-level retry regenerate.
+// The LLM occasionally returns JSON that parses cleanly but carries no script
+// text; passing it on yields an empty narration that makes the downstream scene
+// breakdown fail with a confusing error. Failing here keeps the failure at the
+// script stage where it belongs and lets the clip-level retry regenerate.
 func validateGeneratedScript(script *GeneratedScript) error {
-	if len(script.Scenes) == 0 {
-		return fmt.Errorf("no scenes in generated script")
+	if strings.TrimSpace(script.VoiceScript) == "" && strings.TrimSpace(script.AnswerScript) == "" {
+		return fmt.Errorf("empty voice_script and answer_script")
 	}
-	for _, s := range script.Scenes {
-		if strings.TrimSpace(s.VoiceText) != "" {
-			return nil
-		}
-	}
-	return fmt.Errorf("all scenes have empty voice_text")
+	return nil
 }

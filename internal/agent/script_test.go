@@ -2,36 +2,29 @@ package agent
 
 import "testing"
 
-// A script with no scenes must be rejected — otherwise scriptNarration yields an
-// empty string that flows into scene breakdown and the Director LLM replies with
-// prose instead of JSON ("invalid character 'I'"). Regression for the empty-
-// script production failure.
-func TestValidateGeneratedScript_EmptyScenes(t *testing.T) {
-	err := validateGeneratedScript(&GeneratedScript{Scenes: nil})
+// The content_brain_v2 script prompt emits voice_script/answer_script. A reply
+// with neither is empty narration — it must be rejected at the script stage so
+// nothing empty flows into scene breakdown. Regression for the empty-script
+// production failure.
+func TestValidateGeneratedScript_BothBlank(t *testing.T) {
+	err := validateGeneratedScript(&GeneratedScript{VoiceScript: "  ", AnswerScript: ""})
 	if err == nil {
-		t.Fatal("expected error for empty scenes, got nil")
+		t.Fatal("expected error when voice_script and answer_script blank, got nil")
 	}
 }
 
-// Scenes present but all voice_text blank is equally useless — narration would
-// still be empty.
-func TestValidateGeneratedScript_AllVoiceBlank(t *testing.T) {
-	err := validateGeneratedScript(&GeneratedScript{Scenes: []GeneratedScene{
-		{SceneNumber: 1, VoiceText: "  "},
-		{SceneNumber: 2, VoiceText: ""},
-	}})
-	if err == nil {
-		t.Fatal("expected error when all voice_text blank, got nil")
-	}
-}
-
-// A valid script (at least one non-blank voice_text) passes.
-func TestValidateGeneratedScript_Valid(t *testing.T) {
-	err := validateGeneratedScript(&GeneratedScript{Scenes: []GeneratedScene{
-		{SceneNumber: 1, VoiceText: "สวัสดีครับ"},
-	}})
-	if err != nil {
+// A non-blank voice_script passes.
+func TestValidateGeneratedScript_HasVoice(t *testing.T) {
+	if err := validateGeneratedScript(&GeneratedScript{VoiceScript: "สวัสดีครับ"}); err != nil {
 		t.Fatalf("expected nil for valid script, got %v", err)
+	}
+}
+
+// answer_script alone (voice_script blank) also passes — scriptNarration falls
+// back to it.
+func TestValidateGeneratedScript_AnswerOnly(t *testing.T) {
+	if err := validateGeneratedScript(&GeneratedScript{AnswerScript: "บทเต็ม"}); err != nil {
+		t.Fatalf("expected nil when only answer_script present, got %v", err)
 	}
 }
 
