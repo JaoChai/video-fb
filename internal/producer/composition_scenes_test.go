@@ -229,6 +229,17 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	// loop condition must remain byte-identical to the pre-cover template.
 	assertRenderNotContains(t, off, "!(COVER && idx===0)")
 	assertRenderContains(t, off, "if(content){")
+
+	// Code-review fix #2: cover scene 0's background must still ken-burns —
+	// without this the opener's bg sits dead-still while every other scene's
+	// bg tweens.
+	assertRenderContains(t, on, `tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},0)`)
+	assertRenderNotContains(t, off, `tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},0)`)
+
+	// Code-review fix #1: cover scene-0 stat must pin its final value at t=0
+	// with no 0→final count-up tween (poster-frame flash guard).
+	assertRenderContains(t, on, `COVER && idx===0 && sc.type==="stat"`)
+	assertRenderNotContains(t, off, `COVER && idx===0 && sc.type==="stat"`)
 }
 
 func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {

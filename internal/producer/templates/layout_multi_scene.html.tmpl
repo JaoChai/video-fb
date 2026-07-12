@@ -256,6 +256,12 @@
           const num=node.querySelector(".stat-num");
           if(num)num.textContent=num.getAttribute("data-final")||"0";
           fitText(node);
+          {{if .Cover}}
+          // Cover scene 0's stat is pinned to its final value (see the
+          // per-scene entrance loop below) — don't re-zero it here, or the
+          // poster frame flashes "0" before the timeline sets the real number.
+          if(COVER && num && SCENES[0] && SCENES[0].type==="stat" && node.closest("#scene-"+SCENES[0].scene)){ return; }
+          {{end}}
           if(num)num.textContent="0";
         });
       }
@@ -324,6 +330,9 @@
           tl.set(sceneEl,{opacity:1},0);
           tl.fromTo(sceneEl,{scale:1.03},{scale:1,duration:Math.max(0.5,durIn),ease:ENTRANCE_EASE},0);
           if(content){ tl.set(content,{opacity:1,x:0,y:0,scale:1},0); }
+          // Poster frame must stay alive, not dead-still: ken-burns the bg from
+          // t=0 (like the MOTION_UP/legacy branches do over their own span).
+          if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},0);
           entranceEnd = sc.start + Math.max(0.5,durIn);
         } else if (MOTION_UP) {
         {{- else -}}
@@ -375,6 +384,15 @@
             tl.to(content,{y:-12,duration:driftDur,ease:"none"},driftStart);
           }
         }
+        {{if .Cover}}
+        if(COVER && idx===0 && sc.type==="stat"){
+          // Poster frame shows the real number, not a recount: pin the final
+          // formatted value directly and skip the 0->final count-up entirely.
+          const numEl0 = sceneEl.querySelector(".stat-num");
+          const meta0 = parseStatNumber(sc.stat);
+          if(numEl0 && meta0){ numEl0.textContent = formatStat(meta0.value, meta0); }
+        } else
+        {{end}}
         if(MOTION_V2 && sc.type==="stat"){
           const numEl = sceneEl.querySelector(".stat-num");
           const meta = parseStatNumber(sc.stat);
