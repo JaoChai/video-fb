@@ -314,7 +314,21 @@
         // reuses it so its start stays in sync with whichever entrance branch ran.
         let entranceEnd = sc.start + 0.7;
 
+        {{if .Cover -}}
+        if(COVER && idx===0){
+          // Frame-0 cover: the platform grabs frame 0 as the poster, so scene 0
+          // and its content must be fully visible at t=0 — NEVER opacity:0. Only a
+          // subtle scale settle from a visible state (no fade-in). Content is also
+          // pinned visible so the hook reads immediately.
+          const durIn = ENTRANCE_DUR * (SPEED_FACTOR || 1);
+          tl.set(sceneEl,{opacity:1},0);
+          tl.fromTo(sceneEl,{scale:1.03},{scale:1,duration:Math.max(0.5,durIn),ease:ENTRANCE_EASE},0);
+          if(content){ tl.set(content,{opacity:1,x:0,y:0,scale:1},0); }
+          entranceEnd = sc.start + Math.max(0.5,durIn);
+        } else if (MOTION_UP) {
+        {{- else -}}
         if (MOTION_UP) {
+        {{- end}}
           // Upgraded: incoming scene slides up + scales in while fading; bg ken-burns.
           const durIn=ENTRANCE_DUR*SPEED_FACTOR;
           entranceEnd = sc.start + 0.08 + durIn;

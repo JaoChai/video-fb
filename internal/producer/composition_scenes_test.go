@@ -141,6 +141,19 @@ func assertRenderContains(t *testing.T, params ScenesParams, markers ...string) 
 	return s
 }
 
+// assertRenderNotContains renders params and fails if any substring IS present
+// in the output — the negative counterpart to assertRenderContains.
+func assertRenderNotContains(t *testing.T, params ScenesParams, sub string) {
+	t.Helper()
+	out, err := RenderCompositionScenes(params)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(string(out), sub) {
+		t.Errorf("expected output NOT to contain %q", sub)
+	}
+}
+
 // A1 (per-scene entrance speed) + A4 (emphasis word pop/glow): the derived
 // Speed must reach the template's SCENES JSON, and the template must carry the
 // GSAP wiring that consumes it — SPEED_FACTOR for entrance pacing and a
@@ -202,6 +215,10 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	off := sampleScenesParams("9:16")
 	off.Cover = false
 	assertRenderContains(t, off, "const COVER = false")
+
+	// Cover on: scene 0 is pinned visible at t=0 (no opacity:0 fade on the poster frame).
+	assertRenderContains(t, on, "tl.set(sceneEl,{opacity:1},0)")
+	assertRenderNotContains(t, off, "tl.set(sceneEl,{opacity:1},0)")
 }
 
 func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
