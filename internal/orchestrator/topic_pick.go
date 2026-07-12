@@ -65,6 +65,21 @@ func PickClipRole(convertRatio float64, rng *rand.Rand) string {
 	return "reach"
 }
 
+// RoleInstruction แปล role ("reach"/"convert") ที่ได้จาก PickClipRole ให้เป็นประโยค
+// คำสั่งภาษาไทยสำหรับ prompt ของ agent (question/script) — ชี้แนวทางเลือกหัวข้อ+CTA
+// ให้ชัดกว่าการส่ง token เปล่าๆ ค่าอื่นนอกจาก "reach"/"convert" (รวมทั้ง "") → "" เพื่อรักษา
+// พฤติกรรมเดิมตอน flag ปิด/role ว่าง (ไม่มีบรรทัด role ใน prompt เลย).
+func RoleInstruction(role string) string {
+	switch role {
+	case "reach":
+		return "บทบาทคลิปนี้คือ reach: เลือกหัวข้อที่กว้าง เข้าถึงคนยิงแอดทุกระดับ เน้นข่าวแรง ตัวเลขช็อก เตือนภัย หรือแฉความเชื่อผิดที่ทำให้คนหยุดดูทันที และปิดท้ายด้วย CTA ชวนติดตาม/ดูคลิปต่อไป ไม่ต้องขายของ"
+	case "convert":
+		return "บทบาทคลิปนี้คือ convert: เจาะลึก pain ของคนที่ถือหลายบัญชีโฆษณาหรือกำลังจะโดนแบน พูดตรงจุดที่เจ็บจริง และปิดท้ายด้วย CTA แบบ soft sell ชวนทักแชทหรือดูช่องทางใต้คลิปเรื่องบัญชีโฆษณา ห้ามขายบัญชีทั้งคลิป"
+	default:
+		return ""
+	}
+}
+
 // PickPersona — สุ่ม 1 จาก personas (empty list → "")
 func PickPersona(personas []string, rng *rand.Rand) string {
 	if len(personas) == 0 {

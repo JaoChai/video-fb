@@ -263,7 +263,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
+	questions, err := o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, RoleInstruction(role), topicStats, qaCfg)
 	if errors.Is(err, agent.ErrNoFreshNews) {
 		// No reliable news found — never fabricate news; produce a non-news clip instead.
 		if v2 {
@@ -283,7 +283,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 				return fmt.Errorf("fallback to qa format: %w", err)
 			}
 		}
-		questions, err = o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
+		questions, err = o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, RoleInstruction(role), topicStats, qaCfg)
 	}
 	if err != nil {
 		o.tracker.FailStep("question", err)
@@ -439,7 +439,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetype.Instruction, role, scriptCfg)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetype.Instruction, RoleInstruction(role), scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))

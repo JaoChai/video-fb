@@ -95,3 +95,33 @@ func TestPickPersona_EmptyList(t *testing.T) {
 		t.Errorf("empty list → want empty string, got %q", got)
 	}
 }
+
+func TestRoleInstruction(t *testing.T) {
+	reach := RoleInstruction("reach")
+	convert := RoleInstruction("convert")
+
+	if reach == "" {
+		t.Fatal("reach instruction should be non-empty")
+	}
+	if !strings.Contains(reach, "ทุกระดับ") {
+		t.Errorf("reach instruction missing distinctive keyword ทุกระดับ:\n%s", reach)
+	}
+
+	if convert == "" {
+		t.Fatal("convert instruction should be non-empty")
+	}
+	if !strings.Contains(convert, "ทักแชท") {
+		t.Errorf("convert instruction missing distinctive keyword ทักแชท:\n%s", convert)
+	}
+
+	if reach == convert {
+		t.Error("reach and convert instructions must be distinct")
+	}
+
+	if got := RoleInstruction(""); got != "" {
+		t.Errorf("empty role → want empty string, got %q", got)
+	}
+	if got := RoleInstruction("garbage"); got != "" {
+		t.Errorf("unknown role → want empty string, got %q", got)
+	}
+}
