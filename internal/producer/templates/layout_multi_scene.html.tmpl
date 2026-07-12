@@ -350,7 +350,7 @@
           }
         }
 
-        if(content){
+        if(content{{if .Cover}} && !(COVER && idx===0){{end}}){
           const kids=content.children;
           for(let j=0;j<kids.length;j++){
             const isStat=kids[j].querySelector&&kids[j].querySelector(".stat");

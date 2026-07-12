@@ -219,6 +219,16 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	// Cover on: scene 0 is pinned visible at t=0 (no opacity:0 fade on the poster frame).
 	assertRenderContains(t, on, "tl.set(sceneEl,{opacity:1},0)")
 	assertRenderNotContains(t, off, "tl.set(sceneEl,{opacity:1},0)")
+
+	// Cover on: the scene-set gate AND the per-child entrance skip for scene 0
+	// must both ship — without the skip, the hook text stays opacity:0 at
+	// frame 0 even though the container is pinned visible.
+	assertRenderContains(t, on, "if(COVER && idx===0){", "!(COVER && idx===0)")
+
+	// Cover off: the child-skip guard must not leak in, and the children
+	// loop condition must remain byte-identical to the pre-cover template.
+	assertRenderNotContains(t, off, "!(COVER && idx===0)")
+	assertRenderContains(t, off, "if(content){")
 }
 
 func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
