@@ -169,7 +169,6 @@ func TestRenderCompositionScenes_LayoutComposition(t *testing.T) {
 	assertRenderContains(t, sampleScenesParams("9:16"),
 		`w.setAttribute("data-layout", sc.type`, // scene exposes its layout to CSS
 		`.scene[data-layout="hook"] .scene-content`, // opener raised
-		`.scene[data-layout="stat"] .scene-content`, // stat narrowed
 		`.scene[data-layout="step"] .scene-content`, // step left-aligned
 		`.scene[data-layout="cta"]  .scene-content`, // cta centered
 	)

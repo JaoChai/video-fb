@@ -34,3 +34,59 @@ func TestFilterBySimilarityNoMatches(t *testing.T) {
 		t.Errorf("expected all pass when no similarity data, got passed=%d rejected=%d", len(passed), len(rejected))
 	}
 }
+
+// threshold ที่ส่งเข้า filterBySimilarity ควบคุม cutoff (ไม่ใช่ const ตายตัว)
+func TestFilterBySimilarity_CustomThreshold(t *testing.T) {
+	questions := []GeneratedQuestion{{Question: "q1"}, {Question: "q2"}}
+	sims := map[string]SimilarityMatch{
+		"q1": {Similarity: 0.75, MatchedTitle: "old"},
+		"q2": {Similarity: 0.60, MatchedTitle: "old2"},
+	}
+	// threshold 0.72 → q1 (0.75>=0.72) reject, q2 (0.60<0.72) pass
+	passed, rejected := filterBySimilarity(questions, sims, 0.72)
+	if len(passed) != 1 || passed[0].Question != "q2" {
+		t.Errorf("expected q2 to pass at threshold 0.72, got passed=%+v", passed)
+	}
+	if len(rejected) != 1 || rejected[0].Question.Question != "q1" {
+		t.Errorf("expected q1 rejected at 0.72, got rejected=%+v", rejected)
+	}
+}
+
+// SetThreshold เปลี่ยนค่าที่ Deduper ใช้
+func TestDeduper_SetThreshold(t *testing.T) {
+	d := &Deduper{}
+	d.SetThreshold(0.72)
+	if d.threshold != 0.72 {
+		t.Errorf("expected threshold 0.72, got %v", d.threshold)
+	}
+	d.SetThreshold(0) // ค่าไร้สาระ → ไม่เปลี่ยน
+	if d.threshold != 0.72 {
+		t.Errorf("zero threshold should not overwrite, got %v", d.threshold)
+	}
+}
+
+// lexicalCheckIsSystemicFailure ต้องแยก "ไม่มีอะไรให้เทียบ" (past ว่าง) ออกจาก
+// "เทียบไม่ได้เลยสักคู่" (pg_trgm ล่มทั้งระบบ) — เคสหลังต้อง propagate error
+// ไม่ใช่คืน map ว่างเงียบๆ (มิฉะนั้นจะเหมือน accept-all แบบไม่มี log)
+func TestLexicalCheckIsSystemicFailure(t *testing.T) {
+	cases := []struct {
+		name                        string
+		pastLen, attempted, errored int
+		want                        bool
+	}{
+		{"no past titles yet (brand new system)", 0, 0, 0, false},
+		{"all pairs succeeded", 5, 5, 0, false},
+		{"some pairs errored, some succeeded (transient)", 5, 5, 3, false},
+		{"every attempted pair errored (systemic pg_trgm failure)", 5, 5, 5, true},
+		{"past titles exist but nothing attempted (no questions)", 5, 0, 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := lexicalCheckIsSystemicFailure(c.pastLen, c.attempted, c.errored)
+			if got != c.want {
+				t.Errorf("lexicalCheckIsSystemicFailure(%d, %d, %d) = %v, want %v",
+					c.pastLen, c.attempted, c.errored, got, c.want)
+			}
+		})
+	}
+}

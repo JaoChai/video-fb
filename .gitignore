@@ -24,3 +24,4 @@ node_modules/
 pnpm-lock.yaml
 render-test-out/
 yarn.lock
+.superpowers/

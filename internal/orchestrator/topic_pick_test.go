@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -40,5 +41,57 @@ func TestFormatTopicStats(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("stats missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestPickClipRole_RatioDistribution(t *testing.T) {
+	rng := rand.New(rand.NewSource(3))
+	convert := 0
+	n := 1000
+	for i := 0; i < n; i++ {
+		if PickClipRole(0.30, rng) == "convert" {
+			convert++
+		}
+	}
+	// ~30% ± 5%
+	if convert < n*25/100 || convert > n*35/100 {
+		t.Errorf("convert ratio out of range: %d/%d", convert, n)
+	}
+}
+
+func TestPickClipRole_Boundaries(t *testing.T) {
+	rng := rand.New(rand.NewSource(1))
+	if got := PickClipRole(0, rng); got != "reach" {
+		t.Errorf("ratio=0 → want reach, got %s", got)
+	}
+	if got := PickClipRole(1, rng); got != "convert" {
+		t.Errorf("ratio=1 → want convert, got %s", got)
+	}
+}
+
+func TestPickPersona_NonEmpty(t *testing.T) {
+	personas := []string{"media buyer", "owner", "agency", "banned"}
+	rng := rand.New(rand.NewSource(4))
+	got := PickPersona(personas, rng)
+	if got == "" {
+		t.Fatal("empty persona")
+	}
+	// ต้องเป็นหนึ่งใน list
+	found := false
+	for _, p := range personas {
+		if p == got {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("persona %q not in list", got)
+	}
+}
+
+func TestPickPersona_EmptyList(t *testing.T) {
+	rng := rand.New(rand.NewSource(4))
+	if got := PickPersona(nil, rng); got != "" {
+		t.Errorf("empty list → want empty string, got %q", got)
 	}
 }

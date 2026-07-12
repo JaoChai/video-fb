@@ -125,7 +125,8 @@ func main() {
 	formatsRepo := repository.NewFormatsRepo(pool)
 
 	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, prod,
-		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo, tracker)
+		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
+		repository.NewTopicCategoriesRepo(pool), repository.NewTitleArchetypesRepo(pool), tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)

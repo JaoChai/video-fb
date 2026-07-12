@@ -66,15 +66,36 @@ func (r *ClipsRepo) GetByID(ctx context.Context, id string) (*models.Clip, error
 
 func (r *ClipsRepo) Create(ctx context.Context, req models.CreateClipRequest) (*models.Clip, error) {
 	c, err := scanClip(r.pool.QueryRow(ctx,
-		`INSERT INTO clips (title, question, questioner_name, category, publish_date, content_format)
-		 VALUES ($1, $2, $3, $4, $5::date, COALESCE(NULLIF($6, ''), 'qa'))
+		`INSERT INTO clips (title, question, questioner_name, category, publish_date, content_format, clip_role, title_archetype, audience_persona)
+		 VALUES ($1, $2, $3, $4, $5::date, COALESCE(NULLIF($6, ''), 'qa'), $7, $8, $9)
 		 RETURNING `+clipColumns,
 		req.Title, req.Question, req.QuestionerName, req.Category, req.PublishDate, req.ContentFormat,
+		req.ClipRole, req.TitleArchetype, req.AudiencePersona,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("create clip: %w", err)
 	}
 	return &c, nil
+}
+
+// CategoriesUsedToday — หมวดที่สร้างคลิปใน 24h ล่าสุด (กันซ้ำในวันเดียวกัน).
+func (r *ClipsRepo) CategoriesUsedToday(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT category FROM clips
+		 WHERE created_at > NOW() - INTERVAL '24 hours' AND category <> ''`)
+	if err != nil {
+		return nil, fmt.Errorf("query categories used today: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (r *ClipsRepo) Update(ctx context.Context, id string, req models.UpdateClipRequest) (*models.Clip, error) {
@@ -190,9 +211,15 @@ func (r *ClipsRepo) ListNeedsReview(ctx context.Context, retryCap, limit int) ([
 	return clips, nil
 }
 
-// SetAutoReviewHeld marks a clip as held so the auto-review tick stops re-judging it.
+// SetAutoReviewHeld marks a clip as held so the auto-review tick stops re-judging
+// it. Guarded to status='needs_review': the judge snapshots its batch before a
+// slow vision call, so by the time it decides "hold" a human may already have
+// approved/published the clip — a late hold must not clobber that (seen in prod:
+// a published clip carrying auto_review_held=TRUE).
 func (r *ClipsRepo) SetAutoReviewHeld(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE clips SET auto_review_held = TRUE, updated_at = NOW() WHERE id = $1`, id)
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET auto_review_held = TRUE, updated_at = NOW()
+		 WHERE id = $1 AND status = 'needs_review'`, id)
 	return err
 }
 

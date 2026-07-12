@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,10 +77,12 @@ type Orchestrator struct {
 	critiquesRepo   *repository.CritiquesRepo
 	visualQARepo    *repository.VisualQARepo
 	autoReviewsRepo *repository.AutoReviewsRepo
-	themesRepo      *repository.ThemesRepo
-	agentsRepo      *repository.AgentsRepo
-	analyticsRepo   *repository.AnalyticsRepo
-	tracker         *progress.Tracker
+	themesRepo          *repository.ThemesRepo
+	agentsRepo          *repository.AgentsRepo
+	analyticsRepo       *repository.AnalyticsRepo
+	topicCategoriesRepo *repository.TopicCategoriesRepo
+	titleArchetypesRepo *repository.TitleArchetypesRepo
+	tracker             *progress.Tracker
 }
 
 func New(
@@ -100,6 +104,8 @@ func New(
 	analytics *repository.AnalyticsRepo,
 	settings *repository.SettingsRepo,
 	formats *repository.FormatsRepo,
+	topicCategories *repository.TopicCategoriesRepo,
+	titleArchetypes *repository.TitleArchetypesRepo,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
@@ -107,7 +113,9 @@ func New(
 		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
 		autoReviewsRepo: autoreviews,
-		themesRepo:      themes, agentsRepo: agents, analyticsRepo: analytics, tracker: tracker,
+		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
+		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
+		tracker: tracker,
 	}
 }
 
@@ -128,25 +136,98 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		log.Printf("kie credits OK: %d", credits)
 	}
 
-	weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+	// ===== content brain v2 flag =====
+	v2Raw, _ := o.settingsRepo.Get(ctx, "content_brain_v2_enabled")
+	v2 := v2Raw == "true"
 
-	categories, err := o.settingsRepo.GetCategories(ctx)
-	if err != nil {
-		return fmt.Errorf("read categories: %w", err)
-	}
-	if len(categories) == 0 {
-		return fmt.Errorf("no categories configured")
-	}
-	category := categories[weekNum%len(categories)]
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var category, categoryAngle string
+	var archetype models.TitleArchetype
+	var role, persona string
 	var topicStats string
-	if v, err := o.settingsRepo.Get(ctx, "topic_stats_enabled"); err != nil || v != "false" {
-		// Enabled by default; only the explicit value "false" disables it (kill switch).
-		if scores, err := o.analyticsRepo.TopicPerformance(ctx, 30, 3); err != nil {
-			log.Printf("topic performance unavailable, using round-robin category: %v", err)
+
+	if v2 {
+		// ---- category: least-used/7d+weight, exclude หมวดที่ใช้ในวันนี้ ----
+		usedToday, _ := o.clipsRepo.CategoriesUsedToday(ctx)
+		if tcat, terr := o.topicCategoriesRepo.PickNextExclude(ctx, usedToday); terr != nil || tcat == nil {
+			log.Printf("Orchestrator: topic_categories pick failed, legacy fallback: %v", terr)
+			v2 = false // ลดระดับกลับ legacy
 		} else {
-			category = PickCategoryWeighted(categories, scores, weekNum, rand.Intn)
+			category = tcat.CategoryName
+			categoryAngle = tcat.AngleInstruction
+		}
+	}
+
+	if v2 {
+		// ---- archetype: least-used/7d+weight ----
+		if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
+			log.Printf("Orchestrator: archetype pick failed, using empty: %v", aerr)
+		} else {
+			archetype = *a
+		}
+
+		// ---- role 70/30 ----
+		ratioStr, _ := o.settingsRepo.Get(ctx, "clip_role_convert_ratio")
+		ratio, rerr := strconv.ParseFloat(ratioStr, 64)
+		if rerr != nil || ratio <= 0 || ratio >= 1 {
+			ratio = 0.30
+		}
+		role = PickClipRole(ratio, rng)
+
+		// ---- persona rotation (fallback ใช้ audience_persona เดิม) ----
+		personasJSON, _ := o.settingsRepo.Get(ctx, "audience_personas")
+		var personas []string
+		if json.Unmarshal([]byte(personasJSON), &personas) == nil && len(personas) > 0 {
+			persona = PickPersona(personas, rng)
+		} else {
+			persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+		}
+
+		// ---- dedup threshold + cooldown จาก setting ----
+		if tStr, _ := o.settingsRepo.Get(ctx, "dedup_threshold"); tStr != "" {
+			if t, perr := strconv.ParseFloat(tStr, 64); perr == nil {
+				o.questionAgent.Deduper().SetThreshold(t)
+			}
+		}
+		if cdStr, _ := o.settingsRepo.Get(ctx, "pain_point_cooldown_days"); cdStr != "" {
+			if cd, cerr := strconv.Atoi(cdStr); cerr == nil {
+				o.questionAgent.SetPainCooldownDays(cd)
+			}
+		}
+
+		// v2: topicStats เป็นข้อมูลประกอบ (แนบใน prompt แต่ไม่บังคับทิศ)
+		if scores, serr := o.analyticsRepo.TopicPerformance(ctx, 30, 3); serr == nil {
 			topicStats = FormatTopicStats(scores)
 		}
+	}
+
+	if !v2 {
+		// ---- legacy: weekNum round-robin + PickCategoryWeighted ----
+		weekNum := int(time.Now().Unix() / (7 * 24 * 3600))
+		categories, cerr := o.settingsRepo.GetCategories(ctx)
+		if cerr != nil {
+			return fmt.Errorf("read categories: %w", cerr)
+		}
+		if len(categories) == 0 {
+			return fmt.Errorf("no categories configured")
+		}
+		category = categories[weekNum%len(categories)]
+		if v, verr := o.settingsRepo.Get(ctx, "topic_stats_enabled"); verr != nil || v != "false" {
+			// Enabled by default; only the explicit value "false" disables it (kill switch).
+			if scores, serr := o.analyticsRepo.TopicPerformance(ctx, 30, 3); serr != nil {
+				log.Printf("topic performance unavailable, using round-robin category: %v", serr)
+			} else {
+				category = PickCategoryWeighted(categories, scores, weekNum, rand.Intn)
+				topicStats = FormatTopicStats(scores)
+			}
+		}
+		persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+
+		// reset v2 dedup state กัน setter leak: ถ้า flag เคย on ใน process เดียวกันแล้ว flip off
+		// (DB UPDATE โดยไม่ restart) ต้องกลับเป็น legacy จริง — threshold 0.78, ไม่มี pain cooldown
+		o.questionAgent.Deduper().SetThreshold(0.78)
+		o.questionAgent.SetPainCooldownDays(0)
 	}
 
 	brandAliases, err := o.settingsRepo.GetBrandAliases(ctx)
@@ -157,12 +238,6 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	format, err := o.formatsRepo.PickNext(ctx)
 	if err != nil {
 		return fmt.Errorf("pick content format: %w", err)
-	}
-
-	persona, err := o.settingsRepo.Get(ctx, "audience_persona")
-	if err != nil {
-		log.Printf("Warning: audience_persona not set, using empty: %v", err)
-		persona = ""
 	}
 
 	log.Printf("Producing %d clips — category: %s, format: %s", count, category, format.DisplayName)
@@ -188,16 +263,27 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get question agent config: %w", err)
 	}
 
-	questions, err := o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
+	questions, err := o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
 	if errors.Is(err, agent.ErrNoFreshNews) {
-		// No reliable news found — never fabricate news; produce a Q&A clip instead.
-		log.Println("No fresh news available, falling back to Q&A format")
-		format, err = o.formatsRepo.GetByName(ctx, "qa")
-		if err != nil {
-			o.tracker.FailStep("question", err)
-			return fmt.Errorf("fallback to qa format: %w", err)
+		// No reliable news found — never fabricate news; produce a non-news clip instead.
+		if v2 {
+			// v2: fall back to the least-used format (not hard-pinned to qa).
+			log.Println("No fresh news available, falling back to least-used format")
+			// ข้าม "news" (เพิ่งล้มไปแล้ว — PickNext อาจคืน news ซ้ำเพราะ count ไม่เปลี่ยน) → ไม่งั้น loop fail
+			if f, ferr := o.formatsRepo.PickNext(ctx); ferr == nil && f != nil && f.FormatName != "news" {
+				format = f
+			} else {
+				format, _ = o.formatsRepo.GetByName(ctx, "qa") // last resort (ข้าม news)
+			}
+		} else {
+			log.Println("No fresh news available, falling back to Q&A format")
+			format, err = o.formatsRepo.GetByName(ctx, "qa")
+			if err != nil {
+				o.tracker.FailStep("question", err)
+				return fmt.Errorf("fallback to qa format: %w", err)
+			}
 		}
-		questions, err = o.questionAgent.Generate(ctx, count, category, format, persona, topicStats, qaCfg)
+		questions, err = o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, role, topicStats, qaCfg)
 	}
 	if err != nil {
 		o.tracker.FailStep("question", err)
@@ -233,7 +319,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -250,7 +336,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	preset := producer.PresetByKey("editorial-bold")
 	if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
@@ -270,12 +356,15 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
-		Title:          q.Question,
-		Question:       q.Question,
-		QuestionerName: q.QuestionerName,
-		Category:       q.Category,
-		PublishDate:    &today,
-		ContentFormat:  format.FormatName,
+		Title:           q.Question,
+		Question:        q.Question,
+		QuestionerName:  q.QuestionerName,
+		Category:        q.Category,
+		PublishDate:     &today,
+		ContentFormat:   format.FormatName,
+		ClipRole:        role,
+		TitleArchetype:  archetype.ArchetypeName,
+		AudiencePersona: persona,
 	})
 	if err != nil {
 		return fmt.Errorf("create clip: %w", err)
@@ -284,7 +373,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status, StylePreset: &preset.Key})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role)
 }
 
 // Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
@@ -341,7 +430,7 @@ func validateScript(script *agent.GeneratedScript) {
 	script.YoutubeTitle = title + suffix
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
 	// rendered. When the flag is off clipTheme == theme — no behavior change.
 	clipTheme := theme
@@ -350,7 +439,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, scriptCfg)
+	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetype.Instruction, role, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -505,15 +594,40 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		}
 	}
 
-	// Visual QA is an optional gate; disabled/absent or any infra error => fail-OPEN (status stays "ready", never blocks publish).
+	// Visual QA gate. Historically fail-OPEN on any infra error; with
+	// QA_FAIL_CLOSED_ENABLED=true a clip QA couldn't see at all (config fetch
+	// error / zero frames) routes to needs_review instead of publishing unseen.
 	if qaCfg, qErr := o.agentsRepo.GetByName(ctx, "visual_qa"); qErr == nil && qaCfg.Enabled && result.LocalVideo916Path != "" {
 		o.tracker.StartStep("visual_qa")
-		frames := o.extractQAFrames(clipID, result.LocalVideo916Path, scenes)
+		probedDur := o.probeQADuration(result.LocalVideo916Path)
+		frames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaSceneFrac, probedDur, nil)
+		downgradeIfReady(&status, len(frames) == 0 && producer.QAFailClosedEnabled(),
+			"visualqa: clip %s produced no QA frames — fail-closed → needs_review", clipID)
 		qaRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
 			Question: q.Question,
 			Frames:   frames,
 			Fast:     producer.PipelineFastEnabled(),
 		}, qaCfg)
+		if !qaRes.Passed {
+			// Two-strike confirm: re-sample every flagged scene later in the scene
+			// (past the entrance animation, on a different caption phrase) and
+			// re-judge. A scene only stays failed when BOTH frames show the defect.
+			flagged := make(map[int]bool)
+			for _, v := range qaRes.Verdicts {
+				if !v.OK {
+					flagged[v.SceneNumber] = true
+				}
+			}
+			confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, probedDur, flagged)
+			confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
+				Question: q.Question,
+				Frames:   confirmFrames,
+				Fast:     producer.PipelineFastEnabled(),
+			}, qaCfg)
+			qaRes = agent.ConfirmMerge(qaRes, confirmRes)
+			log.Printf("visualqa: clip %s confirm pass done — %d scene(s) rechecked, passed=%v",
+				clipID, len(confirmFrames), qaRes.Passed)
+		}
 		if wErr := o.visualQARepo.Create(ctx, clipID, qaRes.Passed, agent.MarshalVerdicts(qaRes.Verdicts)); wErr != nil {
 			log.Printf("visualqa: persist result failed (non-fatal): %v", wErr)
 		}
@@ -523,21 +637,20 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 				clipID, string(agent.MarshalVerdicts(qaRes.Verdicts)))
 		}
 		o.tracker.CompleteStep("visual_qa")
+	} else if qErr != nil {
+		downgradeIfReady(&status, producer.QAFailClosedEnabled(),
+			"visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
 	}
 
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
 	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
-	if result.InspectFlagged && status == "ready" {
-		status = "needs_review"
-		log.Printf("clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
-	}
+	downgradeIfReady(&status, result.InspectFlagged,
+		"clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
 
 	// A silent/too-short voice track can't be seen by the still-frame vision QA —
 	// route to needs_review when the audio gate is on.
-	if result.AudioFlagged && producer.QAAudioCheckEnabled() && status == "ready" {
-		status = "needs_review"
-		log.Printf("clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
-	}
+	downgradeIfReady(&status, result.AudioFlagged && producer.QAAudioCheckEnabled(),
+		"clip %s: voice track silent/too short — status=needs_review (publish blocked)", clipID)
 
 	renderedStage := stageRendered
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{
@@ -674,7 +787,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	// Retried clips keep their original visual identity. PresetByKey falls back to
 	// editorial-bold (Presets[0]) if the stored key is empty (pre-flag clips have no stored preset).
 	retryPreset := producer.PresetByKey(clip.StylePreset)
-	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "")
 }
 
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
@@ -762,10 +875,25 @@ func evenFrameTimestamps(duration float64, n int) []float64 {
 // before the next scene that it never lands on a transition/crossfade frame.
 const qaSceneFrac = 0.6
 
+// qaRecheckSceneFrac positions the confirm-pass sample late in the scene — past
+// every entrance animation and on a different karaoke caption phrase than the
+// first pass — so a defect must be visible at two independent times to fail.
+const qaRecheckSceneFrac = 0.85
+
 // autoReviewSceneFrac positions the auto-review sample at a DIFFERENT point in each
 // scene than QA (qaSceneFrac), so the second-opinion judge inspects an independent
 // frame and can overturn a QA false positive instead of re-confirming the same frame.
 const autoReviewSceneFrac = 0.45
+
+// qaEntranceGuardSec / qaExitGuardSec clamp each per-scene sample away from the
+// content entrance animation (runs up to ~1.5s into a scene — a mid-animation
+// frame looks cropped/overlapping to vision QA) and away from the scene-end
+// crossfade. The entrance guard is capped at half the scene so a short scene
+// still gets sampled inside its own window.
+const (
+	qaEntranceGuardSec = 1.6
+	qaExitGuardSec     = 0.4
+)
 
 // sceneAwareTimestamps returns one timestamp per scene, each positioned `frac` into
 // its own scene using the real per-scene durations, then rescaled so the estimated
@@ -793,27 +921,38 @@ func sceneAwareTimestamps(durations []float64, probedDur, frac float64) []float6
 		if d < 0 {
 			d = 0
 		}
-		ts[i] = (acc + d*frac) * scale
+		lo := acc + math.Min(qaEntranceGuardSec, d*0.5)
+		hi := math.Max(acc+d-qaExitGuardSec, lo)
+		ts[i] = math.Max(lo, math.Min(hi, acc+d*frac)) * scale
 		acc += d
 	}
 	return ts
 }
 
-// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
-// positioned frac into its scene via real per-scene durations rescaled to
-// the probed video length. Falls back to naive even slicing when per-scene
-// durations are unavailable (all zero); if the probe ALSO fails it returns a
-// short/nil slice, and callers must guard their index (fail-open on missing frames).
-func (o *Orchestrator) qaFrameTimestamps(mp4Path string, durations []float64, frac float64) []float64 {
+// probeQADuration probes the mp4 container duration ONCE so every QA sampling
+// pass on the same file (first pass, confirm pass) shares it instead of each
+// spawning its own ffprobe. Returns 0 when the probe is unusable — samplers
+// then fall back to estimated scene durations.
+func (o *Orchestrator) probeQADuration(mp4Path string) float64 {
 	probed, err := o.producer.FFmpeg().ProbeDurationSeconds(mp4Path)
 	if err != nil || probed <= 0 {
 		log.Printf("qa: probe duration unusable (err=%v, dur=%.3f); sampling from estimated scene durations", err, probed)
-		probed = 0
+		return 0
 	}
-	if ts := sceneAwareTimestamps(durations, probed, frac); ts != nil {
+	return probed
+}
+
+// qaFrameTimestamps returns one timestamp per scene for frame extraction, each
+// positioned frac into its scene via real per-scene durations rescaled to
+// probedDur (0 = probe failed, don't rescale). Falls back to naive even slicing
+// when per-scene durations are unavailable (all zero); if the probe ALSO failed
+// it returns a short/nil slice, and callers must guard their index (fail-open
+// on missing frames).
+func qaFrameTimestamps(probedDur float64, durations []float64, frac float64) []float64 {
+	if ts := sceneAwareTimestamps(durations, probedDur, frac); ts != nil {
 		return ts
 	}
-	return evenFrameTimestamps(probed, len(durations))
+	return evenFrameTimestamps(probedDur, len(durations))
 }
 
 // qaFrameTargets marks which scenes should have a QA frame sampled. Zero- (or
@@ -828,15 +967,18 @@ func qaFrameTargets(durs []float64) []bool {
 	return targets
 }
 
-// extractQAFrames extracts one PNG frame per scene from the local MP4 and pairs
-// it with the scene's text. A per-scene extraction failure is logged and that
-// frame is dropped (Visual QA fails open on missing frames).
-func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.GeneratedScene) []agent.QAFrame {
+// extractQAFramesAt extracts one PNG frame per scene at `frac` into each scene
+// and pairs it with the scene's text. probedDur is the caller-probed container
+// duration (see probeQADuration) so multi-pass extraction probes only once.
+// When `only` is non-nil, scenes not in it are skipped (the confirm pass
+// re-samples just the flagged scenes). A per-scene extraction failure is logged
+// and that frame is dropped (fail-open).
+func (o *Orchestrator) extractQAFramesAt(clipID, mp4Path string, scenes []agent.GeneratedScene, frac, probedDur float64, only map[int]bool) []agent.QAFrame {
 	durs := make([]float64, len(scenes))
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs, qaSceneFrac)
+	mids := qaFrameTimestamps(probedDur, durs, frac)
 	targets := qaFrameTargets(durs)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
@@ -846,7 +988,10 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		if !targets[i] {
 			continue // zero-duration scene: sampling it would hit a transition boundary
 		}
-		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d.png", s.SceneNumber))
+		if only != nil && !only[s.SceneNumber] {
+			continue
+		}
+		outPath := filepath.Join(filepath.Dir(mp4Path), fmt.Sprintf("qa-scene%d-%02.0f.png", s.SceneNumber, frac*100))
 		if err := o.producer.FFmpeg().ExtractFrameAt(mp4Path, outPath, mids[i]); err != nil {
 			log.Printf("visualqa: clip %s scene %d frame extract failed (skip): %v", clipID, s.SceneNumber, err)
 			continue
@@ -865,6 +1010,17 @@ func (o *Orchestrator) extractQAFrames(clipID, mp4Path string, scenes []agent.Ge
 		})
 	}
 	return frames
+}
+
+// downgradeIfReady routes a still-publishable clip to needs_review when cond
+// holds, logging why. The *status == "ready" guard is the load-bearing
+// invariant shared by every gate in renderAndFinalize: the first gate to fire
+// wins and a later gate never clobbers an earlier downgrade.
+func downgradeIfReady(status *string, cond bool, format string, args ...any) {
+	if cond && *status == "ready" {
+		*status = "needs_review"
+		log.Printf(format, args...)
+	}
 }
 
 // auto_review tuning: approve threshold matches AutoReviewAgent's normalization
@@ -917,7 +1073,7 @@ func (o *Orchestrator) autoReviewFrames(ctx context.Context, videoURL string, sc
 	for i, s := range scenes {
 		durs[i] = s.DurationSeconds
 	}
-	mids := o.qaFrameTimestamps(mp4Path, durs, autoReviewSceneFrac)
+	mids := qaFrameTimestamps(o.probeQADuration(mp4Path), durs, autoReviewSceneFrac)
 	frames := make([]agent.QAFrame, 0, len(scenes))
 	for i, s := range scenes {
 		if i >= len(mids) {
