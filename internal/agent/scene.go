@@ -46,7 +46,19 @@ func (a *SceneAgent) Generate(ctx context.Context, script string, targetSceneCou
 	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &scenes); err != nil {
 		return nil, fmt.Errorf("generate scenes: %w", err)
 	}
+	if err := validateGeneratedScenes(scenes); err != nil {
+		return nil, fmt.Errorf("generate scenes: %w", err)
+	}
 	return scenes, nil
+}
+
+// validateGeneratedScenes rejects an empty scene list so a blank breakdown never
+// reaches the renderer as a blank video.
+func validateGeneratedScenes(scenes []GeneratedScene) error {
+	if len(scenes) == 0 {
+		return fmt.Errorf("no scenes returned from breakdown")
+	}
+	return nil
 }
 
 // buildSceneThemeDescription renders a short Thai brand summary for the Director,

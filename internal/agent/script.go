@@ -103,5 +103,26 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &script); err != nil {
 		return nil, fmt.Errorf("generate script: %w", err)
 	}
+	if err := validateGeneratedScript(&script); err != nil {
+		return nil, fmt.Errorf("generate script: %w", err)
+	}
 	return &script, nil
+}
+
+// validateGeneratedScript rejects a script that would produce empty narration.
+// The LLM occasionally returns JSON that parses cleanly but carries no scenes
+// (or scenes with blank voice_text); passing it on yields an empty narration
+// that makes the downstream scene breakdown fail with a confusing error. Failing
+// here keeps the failure at the script stage where it belongs and lets the
+// clip-level retry regenerate.
+func validateGeneratedScript(script *GeneratedScript) error {
+	if len(script.Scenes) == 0 {
+		return fmt.Errorf("no scenes in generated script")
+	}
+	for _, s := range script.Scenes {
+		if strings.TrimSpace(s.VoiceText) != "" {
+			return nil
+		}
+	}
+	return fmt.Errorf("all scenes have empty voice_text")
 }

@@ -8,6 +8,24 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 )
 
+// An empty scene list from the Director LLM must be rejected rather than passed
+// downstream to render a blank video. Defense-in-depth alongside the script-side
+// guard.
+func TestValidateGeneratedScenes_Empty(t *testing.T) {
+	if err := validateGeneratedScenes(nil); err == nil {
+		t.Fatal("expected error for empty scenes, got nil")
+	}
+	if err := validateGeneratedScenes([]GeneratedScene{}); err == nil {
+		t.Fatal("expected error for empty scene slice, got nil")
+	}
+}
+
+func TestValidateGeneratedScenes_Valid(t *testing.T) {
+	if err := validateGeneratedScenes([]GeneratedScene{{SceneNumber: 1}}); err != nil {
+		t.Fatalf("expected nil for non-empty scenes, got %v", err)
+	}
+}
+
 // The seeded `scene` prompt (migration 030) asks for a JSON array of objects with
 // these exact fields. This test locks the prompt↔struct contract: if the JSON the
 // LLM is told to emit ever stops unmarshalling into GeneratedScene, the field tags

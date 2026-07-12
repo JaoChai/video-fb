@@ -141,6 +141,76 @@ func (c *LLMClient) GenerateJSON(ctx context.Context, model, systemPrompt, userP
 }
 
 func extractJSON(text string) string {
+	return sanitizeJSONControlChars(sliceJSONBlock(text))
+}
+
+// sanitizeJSONControlChars escapes raw control characters (newline, tab, etc.)
+// that appear *inside* string literals. The kie.ai Claude proxy sometimes emits
+// literal newlines inside a JSON string value, which json.Unmarshal rejects with
+// "invalid character '\n' in string literal". We scan byte-by-byte, tracking
+// whether we're inside a string (respecting backslash escapes), and escape only
+// control bytes found inside strings. Structural whitespace between tokens is
+// left untouched, and already-escaped sequences (\n, \") pass through verbatim.
+// UTF-8 multi-byte runes (Thai) have bytes >= 0x80, so they never match the
+// control-byte test and are copied unchanged.
+func sanitizeJSONControlChars(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inString := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !inString {
+			if c == '"' {
+				inString = true
+			}
+			b.WriteByte(c)
+			continue
+		}
+		switch {
+		case c == '\\':
+			// Escape sequence. Copy the backslash and its escaped byte together so
+			// the escaped byte is never misread as a string terminator — except when
+			// that byte is a raw control char, which is never a valid JSON escape:
+			// there we drop the spurious backslash and escape the control char.
+			if i+1 < len(s) {
+				if next := s[i+1]; next < 0x20 {
+					writeEscapedControl(&b, next)
+				} else {
+					b.WriteByte(c)
+					b.WriteByte(next)
+				}
+				i++
+			} else {
+				b.WriteByte(c) // trailing backslash at EOF
+			}
+		case c == '"':
+			b.WriteByte(c)
+			inString = false
+		case c < 0x20:
+			writeEscapedControl(&b, c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
+// writeEscapedControl emits the JSON escape for a control byte (< 0x20), using
+// the short forms for the common ones and \uXXXX for the rest.
+func writeEscapedControl(b *strings.Builder, c byte) {
+	switch c {
+	case '\n':
+		b.WriteString(`\n`)
+	case '\r':
+		b.WriteString(`\r`)
+	case '\t':
+		b.WriteString(`\t`)
+	default:
+		fmt.Fprintf(b, `\u%04x`, c)
+	}
+}
+
+func sliceJSONBlock(text string) string {
 	// Strip markdown code fences (```json ... ```)
 	if idx := strings.Index(text, "```json"); idx >= 0 {
 		text = text[idx+7:]
