@@ -191,6 +191,19 @@ func TestRenderCompositionScenes_MotionV2(t *testing.T) {
 	}
 }
 
+// COVER_SCENE: the JS const must reflect the ScenesParams.Cover flag. (The
+// frame-0 cover entrance guard "COVER && idx===0" is added in Task 2 — this
+// test only asserts the Task 1 plumbing: the const itself.)
+func TestRenderCompositionScenes_Cover(t *testing.T) {
+	on := sampleScenesParams("9:16")
+	on.Cover = true
+	assertRenderContains(t, on, "const COVER = true")
+
+	off := sampleScenesParams("9:16")
+	off.Cover = false
+	assertRenderContains(t, off, "const COVER = false")
+}
+
 func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
 	p := sampleScenesParams("9:16")
 	p.MotionV2 = true

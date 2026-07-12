@@ -20,6 +20,11 @@ func AudioMotionEnabled() bool { return os.Getenv("AUDIO_MOTION_ENABLED") == "tr
 // entrance variety, stat count-up). Off → current motion behavior.
 func SceneMotionV2Enabled() bool { return os.Getenv("SCENE_MOTION_V2_ENABLED") == "true" }
 
+// CoverSceneEnabled turns on the frame-0 cover: scene index 0 renders fully at
+// opacity:1 from frame 0 (the poster the platform grabs) instead of fading in
+// from a blank navy frame. Off ⇒ today's behavior.
+func CoverSceneEnabled() bool { return os.Getenv("COVER_SCENE_ENABLED") == "true" }
+
 // PipelineFastEnabled turns on the fast pipeline: parallel per-scene image gen,
 // fail-fast image timeouts (75s, no retry → css fallback), and parallel visual
 // QA. Off → current sequential behavior.

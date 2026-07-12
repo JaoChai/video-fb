@@ -168,6 +168,7 @@
       const TOTAL = {{.DurationSeconds}};
       const MOTION_UP = {{if .AudioMotion}}true{{else}}false{{end}};
       const MOTION_V2 = {{if .MotionV2}}true{{else}}false{{end}};
+      const COVER = {{if .Cover}}true{{else}}false{{end}};
       const ENTRANCE_DUR = {{.EntranceDur}} || 0.6;
       const ENTRANCE_EASE = "{{.EntranceEase}}" || "power3.out";
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;

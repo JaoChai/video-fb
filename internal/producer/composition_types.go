@@ -117,4 +117,6 @@ type ScenesParams struct {
 	AudioMotion      bool            // enable upgraded GSAP transitions
 
 	MotionV2 bool // enable v2 scene motion (parallax drift, entrance variety, count-up)
+
+	Cover bool // enable frame-0 cover behavior for scene index 0 (COVER_SCENE_ENABLED)
 }
