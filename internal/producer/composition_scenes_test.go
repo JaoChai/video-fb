@@ -214,7 +214,9 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 
 	off := sampleScenesParams("9:16")
 	off.Cover = false
-	assertRenderContains(t, off, "const COVER = false")
+	// Cover off: no COVER trace at all — the plan's invariant is byte-identical
+	// output, so even the inert `const COVER = false;` must not be emitted.
+	assertRenderNotContains(t, off, "const COVER")
 
 	// Cover on: scene 0 is pinned visible at t=0 (no opacity:0 fade on the poster frame).
 	assertRenderContains(t, on, "tl.set(sceneEl,{opacity:1},0)")
@@ -234,6 +236,18 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	// without this the opener's bg sits dead-still while every other scene's
 	// bg tweens.
 	assertRenderContains(t, on, `tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},0)`)
+
+	// Cover on: the ADS VANCE badge is pinned visible at t=0 so the poster
+	// frame carries the brand; off keeps the 0.3s slide-in exactly as before.
+	// BOTH layers must move: the hyperframes clip gate (data-start) hides the
+	// element until its start time no matter what GSAP does, so cover needs
+	// data-start="0" AND the GSAP pin.
+	assertRenderContains(t, on, `tl.set("#badges",{opacity:1,x:0},0)`)
+	assertRenderContains(t, on, `id="badges" class="clip badge-row" data-start="0"`)
+	assertRenderNotContains(t, on, `tl.fromTo("#badges"`)
+	assertRenderContains(t, off, `tl.fromTo("#badges",{opacity:0,x:-40},{opacity:1,x:0,duration:.6,ease:"power3.out"},0.3)`)
+	assertRenderContains(t, off, `id="badges" class="clip badge-row" data-start="0.3"`)
+	assertRenderNotContains(t, off, `tl.set("#badges"`)
 	assertRenderNotContains(t, off, `tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},0)`)
 
 	// Code-review fix #1: cover scene-0 stat must pin its final value at t=0

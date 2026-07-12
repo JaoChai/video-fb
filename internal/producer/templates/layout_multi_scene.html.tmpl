@@ -153,7 +153,7 @@
 
       <div id="progress" class="clip progress-track" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="7">
         <div class="progress-fill" id="progressFill"></div></div>
-      <div id="badges" class="clip badge-row" data-start="0.3" data-duration="{{.DurationSeconds}}" data-track-index="2">
+      <div id="badges" class="clip badge-row" data-start="{{if .Cover}}0{{else}}0.3{{end}}" data-duration="{{.DurationSeconds}}" data-track-index="2">
         <div class="badge-brand">{{.BrandName}}</div><div class="badge-cat">{{.CategoryLabel}}</div></div>
       <div id="capStage" class="clip cap-stage" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="9" data-layout-allow-overflow></div>
 
@@ -168,7 +168,9 @@
       const TOTAL = {{.DurationSeconds}};
       const MOTION_UP = {{if .AudioMotion}}true{{else}}false{{end}};
       const MOTION_V2 = {{if .MotionV2}}true{{else}}false{{end}};
-      const COVER = {{if .Cover}}true{{else}}false{{end}};
+{{- if .Cover}}
+      const COVER = true;
+{{- end}}
       const ENTRANCE_DUR = {{.EntranceDur}} || 0.6;
       const ENTRANCE_EASE = "{{.EntranceEase}}" || "power3.out";
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;
@@ -256,12 +258,12 @@
           const num=node.querySelector(".stat-num");
           if(num)num.textContent=num.getAttribute("data-final")||"0";
           fitText(node);
-          {{if .Cover}}
+          {{- if .Cover}}
           // Cover scene 0's stat is pinned to its final value (see the
           // per-scene entrance loop below) — don't re-zero it here, or the
           // poster frame flashes "0" before the timeline sets the real number.
           if(COVER && num && SCENES[0] && SCENES[0].type==="stat" && node.closest("#scene-"+SCENES[0].scene)){ return; }
-          {{end}}
+          {{- end}}
           if(num)num.textContent="0";
         });
       }
@@ -269,7 +271,14 @@
 
       // ── continuous overlays ──
       tl.fromTo("#progressFill",{width:0},{width:{{.Width}},duration:TOTAL,ease:"none"},0);
+{{- if .Cover}}
+      // Cover: the ADS VANCE badge must brand the poster frame — pin it visible
+      // at t=0 (the slide-in fromTo below would immediateRender it to opacity:0
+      // on frame 0, leaving the poster unbranded).
+      tl.set("#badges",{opacity:1,x:0},0);
+{{- else}}
       tl.fromTo("#badges",{opacity:0,x:-40},{opacity:1,x:0,duration:.6,ease:"power3.out"},0.3);
+{{- end}}
       tl.to("#badges",{opacity:0,y:-20,duration:.5,ease:"power2.in"},Math.min(7,TOTAL*0.18));
 
       // A1 entrance pacing factors (multiply base entrance durations):
@@ -384,7 +393,7 @@
             tl.to(content,{y:-12,duration:driftDur,ease:"none"},driftStart);
           }
         }
-        {{if .Cover}}
+        {{- if .Cover}}
         if(COVER && idx===0 && sc.type==="stat"){
           // Poster frame shows the real number, not a recount: pin the final
           // formatted value directly and skip the 0->final count-up entirely.
@@ -392,7 +401,7 @@
           const meta0 = parseStatNumber(sc.stat);
           if(numEl0 && meta0){ numEl0.textContent = formatStat(meta0.value, meta0); }
         } else
-        {{end}}
+        {{- end}}
         if(MOTION_V2 && sc.type==="stat"){
           const numEl = sceneEl.querySelector(".stat-num");
           const meta = parseStatNumber(sc.stat);
