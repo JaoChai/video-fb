@@ -154,7 +154,7 @@
       <div id="progress" class="clip progress-track" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="7">
         <div class="progress-fill" id="progressFill"></div></div>
       <div id="badges" class="clip badge-row" data-start="{{if .Cover}}0{{else}}0.3{{end}}" data-duration="{{.DurationSeconds}}" data-track-index="2">
-        <div class="badge-brand">{{.BrandName}}</div><div class="badge-cat">{{.CategoryLabel}}</div></div>
+        <div class="badge-brand">{{.BrandName}}</div>{{if .CategoryLabel}}<div class="badge-cat">{{.CategoryLabel}}</div>{{end}}</div>
       <div id="capStage" class="clip cap-stage" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="9" data-layout-allow-overflow></div>
 
       <audio id="vo" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="5" src="{{.VoiceSrc}}" data-volume="1"></audio>

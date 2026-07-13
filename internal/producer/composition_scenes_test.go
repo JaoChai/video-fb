@@ -415,3 +415,15 @@ func TestRenderScenes_FlagOffPinsDefaultBGZoom(t *testing.T) {
 		t.Errorf("rendered HTML missing default BG_ZOOM_TO = 1.1 (want %v); got motion default drift", MotionDefault.BGZoomTo)
 	}
 }
+
+// The badge-cat pill next to the ADS VANCE brand pill must not render as an
+// empty capsule when CategoryLabel is unset — which is the case for every
+// real production clip (producer.go only sets BrandName).
+func TestRenderScenes_EmptyCategoryLabelHidesPill(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	p.CategoryLabel = ""
+	assertRenderNotContains(t, p, `<div class="badge-cat">`)
+
+	withLabel := sampleScenesParams("9:16")
+	assertRenderContains(t, withLabel, `<div class="badge-cat">PIXEL</div>`)
+}
