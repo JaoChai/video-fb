@@ -64,6 +64,7 @@ type Orchestrator struct {
 	questionAgent   *agent.QuestionAgent
 	scriptAgent     *agent.ScriptAgent
 	imageAgent      *agent.ImageAgent
+	metadataAgent   *agent.MetadataAgent
 	sceneAgent      *agent.SceneAgent
 	criticAgent     *agent.CriticAgent
 	visualQAAgent   *agent.VisualQAAgent
@@ -86,6 +87,7 @@ func New(
 	qa *agent.QuestionAgent,
 	sa *agent.ScriptAgent,
 	ia *agent.ImageAgent,
+	ma *agent.MetadataAgent,
 	sca *agent.SceneAgent,
 	ca *agent.CriticAgent,
 	vqa *agent.VisualQAAgent,
@@ -107,7 +109,7 @@ func New(
 ) *Orchestrator {
 	return &Orchestrator{
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
-		sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
+		metadataAgent: ma, sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
 		autoReviewsRepo: autoreviews,
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
@@ -427,6 +429,24 @@ func validateScript(script *agent.GeneratedScript) {
 	script.YoutubeTitle = title + suffix
 }
 
+// applyGeneratedMetadata overwrites the script's YouTube metadata with the
+// metadata agent's output. A blank title means the agent produced nothing
+// usable — return false and leave the script untouched (fallback). Blank
+// desc/tags individually fall back to the script's values.
+func applyGeneratedMetadata(script *agent.GeneratedScript, md *agent.GeneratedMetadata) bool {
+	if md == nil || strings.TrimSpace(md.YoutubeTitle) == "" {
+		return false
+	}
+	script.YoutubeTitle = md.YoutubeTitle
+	if s := strings.TrimSpace(md.YoutubeDescription); s != "" {
+		script.YoutubeDescription = s
+	}
+	if len(md.YoutubeTags) > 0 {
+		script.YoutubeTags = md.YoutubeTags
+	}
+	return true
+}
+
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
 	// rendered. When the flag is off clipTheme == theme — no behavior change.
@@ -523,6 +543,21 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			Layout:          scene.Layout,
 			Content:         scene.Content,
 		})
+	}
+
+	// Metadata agent (flag-gated): sole owner of title/desc/tags when enabled.
+	// Runs AFTER the critic so it names the final content; overrides both the
+	// script's and the critic's metadata. Any failure falls back silently to
+	// the script metadata already on `script`.
+	if v, _ := o.settingsRepo.Get(ctx, "metadata_agent_enabled"); v == "true" {
+		if mdCfg, mErr := o.agentsRepo.GetByName(ctx, "metadata"); mErr == nil && mdCfg.Enabled {
+			md, gErr := o.metadataAgent.Generate(ctx, q.Question, narration, q.Category, persona, mdCfg)
+			if gErr != nil {
+				log.Printf("metadata agent failed (fallback to script metadata): %v", gErr)
+			} else if applyGeneratedMetadata(script, md) {
+				validateScript(script) // re-enforce length + single brand suffix
+			}
+		}
 	}
 
 	// Metadata from the validated script.

@@ -90,6 +90,7 @@ func main() {
 	questionAgent := agent.NewQuestionAgent(llm, ragEngine, pool, researchAgent)
 	scriptAgent := agent.NewScriptAgent(llm, ragEngine, researchAgent)
 	imageAgent := agent.NewImageAgent(llm)
+	metadataAgent := agent.NewMetadataAgent(llm)
 	sceneAgent := agent.NewSceneAgent(llm)
 	criticAgent := agent.NewCriticAgent(llm)
 	visualQAAgent := agent.NewVisualQAAgent(llm)
@@ -124,7 +125,7 @@ func main() {
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
 
-	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, prod,
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, metadataAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, prod,
 		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
 		repository.NewTopicCategoriesRepo(pool), repository.NewTitleArchetypesRepo(pool), tracker)
 
