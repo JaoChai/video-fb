@@ -510,6 +510,21 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		o.tracker.CompleteStep("critic")
 	}
 
+	// Cover image prompt (flag-gated): the image agent writes a cover-specialized
+	// image_prompt for scene 1, whose background IS the frame-0 cover when
+	// COVER_SCENE_ENABLED. Replacing the prompt reuses the whole existing render
+	// path (kie gen, fallback chain, theme styling). Any failure keeps the scene
+	// agent's original prompt.
+	if v, _ := o.settingsRepo.Get(ctx, "cover_image_agent_enabled"); v == "true" &&
+		producer.CoverSceneEnabled() && len(scenes) > 0 && imageCfg != nil && imageCfg.Enabled {
+		cp, cErr := o.imageAgent.GenerateCoverPrompt(ctx, q.Question, q.Category, scenes[0].OnScreenText, imageCfg)
+		if cErr != nil {
+			log.Printf("cover image prompt failed (fallback to scene prompt): %v", cErr)
+		} else if strings.TrimSpace(cp) != "" {
+			scenes[0].ImagePrompt = cp
+		}
+	}
+
 	// Sanitize each scene's narration for TTS (brand aliases, strip URLs/@handles).
 	// Runs after the critic so any rewritten voice_text is cleaned too.
 	for i := range scenes {

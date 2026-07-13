@@ -64,3 +64,35 @@ func safeStr(s *string) string {
 	}
 	return *s
 }
+
+// CoverImageTemplateData fills the migration-054 `image` prompt_template, which
+// is dedicated to the clip's cover (frame-0) background.
+type CoverImageTemplateData struct {
+	QuestionText string
+	Category     string
+	HookText     string
+}
+
+// coverPromptOut is the JSON the cover template asks the LLM to return.
+type coverPromptOut struct {
+	ImagePrompt string `json:"image_prompt"`
+}
+
+// GenerateCoverPrompt produces one English image prompt for the cover scene's
+// background. The render pipeline applies theme styling itself (buildScenePrompt),
+// so the prompt describes objects/scene only. cfg is the `image` AgentConfig.
+func (a *ImageAgent) GenerateCoverPrompt(ctx context.Context, question, category, hookText string, cfg *models.AgentConfig) (string, error) {
+	userPrompt, err := renderTemplate(cfg.PromptTemplate, CoverImageTemplateData{
+		QuestionText: question,
+		Category:     category,
+		HookText:     hookText,
+	})
+	if err != nil {
+		return "", fmt.Errorf("render cover image template: %w", err)
+	}
+	var out coverPromptOut
+	if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), userPrompt, cfg.Temperature, &out); err != nil {
+		return "", fmt.Errorf("generate cover prompt: %w", err)
+	}
+	return out.ImagePrompt, nil
+}
