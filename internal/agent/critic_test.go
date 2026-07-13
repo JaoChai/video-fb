@@ -131,3 +131,44 @@ func TestCriticOutputParsesSchema(t *testing.T) {
 		t.Errorf("unexpected parse: %+v", out)
 	}
 }
+
+// Critic-revised structured content must flow through reconcile; invalid or
+// missing content keeps the original (render-time buildSceneContent clamps
+// lengths, so no sanitize needed here).
+func TestReconcileCritiqueMergesContent(t *testing.T) {
+	origContent := json.RawMessage(`{"kicker":"เดิม","rows":[{"t":"แถวเดิม","bad":true}]}`)
+	newContent := json.RawMessage(`{"kicker":"ใหม่","rows":[{"t":"แถวใหม่ คมกว่า","bad":true}]}`)
+
+	in := CriticInput{
+		Scenes: []GeneratedScene{{SceneNumber: 1, VoiceText: "v", Layout: "hook", Content: origContent}},
+	}
+
+	cases := []struct {
+		name    string
+		content json.RawMessage
+		want    string
+	}{
+		{"valid content replaces original", newContent, string(newContent)},
+		{"invalid JSON keeps original", json.RawMessage(`{broken`), string(origContent)},
+		{"empty keeps original", nil, string(origContent)},
+		{"null keeps original", json.RawMessage(`null`), string(origContent)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := CriticOutput{
+				Scenes: []GeneratedScene{{SceneNumber: 1, VoiceText: "v2", Content: tc.content}},
+				Score:  CriticScore{Hook: 8, Clarity: 8, BrandFit: 8, Overall: 8},
+			}
+			res := reconcileCritique(in, out)
+			if !res.Applied {
+				t.Fatalf("Applied = false, want true")
+			}
+			if got := string(res.Scenes[0].Content); got != tc.want {
+				t.Errorf("Content = %s, want %s", got, tc.want)
+			}
+			if res.Scenes[0].Layout != "hook" {
+				t.Errorf("Layout changed to %q — must stay immutable", res.Scenes[0].Layout)
+			}
+		})
+	}
+}
