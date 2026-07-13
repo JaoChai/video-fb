@@ -59,20 +59,6 @@ type learnerAgentIface interface {
 	Propose(ctx context.Context, in agent.LearnInput, cfg *models.AgentConfig) (*agent.LearnOutput, error)
 }
 
-// dimValue returns the average for a named score dimension. Pure.
-func dimValue(p repository.ScorePatterns, name string) float64 {
-	switch name {
-	case "hook":
-		return p.AvgHook
-	case "clarity":
-		return p.AvgClarity
-	case "brand_fit":
-		return p.AvgBrandFit
-	default:
-		return p.AvgOverall
-	}
-}
-
 // strongSignal is the pure gate, now RELATIVE to the agent's own history:
 // fire on (a) regression — the weakest current dimension sits regressionMargin
 // below the same dimension's baseline average (baseline must itself have enough
@@ -84,7 +70,7 @@ func strongSignal(p, base repository.ScorePatterns) (bool, string, float64, stri
 	if p.N < minCritiques {
 		return false, name, val, "insufficient"
 	}
-	if base.N >= minCritiques && val < dimValue(base, name)-regressionMargin {
+	if base.N >= minCritiques && val < base.Dim(name)-regressionMargin {
 		return true, name, val, "regression"
 	}
 	if len(p.TopIssues) > 0 && float64(p.TopIssues[0].Count) >= issueFrequencyThreshold*float64(p.N) {
@@ -155,7 +141,7 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		ok, lowDim, lowVal, gate := strongSignal(agentPatterns, baseline)
 		if !ok {
 			log.Printf("learner: [%s] skip — weak signal (%s; n=%d weakest=%s avg=%.2f baseline=%.2f)",
-				name, gate, agentPatterns.N, lowDim, lowVal, dimValue(baseline, lowDim))
+				name, gate, agentPatterns.N, lowDim, lowVal, baseline.Dim(lowDim))
 			continue
 		}
 

@@ -129,6 +129,23 @@ LIMIT $2`,
 	return p, nil
 }
 
+// scoreDim pairs a dimension name with its aggregated average. dims() is the
+// single source of truth for the dimension set — LowestDimension and Dim both
+// read from it, so adding a dimension is a one-place change.
+type scoreDim struct {
+	name string
+	val  float64
+}
+
+func (p ScorePatterns) dims() []scoreDim {
+	return []scoreDim{
+		{"hook", p.AvgHook},
+		{"clarity", p.AvgClarity},
+		{"brand_fit", p.AvgBrandFit},
+		{"overall", p.AvgOverall},
+	}
+}
+
 // LowestDimension returns the name and average of the weakest score dimension.
 // Pure helper over already-aggregated data (no DB) so the strong-signal gate is
 // testable. On N == 0 it returns ("", 0).
@@ -136,15 +153,7 @@ func (p ScorePatterns) LowestDimension() (string, float64) {
 	if p.N == 0 {
 		return "", 0
 	}
-	dims := []struct {
-		name string
-		val  float64
-	}{
-		{"hook", p.AvgHook},
-		{"clarity", p.AvgClarity},
-		{"brand_fit", p.AvgBrandFit},
-		{"overall", p.AvgOverall},
-	}
+	dims := p.dims()
 	lowName, lowVal := dims[0].name, dims[0].val
 	for _, d := range dims[1:] {
 		if d.val < lowVal {
@@ -152,4 +161,15 @@ func (p ScorePatterns) LowestDimension() (string, float64) {
 		}
 	}
 	return lowName, lowVal
+}
+
+// Dim returns the average for a named score dimension; unknown names fall back
+// to the overall average.
+func (p ScorePatterns) Dim(name string) float64 {
+	for _, d := range p.dims() {
+		if d.name == name {
+			return d.val
+		}
+	}
+	return p.AvgOverall
 }

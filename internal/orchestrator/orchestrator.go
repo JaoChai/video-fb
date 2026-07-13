@@ -517,12 +517,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	// agent's original prompt.
 	if v, _ := o.settingsRepo.Get(ctx, "cover_image_agent_enabled"); v == "true" &&
 		producer.CoverSceneEnabled() && len(scenes) > 0 && imageCfg != nil && imageCfg.Enabled {
+		o.tracker.StartStep("cover_image")
 		cp, cErr := o.imageAgent.GenerateCoverPrompt(ctx, q.Question, q.Category, scenes[0].OnScreenText, imageCfg)
 		if cErr != nil {
 			log.Printf("cover image prompt failed (fallback to scene prompt): %v", cErr)
 		} else if strings.TrimSpace(cp) != "" {
 			scenes[0].ImagePrompt = cp
 		}
+		o.tracker.CompleteStep("cover_image")
 	}
 
 	// Sanitize each scene's narration for TTS (brand aliases, strip URLs/@handles).
@@ -566,12 +568,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	// the script metadata already on `script`.
 	if v, _ := o.settingsRepo.Get(ctx, "metadata_agent_enabled"); v == "true" {
 		if mdCfg, mErr := o.agentsRepo.GetByName(ctx, "metadata"); mErr == nil && mdCfg.Enabled {
+			o.tracker.StartStep("metadata")
 			md, gErr := o.metadataAgent.Generate(ctx, q.Question, narration, q.Category, persona, mdCfg)
 			if gErr != nil {
 				log.Printf("metadata agent failed (fallback to script metadata): %v", gErr)
 			} else if applyGeneratedMetadata(script, md) {
 				validateScript(script) // re-enforce length + single brand suffix
 			}
+			o.tracker.CompleteStep("metadata")
 		}
 	}
 

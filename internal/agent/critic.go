@@ -111,7 +111,7 @@ func reconcileCritique(in CriticInput, out CriticOutput) CriticResult {
 		// Structured card content (what viewers actually read). Take the critic's
 		// version only when it is real JSON; render-time buildSceneContent clamps
 		// lengths and strips emoji, and layout stays pinned from the original.
-		if len(cs.Content) > 0 && string(cs.Content) != "null" && json.Valid(cs.Content) {
+		if string(cs.Content) != "null" && json.Valid(cs.Content) {
 			m.Content = cs.Content
 		}
 		merged[i] = m
