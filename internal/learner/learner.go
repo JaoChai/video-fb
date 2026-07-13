@@ -11,16 +11,23 @@ import (
 )
 
 // Guardrail constants. The loop only acts on a STRONG signal: enough critiques in
-// the window AND a score dimension averaging below the threshold. Tuned
-// conservatively because changes auto-apply.
+// the window AND either a regression against the agent's own baseline or one
+// issue recurring across the window. Tuned conservatively because changes
+// auto-apply.
 const (
-	// windowDays is how far back LowScorePatterns aggregates.
+	// windowDays is how far back LowScorePatterns aggregates for the CURRENT window.
 	windowDays = 30
-	// minCritiques is the minimum critique rows in the window before we act.
+	// baselineDays is the trailing window the current scores are compared against.
+	baselineDays = 90
+	// minCritiques is the minimum critique rows (in a window) before we act.
 	minCritiques = 8
-	// lowScoreThreshold: a dimension must average strictly below this (1-10
-	// scale) to count as a real, recurring weakness worth a skills change.
-	lowScoreThreshold = 6.0
+	// regressionMargin: the weakest dimension must sit this far below its own
+	// baseline average to count as a real regression. Replaces the old absolute
+	// lowScoreThreshold=6.0 which real scores (~7.8-8.9) could never reach.
+	regressionMargin = 0.5
+	// issueFrequencyThreshold: alternatively fire when the single most common
+	// critique issue appears in at least this fraction of window critiques.
+	issueFrequencyThreshold = 0.4
 	// topIssuesN caps how many recurring issues feed the pattern summary.
 	topIssuesN = 8
 )
@@ -52,18 +59,38 @@ type learnerAgentIface interface {
 	Propose(ctx context.Context, in agent.LearnInput, cfg *models.AgentConfig) (*agent.LearnOutput, error)
 }
 
-// strongSignal is the pure gate: act only when there are enough critiques AND the
-// weakest dimension is below threshold. Returns (ok, weakest-dimension-name,
-// weakest-value) so the caller can log exactly why it acted or skipped.
-func strongSignal(p repository.ScorePatterns) (bool, string, float64) {
+// dimValue returns the average for a named score dimension. Pure.
+func dimValue(p repository.ScorePatterns, name string) float64 {
+	switch name {
+	case "hook":
+		return p.AvgHook
+	case "clarity":
+		return p.AvgClarity
+	case "brand_fit":
+		return p.AvgBrandFit
+	default:
+		return p.AvgOverall
+	}
+}
+
+// strongSignal is the pure gate, now RELATIVE to the agent's own history:
+// fire on (a) regression — the weakest current dimension sits regressionMargin
+// below the same dimension's baseline average (baseline must itself have enough
+// rows), or (b) frequency — one issue recurs in >= issueFrequencyThreshold of
+// window critiques. Returns (fire, weakest-dim, weakest-val, gate-name) so the
+// caller logs exactly why it acted or skipped.
+func strongSignal(p, base repository.ScorePatterns) (bool, string, float64, string) {
 	name, val := p.LowestDimension()
 	if p.N < minCritiques {
-		return false, name, val
+		return false, name, val, "insufficient"
 	}
-	if val >= lowScoreThreshold {
-		return false, name, val
+	if base.N >= minCritiques && val < dimValue(base, name)-regressionMargin {
+		return true, name, val, "regression"
 	}
-	return true, name, val
+	if len(p.TopIssues) > 0 && float64(p.TopIssues[0].Count) >= issueFrequencyThreshold*float64(p.N) {
+		return true, name, val, "frequency"
+	}
+	return false, name, val, "no_gate"
 }
 
 // Learner runs the guardrailed auto-apply loop.
@@ -103,6 +130,11 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		return fmt.Errorf("learner: aggregate failed: %w", err)
 	}
 
+	baseline, err := l.critiques.LowScorePatterns(ctx, baselineDays, topIssuesN)
+	if err != nil {
+		return fmt.Errorf("learner: baseline aggregate failed: %w", err)
+	}
+
 	for _, name := range allowedAgents {
 		// Filter TopIssues to only those owned by this agent.
 		var ownedIssues []repository.FieldIssue
@@ -120,10 +152,10 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		agentPatterns := patterns
 		agentPatterns.TopIssues = ownedIssues
 
-		ok, lowDim, lowVal := strongSignal(agentPatterns)
+		ok, lowDim, lowVal, gate := strongSignal(agentPatterns, baseline)
 		if !ok {
-			log.Printf("learner: [%s] skip — weak signal (n=%d weakest=%s avg=%.2f; need n>=%d and avg<%.1f)",
-				name, agentPatterns.N, lowDim, lowVal, minCritiques, lowScoreThreshold)
+			log.Printf("learner: [%s] skip — weak signal (%s; n=%d weakest=%s avg=%.2f baseline=%.2f)",
+				name, gate, agentPatterns.N, lowDim, lowVal, dimValue(baseline, lowDim))
 			continue
 		}
 
@@ -161,8 +193,8 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 			log.Printf("learner: [%s] apply failed AFTER audit (revert from skill_revisions if needed): %v", name, err)
 			continue
 		}
-		log.Printf("learner: [%s] APPLIED new skills (weakest=%s avg=%.2f n=%d) — rationale: %s",
-			name, lowDim, lowVal, agentPatterns.N, out.Rationale)
+		log.Printf("learner: [%s] APPLIED new skills (gate=%s weakest=%s avg=%.2f n=%d) — rationale: %s",
+			name, gate, lowDim, lowVal, agentPatterns.N, out.Rationale)
 	}
 	return nil
 }

@@ -7,34 +7,66 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 )
 
-func TestStrongSignal_FiresOnLowDimWithEnoughData(t *testing.T) {
-	p := repository.ScorePatterns{N: minCritiques, AvgHook: 4.5, AvgClarity: 7, AvgBrandFit: 8, AvgOverall: 6.5}
-	ok, dim, val := strongSignal(p)
-	if !ok {
-		t.Fatalf("strongSignal = false, want true (n=%d, hook=4.5 < %.1f)", p.N, lowScoreThreshold)
-	}
-	if dim != "hook" || val != 4.5 {
-		t.Errorf("weakest = (%q, %v), want (hook, 4.5)", dim, val)
-	}
-}
-
 func TestStrongSignal_SkipsTooFewCritiques(t *testing.T) {
 	p := repository.ScorePatterns{N: minCritiques - 1, AvgHook: 2.0, AvgClarity: 2, AvgBrandFit: 2, AvgOverall: 2}
-	if ok, _, _ := strongSignal(p); ok {
-		t.Fatal("strongSignal = true, want false when n < minCritiques")
-	}
-}
-
-func TestStrongSignal_SkipsAllDimsHealthy(t *testing.T) {
-	p := repository.ScorePatterns{N: 50, AvgHook: lowScoreThreshold, AvgClarity: 7, AvgBrandFit: 8, AvgOverall: 9}
-	if ok, _, _ := strongSignal(p); ok {
-		t.Fatal("strongSignal = true, want false when weakest >= threshold (boundary is exclusive)")
+	if ok, _, _, gate := strongSignal(p, repository.ScorePatterns{}); ok {
+		t.Fatalf("strongSignal = true, want false when n < minCritiques (gate=%s)", gate)
 	}
 }
 
 func TestStrongSignal_EmptyWindow(t *testing.T) {
-	if ok, _, _ := strongSignal(repository.ScorePatterns{N: 0}); ok {
-		t.Fatal("strongSignal = true, want false on empty window")
+	if ok, _, _, gate := strongSignal(repository.ScorePatterns{N: 0}, repository.ScorePatterns{}); ok {
+		t.Fatalf("strongSignal = true, want false on empty window (gate=%s)", gate)
+	}
+}
+
+func TestStrongSignalRelativeGates(t *testing.T) {
+	base := repository.ScorePatterns{N: 40, AvgHook: 8.0, AvgClarity: 8.2, AvgBrandFit: 8.8, AvgOverall: 8.1}
+
+	cases := []struct {
+		name string
+		p    repository.ScorePatterns
+		base repository.ScorePatterns
+		want bool
+		gate string
+	}{
+		{
+			name: "too few critiques never fires",
+			p:    repository.ScorePatterns{N: 5, AvgHook: 3.0, AvgClarity: 8, AvgBrandFit: 8, AvgOverall: 8},
+			base: base, want: false, gate: "insufficient",
+		},
+		{
+			name: "regression: weakest dim 0.6 below its own 90d baseline fires",
+			p:    repository.ScorePatterns{N: 12, AvgHook: 7.4, AvgClarity: 8.1, AvgBrandFit: 8.7, AvgOverall: 8.0},
+			base: base, want: true, gate: "regression",
+		},
+		{
+			name: "flat scores near baseline do not fire",
+			p:    repository.ScorePatterns{N: 12, AvgHook: 7.8, AvgClarity: 8.1, AvgBrandFit: 8.8, AvgOverall: 8.0},
+			base: base, want: false, gate: "no_gate",
+		},
+		{
+			name: "frequency: top issue in >=40% of critiques fires even without regression",
+			p: repository.ScorePatterns{N: 10, AvgHook: 7.9, AvgClarity: 8.1, AvgBrandFit: 8.8, AvgOverall: 8.0,
+				TopIssues: []repository.FieldIssue{{Field: "scene[0].voice_text", Reason: "hook อืด", Count: 5}}},
+			base: base, want: true, gate: "frequency",
+		},
+		{
+			name: "insufficient baseline disables regression gate (frequency can still fire)",
+			p:    repository.ScorePatterns{N: 12, AvgHook: 6.0, AvgClarity: 8.1, AvgBrandFit: 8.8, AvgOverall: 8.0},
+			base: repository.ScorePatterns{N: 3, AvgHook: 8.0}, want: false, gate: "no_gate",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, _, gate := strongSignal(tc.p, tc.base)
+			if got != tc.want {
+				t.Errorf("fire = %v, want %v (gate=%s)", got, tc.want, gate)
+			}
+			if tc.want && gate != tc.gate {
+				t.Errorf("gate = %q, want %q", gate, tc.gate)
+			}
+		})
 	}
 }
 
