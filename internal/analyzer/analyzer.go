@@ -64,20 +64,23 @@ Notes on the data:
 Current agent configurations:
 %s
 
-Analyze BOTH of these dimensions:
+Analyze THREE dimensions:
 1. STORYTELLING STYLE — openings, hooks (the "Hook" field is the clip's real first line), pacing, tone, length. Which styles earn high view percentiles and "rising" trends?
 2. TOPICS — which categories and question angles earn high views/shares on each platform?
+3. VISUALS — which cover/first-frame situations (error dialogs, money numbers, rising/falling graphs) correlate with high percentiles?
 
 Requirements for your insights:
 - Preserve content diversity: recommend leaning into winning topics for roughly HALF of future clips, never exclusively. Say this explicitly in the question agent's insights.
 - Ground every recommendation in the data (cite the pattern: views percentile, shares, or trend).
 - Each insight must be under 1000 characters, written in Thai.
+- Target the right agent: "question" = topic/angle picks, "script" = narration style, "scene" = per-scene visuals and card layout, "image" = the clip COVER (first frame) background only.
 
 Return JSON only:
 {
   "agents": [
     {"agent_name": "question", "new_insights": "...", "reason": "..."},
     {"agent_name": "script", "new_insights": "...", "reason": "..."},
+    {"agent_name": "scene", "new_insights": "...", "reason": "..."},
     {"agent_name": "image", "new_insights": "...", "reason": "..."}
   ]
 }`, clipCount, data, a.currentPrompts(ctx))
