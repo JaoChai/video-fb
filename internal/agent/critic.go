@@ -104,7 +104,8 @@ func reconcileCritique(in CriticInput, out CriticOutput) CriticResult {
 		m := orig // copy keeps every structural/timing/layout field
 		m.VoiceText = cs.VoiceText
 		m.OnScreenText = cs.OnScreenText
-		m.TextContent = cs.TextContent
+		// TextContent stays from the original: the critic's editable list no
+		// longer includes it (migration 054), so its echo would blank the field.
 		m.ImagePrompt = cs.ImagePrompt
 		m.EmphasisWords = cs.EmphasisWords
 		// Structured card content (what viewers actually read). Take the critic's
