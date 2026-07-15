@@ -9,12 +9,22 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 )
 
+// latestAnalyticsCTE takes the newest analytics row per (clip, platform,
+// post_type), excluding posts whose publish failed — a failed post never went
+// live, so its default 0-view row would otherwise pollute totals and inflate
+// the "0 views" count as if it were live-but-unwatched content.
 const latestAnalyticsCTE = `WITH latest AS (
 	SELECT DISTINCT ON (clip_id, platform, post_type)
 		clip_id, platform, post_type, views, likes, comments, shares,
 		watch_time_seconds, retention_rate,
 		engagement_rate, avg_view_percentage, subscribers_gained
 	FROM clip_analytics
+	WHERE NOT EXISTS (
+		SELECT 1 FROM clip_publish_status ps
+		WHERE ps.clip_id = clip_analytics.clip_id
+		  AND ps.platform = clip_analytics.platform
+		  AND ps.post_type = clip_analytics.post_type
+		  AND ps.status = 'failed')
 	ORDER BY clip_id, platform, post_type, fetched_at DESC
 )`
 
@@ -30,7 +40,12 @@ func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, clip_id, platform, post_type, views, likes, comments, shares,
 		        watch_time_seconds, retention_rate, fetched_at
-		 FROM clip_analytics WHERE clip_id = $1 ORDER BY fetched_at DESC`, clipID)
+		 FROM clip_analytics ca WHERE clip_id = $1
+		   AND NOT EXISTS (
+			SELECT 1 FROM clip_publish_status ps
+			WHERE ps.clip_id = ca.clip_id AND ps.platform = ca.platform
+			  AND ps.post_type = ca.post_type AND ps.status = 'failed')
+		 ORDER BY fetched_at DESC`, clipID)
 	if err != nil {
 		return nil, fmt.Errorf("query analytics: %w", err)
 	}

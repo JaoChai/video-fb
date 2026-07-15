@@ -27,6 +27,31 @@ func isContactInfo(title string) bool {
 		strings.Contains(lower, "https://")
 }
 
+// buildTikTokCaption makes a TikTok-native caption: a short hook line plus
+// hashtags. It deliberately drops the YouTube SEO description, which is
+// templated to end with off-platform contact links (LINE id + Telegram URL) —
+// TikTok hard-suppresses reach on posts that drive users off-platform.
+func buildTikTokCaption(title, hashtags string) string {
+	hook := cleanTikTokHook(title)
+	if hashtags = strings.TrimSpace(hashtags); hashtags != "" {
+		return hook + "\n\n" + hashtags
+	}
+	return hook
+}
+
+// cleanTikTokHook strips the "| Ads Vance" brand tag and caps the caption so it
+// reads as a scroll-stopping hook, not a search-SEO paragraph.
+func cleanTikTokHook(title string) string {
+	if i := strings.LastIndex(title, "|"); i >= 0 && strings.Contains(strings.ToLower(title[i:]), "ads vance") {
+		title = strings.TrimSpace(title[:i])
+	}
+	const maxRunes = 120
+	if r := []rune(title); len(r) > maxRunes {
+		title = strings.TrimSpace(string(r[:maxRunes]))
+	}
+	return title
+}
+
 type Publisher struct {
 	zernio    *ZernioClient
 	pool      *pgxpool.Pool
@@ -198,20 +223,20 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 	}
 
 	var clipID, title string
-	var description, video916, clipTitle *string
+	var video916, clipTitle *string
 	// Only drip clips whose video lives on permanent storage (R2). Pre-R2 clips
 	// point at kie temp URLs that expire in ~1 day — the drip reaches them days
 	// later, TikTok fails to fetch the file, and the file is gone for good
 	// (52 backlog clips hit this after the 2026-07-04 R2 cutover).
 	err := p.pool.QueryRow(ctx,
-		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_9_16_url, c.title
+		`SELECT c.id, cm.youtube_title, c.video_9_16_url, c.title
 		 FROM clips c JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.video_9_16_url IS NOT NULL AND c.video_9_16_url <> ''
 		   AND c.status IN ('ready','published') AND c.auto_review_held = FALSE
 		   AND (cm.zernio_tiktok_post_id IS NULL OR cm.zernio_tiktok_post_id = '')
 		   AND c.video_9_16_url LIKE (SELECT value || '%' FROM settings WHERE key = 'r2_public_base_url')
 		 ORDER BY c.created_at DESC LIMIT 1`).
-		Scan(&clipID, &title, &description, &video916, &clipTitle)
+		Scan(&clipID, &title, &video916, &clipTitle)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			log.Printf("PublishTikTok: no clip pending for TikTok")
@@ -224,14 +249,17 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 		log.Printf("TikTok title validation: '%s' looks like contact info, using clip question instead", title)
 		title = *clipTitle
 	}
-	desc := ""
-	if description != nil {
-		desc = *description
-	}
+
+	// TikTok caption: short hook + hashtags, NO YouTube SEO description (which
+	// carries off-platform LINE/Telegram links that suppress reach). Hashtags
+	// are tunable via the tiktok_hashtags setting without a redeploy.
+	var hashtags string
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'tiktok_hashtags'`).Scan(&hashtags)
+	caption := buildTikTokCaption(title, hashtags)
 
 	result, err := p.zernio.Post(ctx, PostRequest{
-		Title:      title,
-		Content:    title + "\n\n" + desc,
+		Title:      cleanTikTokHook(title),
+		Content:    caption,
 		Platforms:  []PlatformTarget{{Platform: "tiktok", AccountID: ttAccountID}},
 		MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 		PublishNow: true,
@@ -383,6 +411,11 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				ZernioPostID: post.id, Status: status, ErrorMessage: errPtr,
 			}); err != nil {
 				log.Printf("FetchAnalytics STATUS_FAIL clip=%s platform=%s: %v", cp.ClipID, post.platform, err)
+			}
+			// A failed post never went live — record its publish status above, but
+			// don't write a 0-view analytics row that would masquerade as real content.
+			if status == "failed" {
+				continue
 			}
 			var metrics PostMetrics
 			found := false
