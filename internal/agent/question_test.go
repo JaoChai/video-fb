@@ -81,3 +81,19 @@ func TestCooldownFilterRetry_CooldownErrorFailsOpen(t *testing.T) {
 		t.Fatalf("cooldown error must fail-open keep question, got %d", len(got))
 	}
 }
+
+func TestCooldownFilterRetry_NoRetryOnDedupShortfall(t *testing.T) {
+	// count=2 but only 1 clean question and nothing in cooldown → must NOT retry
+	// (retry is for cooldown drops only, not dedup shortfalls).
+	inCD := func(_ context.Context, _ string) (bool, error) { return false, nil }
+	regenCalls := 0
+	regen := func(_ context.Context, _ []string, n int) ([]GeneratedQuestion, error) {
+		regenCalls++
+		return nil, nil
+	}
+	initial := []GeneratedQuestion{{Question: "q1", PainPoint: "ad_fatigue"}}
+	got := cooldownFilterRetry(context.Background(), initial, 2, 2, inCD, regen)
+	if len(got) != 1 || regenCalls != 0 {
+		t.Fatalf("want 1 question and 0 regen (no retry on dedup shortfall), got %d q, %d regen", len(got), regenCalls)
+	}
+}

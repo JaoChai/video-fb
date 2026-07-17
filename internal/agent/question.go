@@ -95,7 +95,7 @@ func cooldownFilterRetry(
 
 	filter(initial)
 
-	for attempt := 0; len(kept) < count && attempt < maxRetries; attempt++ {
+	for attempt := 0; len(kept) < count && len(dropped) > 0 && attempt < maxRetries; attempt++ {
 		avoid := make([]string, 0, len(dropped))
 		for pp := range dropped {
 			avoid = append(avoid, pp)
@@ -285,9 +285,12 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 			if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), p, cfg.Temperature, &qs); err != nil {
 				return nil, err
 			}
-			sims, _, derr := a.deduper.CheckQuestions(ctx, qs)
+			sims, embs, derr := a.deduper.CheckQuestions(ctx, qs)
 			if derr != nil {
 				return qs, nil // dedup ล่ม → รับ fresh batch ไปก่อน (สอดคล้อง fallback lexical เดิม)
+			}
+			for k, v := range embs {
+				allEmbeddings[k] = v // เก็บ embedding ของคำถามที่ regen ไว้ dedup รอบหน้า
 			}
 			passed, _ := filterBySimilarity(qs, sims, a.deduper.threshold)
 			return passed, nil
