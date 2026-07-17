@@ -2,6 +2,9 @@
 -- gemini-3-5-flash คิดคำถามจากเมนู pain_point ที่ฝังใน angle_instruction (ไม่อิง KB)
 -- renderTemplate = string-replace (custom) NOT text/template — prompt ใช้ได้แค่ {{.Field}} ห้าม {{if}}
 -- Re-runnable ในไฟล์ (DELETE ก่อน INSERT); schema_migrations gate auto-run ตอน deploy
+-- หุ้ม BEGIN/COMMIT ให้ atomic: RunMigrations ทำ pool.Exec ไฟล์เดียวไม่หุ้ม transaction
+-- ถ้าไม่หุ้ม statement กลางล้มจะทิ้ง prod ไว้ครึ่งๆ (หมวดถูก disable แต่ 3 แถวใหม่ยังไม่ insert)
+BEGIN;
 
 -- 1) ปิดหมวดเดิมทั้งหมด (ไม่ลบ เพื่อ rollback)
 UPDATE topic_categories SET enabled = false
@@ -129,3 +132,5 @@ $prompt$ WHERE agent_name = 'question';
 
 -- 4) asker micro-cast (orthogonal ต่อ audience group) — เพิ่มความหลากหลายมุมผู้ถาม
 UPDATE settings SET value = $personas$["มือใหม่เพิ่งซื้อบัญชีใบแรก","เจ้าของแบรนด์ที่จ้าง agency ยิงให้","media buyer รันให้ลูกค้าหลายเจ้า","dropshipper ยิงเอง","คนกลับมายิงใหม่หลังเคยโดนแบน"]$personas$ WHERE key = 'audience_personas';
+
+COMMIT;
