@@ -133,19 +133,11 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 		if researchContext == "" {
 			return nil, ErrNoFreshNews
 		}
+		ragContext.WriteString("ข้อมูลข่าว/งานวิจัยสด (อ้างอิงได้):\n")
 		ragContext.WriteString(researchContext)
 		ragContext.WriteString("\n---\n")
-	} else {
-		// Business knowledge from the hand-written Thai KB
-		ragResults, err := a.rag.Search(ctx, fmt.Sprintf("Facebook Ads %s %s", category, format.FormatName), 5)
-		if err != nil {
-			return nil, fmt.Errorf("RAG search: %w", err)
-		}
-		for _, r := range ragResults {
-			ragContext.WriteString(r.Content)
-			ragContext.WriteString("\n---\n")
-		}
 	}
+	// non-news: ไม่ ground ด้วย KB — gemini คิดจากเมนู pain_point ใน prompt (ตัด rag.Search ออก)
 
 	recentRows, err := a.pool.Query(ctx,
 		`SELECT title FROM topic_history WHERE created_at > NOW() - INTERVAL '60 days' ORDER BY created_at DESC LIMIT 30`)
