@@ -78,7 +78,12 @@ func cooldownFilterRetry(
 	filter := func(qs []GeneratedQuestion) {
 		for i := range qs {
 			cd, err := inCooldown(ctx, qs[i].PainPoint)
-			if err != nil || !cd {
+			if err != nil {
+				log.Printf("QuestionAgent: pain_point cooldown check error (fail-open): %v", err)
+				kept = append(kept, qs[i])
+				continue
+			}
+			if !cd {
 				kept = append(kept, qs[i])
 				continue
 			}
