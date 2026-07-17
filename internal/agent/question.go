@@ -273,22 +273,29 @@ func (a *QuestionAgent) Generate(ctx context.Context, count int, category string
 	}
 
 	// pain_point cooldown: กันหัวข้อเดิมเปลี่ยนมุม (flag on เท่านั้น — painCooldownDays > 0)
+	// ถ้า pain_point ที่ได้ติด cooldown ให้ generate ใหม่โดยเลี่ยง pain_point นั้น
+	// fail-open ถ้าทุกอันติด cooldown เพื่อไม่ให้ produce คืน 0 คลิป (ดู cooldownFilterRetry)
 	if a.painCooldownDays > 0 && len(accepted) > 0 {
-		filtered := accepted[:0]
-		for _, q := range accepted {
-			inCD, err := a.deduper.PainPointInCooldown(ctx, q.PainPoint, a.painCooldownDays)
-			if err != nil {
-				log.Printf("QuestionAgent: pain_point cooldown check error (fail-open): %v", err)
-				filtered = append(filtered, q) // fail-open สำหรับ cooldown
-				continue
+		const maxCooldownRetries = 2
+		regen := func(ctx context.Context, avoid []string, n int) ([]GeneratedQuestion, error) {
+			p := userPrompt + fmt.Sprintf(
+				"\n\npain_point เหล่านี้ติด cooldown ห้ามใช้ ให้เลือก pain_point อื่นในหมวด %s:\n- %s\nสร้าง %d ข้อ",
+				category, strings.Join(avoid, "\n- "), n)
+			var qs []GeneratedQuestion
+			if err := a.llm.GenerateJSON(ctx, cfg.Model, cfg.BuildSystemPrompt(), p, cfg.Temperature, &qs); err != nil {
+				return nil, err
 			}
-			if !inCD {
-				filtered = append(filtered, q)
-			} else {
-				log.Printf("QuestionAgent: pain_point %q in cooldown, dropped", q.PainPoint)
+			sims, _, derr := a.deduper.CheckQuestions(ctx, qs)
+			if derr != nil {
+				return qs, nil // dedup ล่ม → รับ fresh batch ไปก่อน (สอดคล้อง fallback lexical เดิม)
 			}
+			passed, _ := filterBySimilarity(qs, sims, a.deduper.threshold)
+			return passed, nil
 		}
-		accepted = filtered
+		accepted = cooldownFilterRetry(ctx, accepted, count, maxCooldownRetries,
+			func(ctx context.Context, pp string) (bool, error) {
+				return a.deduper.PainPointInCooldown(ctx, pp, a.painCooldownDays)
+			}, regen)
 	}
 
 	// Store accepted questions with embeddings for future dedup checks.
