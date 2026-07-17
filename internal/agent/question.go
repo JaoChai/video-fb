@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,63 @@ type GeneratedQuestion struct {
 	QuestionerName string `json:"questioner_name"`
 	Category       string `json:"category"`
 	PainPoint      string `json:"pain_point"`
+}
+
+// cooldownFilterRetry ทิ้งคำถามที่ pain_point ติด cooldown แล้วขอ regen มาแทน
+// (เลี่ยง pain_point ที่ทิ้งไป) สูงสุด maxRetries รอบ เพื่อไม่ให้ batch ที่ตัวแรก
+// ชน cooldown คืน 0 คำถาม. fail-open: ถ้าทุกตัวติด cooldown จนครบ retry จะคืน
+// คำถามตัวสุดท้ายที่ถูกทิ้งแทนการคืน empty — คลิปซ้ำนิดหน่อยยังดีกว่า produce 0 คลิป
+// เงียบๆ. inCooldown error ถือว่า "ไม่ติด cooldown" (fail-open ตาม pattern เดิม)
+func cooldownFilterRetry(
+	ctx context.Context,
+	initial []GeneratedQuestion,
+	count, maxRetries int,
+	inCooldown func(context.Context, string) (bool, error),
+	regen func(ctx context.Context, avoid []string, n int) ([]GeneratedQuestion, error),
+) []GeneratedQuestion {
+	kept := make([]GeneratedQuestion, 0, len(initial))
+	dropped := map[string]bool{}
+	var lastDropped *GeneratedQuestion
+
+	filter := func(qs []GeneratedQuestion) {
+		for i := range qs {
+			cd, err := inCooldown(ctx, qs[i].PainPoint)
+			if err != nil || !cd {
+				kept = append(kept, qs[i])
+				continue
+			}
+			dropped[qs[i].PainPoint] = true
+			lastDropped = &qs[i]
+			log.Printf("QuestionAgent: pain_point %q in cooldown, dropped", qs[i].PainPoint)
+		}
+	}
+
+	filter(initial)
+
+	for attempt := 0; len(kept) < count && attempt < maxRetries; attempt++ {
+		avoid := make([]string, 0, len(dropped))
+		for pp := range dropped {
+			avoid = append(avoid, pp)
+		}
+		sort.Strings(avoid) // prompt/ลำดับ deterministic
+		fresh, err := regen(ctx, avoid, count-len(kept))
+		if err != nil {
+			log.Printf("QuestionAgent: cooldown regen failed (attempt %d): %v", attempt+1, err)
+			break
+		}
+		filter(fresh)
+	}
+
+	if len(kept) == 0 && lastDropped != nil {
+		log.Printf("QuestionAgent: all pain_points in cooldown after %d retries, accepting %q to avoid 0-clip stall",
+			maxRetries, lastDropped.PainPoint)
+		kept = append(kept, *lastDropped)
+	}
+
+	if len(kept) > count {
+		kept = kept[:count]
+	}
+	return kept
 }
 
 func (a *QuestionAgent) Generate(ctx context.Context, count int, category string, categoryAngle string, format *models.ContentFormat, persona string, archetypeInstr string, roleInstr string, topicStats string, cfg *models.AgentConfig) ([]GeneratedQuestion, error) {
