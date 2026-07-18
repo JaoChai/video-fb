@@ -117,6 +117,8 @@ func main() {
 	critiquesRepo := repository.NewCritiquesRepo(pool)
 	visualQARepo := repository.NewVisualQARepo(pool)
 	autoReviewsRepo := repository.NewAutoReviewsRepo(pool)
+	scriptDebatesRepo := repository.NewScriptDebatesRepo(pool)
+	scriptJudgeAgent := agent.NewScriptJudgeAgent(llm)
 	skillRevisionsRepo := repository.NewSkillRevisionsRepo(pool)
 	learnerAgent := agent.NewLearnerAgent(llm)
 	learnerSvc := learner.New(agentsRepo, critiquesRepo, learnerAgent, skillRevisionsRepo)
@@ -125,8 +127,8 @@ func main() {
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
 
-	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, metadataAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, prod,
-		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
+	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, metadataAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, scriptJudgeAgent, prod,
+		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, scriptDebatesRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
 		repository.NewTopicCategoriesRepo(pool), repository.NewTitleArchetypesRepo(pool), tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)

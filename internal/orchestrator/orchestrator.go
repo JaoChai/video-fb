@@ -59,22 +59,24 @@ func scriptNarration(script *agent.GeneratedScript) string {
 }
 
 type Orchestrator struct {
-	settingsRepo    *repository.SettingsRepo
-	formatsRepo     *repository.FormatsRepo
-	questionAgent   *agent.QuestionAgent
-	scriptAgent     *agent.ScriptAgent
-	imageAgent      *agent.ImageAgent
-	metadataAgent   *agent.MetadataAgent
-	sceneAgent      *agent.SceneAgent
-	criticAgent     *agent.CriticAgent
-	visualQAAgent   *agent.VisualQAAgent
-	autoReviewAgent *agent.AutoReviewAgent
-	producer        *producer.Producer
-	clipsRepo       *repository.ClipsRepo
-	scenesRepo      *repository.ScenesRepo
-	critiquesRepo   *repository.CritiquesRepo
-	visualQARepo    *repository.VisualQARepo
-	autoReviewsRepo *repository.AutoReviewsRepo
+	settingsRepo        *repository.SettingsRepo
+	formatsRepo         *repository.FormatsRepo
+	questionAgent       *agent.QuestionAgent
+	scriptAgent         *agent.ScriptAgent
+	imageAgent          *agent.ImageAgent
+	metadataAgent       *agent.MetadataAgent
+	sceneAgent          *agent.SceneAgent
+	criticAgent         *agent.CriticAgent
+	visualQAAgent       *agent.VisualQAAgent
+	autoReviewAgent     *agent.AutoReviewAgent
+	scriptJudgeAgent    *agent.ScriptJudgeAgent
+	producer            *producer.Producer
+	clipsRepo           *repository.ClipsRepo
+	scenesRepo          *repository.ScenesRepo
+	critiquesRepo       *repository.CritiquesRepo
+	visualQARepo        *repository.VisualQARepo
+	autoReviewsRepo     *repository.AutoReviewsRepo
+	scriptDebatesRepo   *repository.ScriptDebatesRepo
 	themesRepo          *repository.ThemesRepo
 	agentsRepo          *repository.AgentsRepo
 	analyticsRepo       *repository.AnalyticsRepo
@@ -92,12 +94,14 @@ func New(
 	ca *agent.CriticAgent,
 	vqa *agent.VisualQAAgent,
 	ara *agent.AutoReviewAgent,
+	sja *agent.ScriptJudgeAgent,
 	prod *producer.Producer,
 	clips *repository.ClipsRepo,
 	scenes *repository.ScenesRepo,
 	critiques *repository.CritiquesRepo,
 	visualqa *repository.VisualQARepo,
 	autoreviews *repository.AutoReviewsRepo,
+	scriptDebates *repository.ScriptDebatesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
 	analytics *repository.AnalyticsRepo,
@@ -111,7 +115,7 @@ func New(
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		metadataAgent: ma, sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
-		autoReviewsRepo: autoreviews,
+		autoReviewsRepo: autoreviews, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
 		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
 		tracker: tracker,
@@ -456,7 +460,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("script")
-	script, err := o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetype.Instruction, RoleInstruction(role), "", scriptCfg)
+	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))

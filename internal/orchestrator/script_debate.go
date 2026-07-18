@@ -1,12 +1,15 @@
 package orchestrator
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
 	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/models"
 )
 
 // debateLens is one writing angle in the script newsroom debate, loaded from
@@ -82,4 +85,70 @@ func runScriptDebate(lenses []debateLens, gen scriptGenFn, judge scriptJudgeFn) 
 		return scripts[0], cands, nil, "judge_failed", nil
 	}
 	return &verdict.Final, cands, verdict, "judge", nil
+}
+
+// generateScript is the script-stage entry point. Flag off (or any config
+// gap) → the plain single-pass path, byte-for-byte the old behavior. Flag on →
+// newsroom debate with the fail-open ladder in runScriptDebate; if even that
+// errors, fall back to single-pass. The debate can never fail a clip.
+func (o *Orchestrator) generateScript(ctx context.Context, clipID string, q agent.GeneratedQuestion, format *models.ContentFormat, persona, archetypeInstr, roleInstr string, scriptCfg *models.AgentConfig) (*agent.GeneratedScript, error) {
+	single := func() (*agent.GeneratedScript, error) {
+		return o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetypeInstr, roleInstr, "", scriptCfg)
+	}
+
+	if raw, _ := o.settingsRepo.Get(ctx, "script_debate_enabled"); raw != "true" {
+		return single()
+	}
+
+	lensRaw, _ := o.settingsRepo.Get(ctx, "script_debate_lenses")
+	lenses := parseDebateLenses(lensRaw)
+	judgeCfg, jerr := o.agentsRepo.GetByName(ctx, "script_judge")
+	if lenses == nil || jerr != nil || judgeCfg == nil || !judgeCfg.Enabled {
+		log.Printf("script debate: config unavailable (lenses=%d, judgeErr=%v) — single-pass fallback", len(lenses), jerr)
+		return single()
+	}
+
+	gen := func(lensInstruction string) (*agent.GeneratedScript, error) {
+		return o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetypeInstr, roleInstr, lensInstruction, scriptCfg)
+	}
+	judge := func(cands []agent.JudgeCandidate) (*agent.JudgeVerdict, error) {
+		return o.scriptJudgeAgent.Judge(ctx, agent.JudgeInput{
+			Question:        q.Question,
+			AudiencePersona: persona,
+			Candidates:      cands,
+		}, judgeCfg)
+	}
+
+	final, cands, verdict, source, err := runScriptDebate(lenses, gen, judge)
+	if err != nil {
+		log.Printf("script debate: %v — single-pass fallback", err)
+		return single()
+	}
+	log.Printf("script debate: source=%s candidates=%d clip=%s", source, len(cands), clipID)
+	o.recordScriptDebate(ctx, clipID, cands, verdict, source)
+	return final, nil
+}
+
+// recordScriptDebate persists the audit row; failures only log — audit must
+// never block production.
+func (o *Orchestrator) recordScriptDebate(ctx context.Context, clipID string, cands []agent.JudgeCandidate, verdict *agent.JudgeVerdict, source string) {
+	if o.scriptDebatesRepo == nil {
+		return
+	}
+	candJSON, err := json.Marshal(cands)
+	if err != nil {
+		log.Printf("script debate: marshal candidates for audit failed (non-fatal): %v", err)
+		return
+	}
+	var verdictJSON []byte
+	if verdict != nil {
+		verdictJSON, err = json.Marshal(verdict)
+		if err != nil {
+			log.Printf("script debate: marshal verdict for audit failed (non-fatal): %v", err)
+			verdictJSON = nil
+		}
+	}
+	if err := o.scriptDebatesRepo.Insert(ctx, clipID, candJSON, verdictJSON, source); err != nil {
+		log.Printf("script debate: audit insert failed (non-fatal): %v", err)
+	}
 }
