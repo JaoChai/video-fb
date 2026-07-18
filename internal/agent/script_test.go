@@ -43,3 +43,23 @@ func TestScriptTemplateData_NewFieldsRender(t *testing.T) {
 		t.Errorf("render mismatch:\n got: %s\nwant: %s", out, want)
 	}
 }
+
+// DebateLens renders into the script prompt; empty lens leaves no residue —
+// the flag-off path must produce a byte-identical prompt to before the field
+// existed (aside from the appended placeholder resolving to empty).
+func TestScriptTemplateData_DebateLensRender(t *testing.T) {
+	out, err := renderTemplate("base {{.DebateLens}}", ScriptTemplateData{DebateLens: "LENS"})
+	if err != nil {
+		t.Fatalf("renderTemplate: %v", err)
+	}
+	if out != "base LENS" {
+		t.Errorf("got %q want %q", out, "base LENS")
+	}
+	out, err = renderTemplate("base {{.DebateLens}}", ScriptTemplateData{})
+	if err != nil {
+		t.Fatalf("renderTemplate empty: %v", err)
+	}
+	if out != "base " {
+		t.Errorf("empty lens: got %q want %q", out, "base ")
+	}
+}

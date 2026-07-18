@@ -20,6 +20,7 @@ type ScriptTemplateData struct {
 	RAGContext           string
 	FormatInstruction    string
 	AudiencePersona      string
+	DebateLens           string
 }
 
 type ScriptAgent struct {
@@ -67,7 +68,7 @@ type GeneratedScript struct {
 	YoutubeTags        []string         `json:"youtube_tags"`
 }
 
-func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona string, archetypeInstr string, roleInstr string, cfg *models.AgentConfig) (*GeneratedScript, error) {
+func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona string, archetypeInstr string, roleInstr string, lens string, cfg *models.AgentConfig) (*GeneratedScript, error) {
 	var ragContext strings.Builder
 
 	if format.FormatName == "news" {
@@ -101,6 +102,7 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 		RAGContext:           ragContext.String(),
 		FormatInstruction:    format.ScriptInstruction,
 		AudiencePersona:      persona,
+		DebateLens:           lens,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render script template: %w", err)
