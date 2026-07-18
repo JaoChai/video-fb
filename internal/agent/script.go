@@ -69,6 +69,18 @@ type GeneratedScript struct {
 }
 
 func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona string, archetypeInstr string, roleInstr string, lens string, cfg *models.AgentConfig) (*GeneratedScript, error) {
+	ragContext, err := a.BuildRAGContext(ctx, question, format)
+	if err != nil {
+		return nil, err
+	}
+	return a.GenerateWithContext(ctx, question, questionerName, category, format, persona, archetypeInstr, roleInstr, ragContext, lens, cfg)
+}
+
+// BuildRAGContext gathers the research (news format) + Thai-KB context for a
+// question. It depends only on the question/format — the debate path builds it
+// once and shares it across all lens writers instead of paying for the web
+// search and vector lookup per writer.
+func (a *ScriptAgent) BuildRAGContext(ctx context.Context, question string, format *models.ContentFormat) (string, error) {
 	var ragContext strings.Builder
 
 	if format.FormatName == "news" {
@@ -86,20 +98,26 @@ func (a *ScriptAgent) Generate(ctx context.Context, question, questionerName, ca
 	// Business knowledge + brand context from the hand-written Thai KB (all formats)
 	ragResults, err := a.rag.Search(ctx, question, 5)
 	if err != nil {
-		return nil, fmt.Errorf("RAG search: %w", err)
+		return "", fmt.Errorf("RAG search: %w", err)
 	}
 	for _, r := range ragResults {
 		ragContext.WriteString(r.Content)
 		ragContext.WriteString("\n---\n")
 	}
+	return ragContext.String(), nil
+}
 
+// GenerateWithContext renders the script prompt with a prebuilt RAG context and
+// calls the LLM. Callers that generate several variants for one question (the
+// newsroom debate) use this to avoid rebuilding identical context.
+func (a *ScriptAgent) GenerateWithContext(ctx context.Context, question, questionerName, category string, format *models.ContentFormat, persona, archetypeInstr, roleInstr, ragContext, lens string, cfg *models.AgentConfig) (*GeneratedScript, error) {
 	userPrompt, err := renderTemplate(cfg.PromptTemplate, ScriptTemplateData{
 		Question:             question,
 		QuestionerName:       questionerName,
 		Category:             category,
 		ArchetypeInstruction: archetypeInstr,
 		RoleInstruction:      roleInstr,
-		RAGContext:           ragContext.String(),
+		RAGContext:           ragContext,
 		FormatInstruction:    format.ScriptInstruction,
 		AudiencePersona:      persona,
 		DebateLens:           lens,

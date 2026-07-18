@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
@@ -47,42 +48,45 @@ type scriptJudgeFn func(cands []agent.JudgeCandidate) (*agent.JudgeVerdict, erro
 // Fail-open ladder: judge error → first candidate; one candidate → skip judge;
 // zero candidates → error (caller runs the plain single-pass generate).
 func runScriptDebate(lenses []debateLens, gen scriptGenFn, judge scriptJudgeFn) (*agent.GeneratedScript, []agent.JudgeCandidate, *agent.JudgeVerdict, string, error) {
-	type slot struct {
-		script *agent.GeneratedScript
-		err    error
-	}
-	slots := make([]slot, len(lenses))
-	var wg sync.WaitGroup
+	// Index-assigned slots keep candidate order stable (same pattern as
+	// VisualQAAgent.Review); each writer is fail-open so Wait is just a barrier.
+	scripts := make([]*agent.GeneratedScript, len(lenses))
+	var g errgroup.Group
+	g.SetLimit(4)
 	for i, l := range lenses {
-		wg.Add(1)
-		go func(i int, l debateLens) {
-			defer wg.Done()
-			s, err := gen("## มุมมองการเขียนรอบนี้ (" + l.Name + ")\n" + l.Instruction)
-			slots[i] = slot{script: s, err: err}
-		}(i, l)
+		i, l := i, l
+		g.Go(func() error {
+			s, err := gen(l.Instruction)
+			if err == nil {
+				scripts[i] = s
+			}
+			return nil
+		})
 	}
-	wg.Wait()
+	g.Wait()
 
 	var cands []agent.JudgeCandidate
-	var scripts []*agent.GeneratedScript
-	for i, s := range slots {
-		if s.err != nil || s.script == nil {
+	var first *agent.GeneratedScript
+	for i, s := range scripts {
+		if s == nil {
 			continue
 		}
-		cands = append(cands, agent.NewJudgeCandidate(lenses[i].Key, s.script))
-		scripts = append(scripts, s.script)
+		if first == nil {
+			first = s
+		}
+		cands = append(cands, agent.NewJudgeCandidate(lenses[i].Key, s))
 	}
 
-	switch len(scripts) {
+	switch len(cands) {
 	case 0:
 		return nil, nil, nil, "", fmt.Errorf("all %d debate writers failed", len(lenses))
 	case 1:
-		return scripts[0], cands, nil, "single_candidate", nil
+		return first, cands, nil, "single_candidate", nil
 	}
 
 	verdict, err := judge(cands)
 	if err != nil {
-		return scripts[0], cands, nil, "judge_failed", nil
+		return first, cands, nil, "judge_failed", nil
 	}
 	return &verdict.Final, cands, verdict, "judge", nil
 }
@@ -108,8 +112,16 @@ func (o *Orchestrator) generateScript(ctx context.Context, clipID string, q agen
 		return single()
 	}
 
+	// Research/KB context depends only on the question — build once and share
+	// across all lens writers instead of paying the web-search + vector lookup
+	// three times for identical output.
+	ragContext, rerr := o.scriptAgent.BuildRAGContext(ctx, q.Question, format)
+	if rerr != nil {
+		log.Printf("script debate: rag context failed (%v) — single-pass fallback", rerr)
+		return single()
+	}
 	gen := func(lensInstruction string) (*agent.GeneratedScript, error) {
-		return o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetypeInstr, roleInstr, lensInstruction, scriptCfg)
+		return o.scriptAgent.GenerateWithContext(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetypeInstr, roleInstr, ragContext, lensInstruction, scriptCfg)
 	}
 	judge := func(cands []agent.JudgeCandidate) (*agent.JudgeVerdict, error) {
 		return o.scriptJudgeAgent.Judge(ctx, agent.JudgeInput{

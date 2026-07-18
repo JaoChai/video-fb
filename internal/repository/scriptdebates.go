@@ -13,15 +13,9 @@ func NewScriptDebatesRepo(pool *pgxpool.Pool) *ScriptDebatesRepo {
 }
 
 // Insert appends one debate audit row. candidates/verdict are JSON-encoded;
-// verdict may be nil when the judge was skipped (single candidate) or failed.
+// a nil verdict (judge skipped or failed) is stored as NULL — pgx encodes a
+// nil []byte as SQL NULL.
 func (r *ScriptDebatesRepo) Insert(ctx context.Context, clipID string, candidates, verdict []byte, source string) error {
-	if verdict == nil {
-		_, err := r.pool.Exec(ctx,
-			`INSERT INTO script_debates (clip_id, candidates, verdict, source)
-			 VALUES ($1, $2, NULL, $3)`,
-			clipID, candidates, source)
-		return err
-	}
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO script_debates (clip_id, candidates, verdict, source)
 		 VALUES ($1, $2, $3, $4)`,
