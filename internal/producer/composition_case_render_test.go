@@ -18,6 +18,7 @@ func caseParams() ScenesParams {
 		ThemeKey: "case-file",
 		Scenes: []SceneSpec{
 			mk(1, "casefile", SceneContent{Title: "คดีบัญชีฟาร์มปลิว",
+				Hook: `เงินค้าง <span class="acc">65,000</span> หายไปไหน`,
 				Rows: []ContentRow{{Text: "ความเสียหาย: 30,000"}}, Stamp: "ด่วนที่สุด"}),
 			mk(2, "comic", SceneContent{Panels: []ContentPanel{
 				{Time: "วันที่ 1", T: "เปิดแอด"}, {Time: "คืนวันที่ 2", T: "ถูกปิด", Dark: true}}}),
@@ -41,11 +42,16 @@ func TestRenderCaseFormat(t *testing.T) {
 	for _, want := range []string{
 		`data-format="case"`,
 		"cf-folder", "cf-panel", "cf-polaroid", "cf-note", "cf-stamp-green",
+		"cf-hook", "cf-wm", "const FORMAT_CASE = true",
 		`คดีที่ 91`, // Go-injected case number
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("output missing %q", want)
 		}
+	}
+	// html/template pads numbers with spaces in JS context — compare whitespace-normalized.
+	if !strings.Contains(strings.Join(strings.Fields(html), " "), "const CASE_NO = 91 || 0;") {
+		t.Error("output missing the CASE_NO=91 constant")
 	}
 	if strings.Contains(html[strings.Index(html, "<script>"):], "-->") {
 		// "-->" หลัง <script> แรก = อันตราย (html/template ตัดบรรทัด)

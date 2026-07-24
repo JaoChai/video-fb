@@ -171,7 +171,30 @@
       .cf-stamp-green{font-family:var(--font-heading,"Sarabun"),sans-serif}
       [data-format='case'] .scrim{background:
         linear-gradient(180deg, rgba(6,24,64,.35) 0%, rgba(6,24,64,.75) 45%, rgba(6,24,64,.96) 62%, var(--navy-deep) 100%)}
-      [data-format='case'] .scene[data-layout="casefile"] .scene-content{bottom:480px}
+      /* full-frame pass (visual full-frame spec 2026-07-24) */
+      .cf-hook{font-weight:800;font-size:84px;line-height:1.32;padding-top:.06em;color:#fff;
+        text-align:left;text-shadow:0 4px 20px rgba(0,0,0,.7);overflow-wrap:break-word;
+        font-family:var(--font-heading,"Sarabun"),sans-serif}
+      .cf-hook .acc{color:var(--amber-bright)}
+      .cf-wm{position:absolute;top:150px;right:36px;font-weight:900;font-size:190px;line-height:1.3;
+        letter-spacing:0;color:rgba(188,210,255,.07);font-family:var(--font-heading,"Sarabun"),sans-serif;
+        white-space:nowrap;pointer-events:none}
+      [data-format='case'] .scene-bg::after{content:"";position:absolute;inset:0;
+        background-image:radial-gradient(rgba(188,210,255,.05) 2px,transparent 2.4px);
+        background-size:26px 26px}
+      /* casefile poster: hook on top over the cover image, folder pinned low */
+      [data-format='case'] .scene[data-layout="casefile"] .scene-content{top:200px;bottom:430px;
+        justify-content:space-between;align-items:stretch}
+      [data-format='case'] .scene[data-layout="casefile"] .scrim{background:
+        linear-gradient(180deg, rgba(6,24,64,.42) 0%, rgba(6,24,64,.30) 30%, rgba(6,24,64,.62) 55%, rgba(6,24,64,.94) 72%, var(--navy-deep) 100%)}
+      /* imageless case scenes fill the frame instead of hugging the caption band */
+      [data-format='case'] .scene[data-layout="comic"] .scene-content,
+      [data-format='case'] .scene[data-layout="board"] .scene-content,
+      [data-format='case'] .scene[data-layout="step"] .scene-content,
+      [data-format='case'] .scene[data-layout="stat"] .scene-content{top:150px;bottom:430px;justify-content:center}
+      /* hero/verdict reuse the cover image as a dim backdrop */
+      [data-format='case'] .scene[data-layout="hero"] .scene-bg,
+      [data-format='case'] .scene[data-layout="verdict"] .scene-bg{opacity:.45;filter:saturate(.7)}
       [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:0;bottom:0;justify-content:center}
 
       /* ── progress / badges / caption ── */
@@ -227,6 +250,8 @@
       const ENTRANCE_DUR = {{.EntranceDur}} || 0.6;
       const ENTRANCE_EASE = "{{.EntranceEase}}" || "power3.out";
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;
+      const FORMAT_CASE = {{if eq .Format "case"}}true{{else}}false{{end}};
+      const CASE_NO = {{.CaseNumber}} || 0;
 
       // ── Scene content (cleaned: NO emoji, real slots) ──
       const SCENES = {{.ScenesJSON}};
@@ -243,9 +268,17 @@
         w.setAttribute("data-layout", sc.type || "");
         w.setAttribute("data-layout-allow-overflow", "");
         const evPhoto = sc.type === "evidence";
+        // hero/verdict without their own image reuse the cover shot (scene 0's
+        // bg) as a dim backdrop — bookends the clip at zero extra image cost.
+        const bgSrc = (!sc.bg && FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict") &&
+          SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
+        // giant faint case-number watermark fills imageless case scenes
+        const wm = (FORMAT_CASE && CASE_NO > 0 &&
+          (sc.type === "comic" || sc.type === "board" || sc.type === "step" || sc.type === "stat"))
+          ? '<div class="cf-wm">' + "คดี " + CASE_NO + '</div>' : '';
         w.innerHTML =
-          (sc.bg && !evPhoto ? '<div class="scene-bg" style="background-image:url(\'' + sc.bg + '\')"></div>' : '<div class="scene-bg"></div>') +
-          '<div class="scrim"></div><div class="scene-content" data-i="' + i + '"></div>';
+          (bgSrc && !evPhoto ? '<div class="scene-bg" style="background-image:url(\'' + bgSrc + '\')"></div>' : '<div class="scene-bg"></div>') +
+          '<div class="scrim"></div>' + wm + '<div class="scene-content" data-i="' + i + '"></div>';
         root.insertBefore(w, document.getElementById("progress"));
       });
 
@@ -279,6 +312,7 @@
         }
         else if(sc.type==="tip"){ c.appendChild(el("div","pill",sc.pill)); c.appendChild(rowsBlock(sc.rows)); }
         else if(sc.type==="casefile"){
+          if(sc.hook)c.appendChild(el("h1","cf-hook",sc.hook));
           const f=el("div","cf-folder");
           f.appendChild(el("div","cf-label","CASE FILE"+(sc.caseNo?" · "+sc.caseNo:"")));
           f.appendChild(el("div","cf-name",sc.title));
