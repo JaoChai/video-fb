@@ -303,7 +303,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	scriptCfg, err := o.caseAgentConfig(ctx, "script")
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -341,7 +341,9 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	preset := producer.PresetByKey("editorial-bold")
-	if producer.StylePresetsEnabled() {
+	if producer.CaseFormatEnabled() {
+		preset = producer.CaseFilePreset // case format: fixed identity, skip random/weighted pickers
+	} else if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
 		preset = producer.PickPreset(last)
 		if producer.StylePresetsPerformanceEnabled() {
@@ -470,7 +472,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
 	o.tracker.StartStep("scene")
-	sceneCfg, err := o.agentsRepo.GetByName(ctx, "scene")
+	sceneCfg, err := o.caseAgentConfig(ctx, "scene")
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
@@ -604,7 +606,22 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, producer.CaseInfo{})
+	caseInfo := producer.CaseInfo{Enabled: preset.Key == producer.CaseFilePreset.Key}
+	if caseInfo.Enabled {
+		if clip, cErr := o.clipsRepo.GetByID(ctx, clipID); cErr == nil &&
+			clip.CaseNumber != nil && *clip.CaseNumber > 0 {
+			caseInfo.CaseNumber = *clip.CaseNumber // resume keeps its number
+		} else if n, nErr := o.clipsRepo.NextCaseNumber(ctx); nErr == nil {
+			if sErr := o.clipsRepo.SetCaseNumber(ctx, clipID, n); sErr == nil {
+				caseInfo.CaseNumber = n
+			} else {
+				log.Printf("case number: set failed (fail-open, clip renders without number): %v", sErr)
+			}
+		} else {
+			log.Printf("case number: next failed (fail-open, clip renders without number): %v", nErr)
+		}
+	}
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, caseInfo)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -825,7 +842,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	scriptCfg, err := o.caseAgentConfig(ctx, "script")
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}
@@ -879,6 +896,19 @@ func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) str
 		b.WriteString(" ")
 	}
 	return sanitizeVoiceText(b.String(), brandAliases)
+}
+
+// caseAgentConfig resolves the agent row for a role: when the case format is
+// on it prefers the "<name>_case" row, failing open to the classic row so a
+// missing/disabled case row never blocks production (spec §4).
+func (o *Orchestrator) caseAgentConfig(ctx context.Context, name string) (*models.AgentConfig, error) {
+	if producer.CaseFormatEnabled() {
+		if cfg, err := o.agentsRepo.GetByName(ctx, name+"_case"); err == nil && cfg.Enabled {
+			return cfg, nil
+		}
+		log.Printf("case format: %s_case row missing/disabled — falling back to %s", name, name)
+	}
+	return o.agentsRepo.GetByName(ctx, name)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
