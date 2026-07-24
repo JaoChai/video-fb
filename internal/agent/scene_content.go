@@ -9,7 +9,11 @@ import (
 // the old broken output; content now supplies its own bullet styling.
 const decorative = "•‣◦▪▸●★☆◆"
 
-var sceneLayouts = map[string]bool{"hook": true, "hero": true, "stat": true, "step": true, "tip": true, "cta": true}
+var sceneLayouts = map[string]bool{
+	"hook": true, "hero": true, "stat": true, "step": true, "tip": true, "cta": true,
+	// case-file format (spec 2026-07-24): investigation storytelling layouts
+	"casefile": true, "comic": true, "evidence": true, "board": true, "verdict": true,
+}
 
 // ClampLayout maps an LLM layout value to a supported one; unknown -> "hero".
 func ClampLayout(v string) string {

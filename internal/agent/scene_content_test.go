@@ -18,16 +18,17 @@ func TestStripEmoji(t *testing.T) {
 }
 
 func TestClampLayout(t *testing.T) {
-	for _, v := range []string{"hook", "hero", "stat", "step", "tip", "cta"} {
+	for _, v := range []string{"hook", "hero", "stat", "step", "tip", "cta",
+		"casefile", "comic", "evidence", "board", "verdict"} {
 		if ClampLayout(v) != v {
 			t.Errorf("ClampLayout(%q) changed a valid layout", v)
 		}
 	}
 	if ClampLayout("banana") != "hero" {
-		t.Error("unknown should -> hero")
+		t.Errorf("unknown layout must clamp to hero")
 	}
 	if ClampLayout("") != "hero" {
-		t.Error("empty should -> hero")
+		t.Errorf("empty layout must clamp to hero")
 	}
 }
 
