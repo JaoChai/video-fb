@@ -36,11 +36,24 @@ func buildEvidencePrompt(concept string, preset StylePreset, clipToken string) s
 		preset, clipToken)
 }
 
-// promptForScene picks the image prompt for one scene: the classic scene
-// prompt, or the evidence-photo prompt in case format. Single owner of this
-// choice so the fast (parallel) and sequential image paths can never drift.
+// buildCoverPrompt renders the poster image for the casefile opening scene: a
+// moody detective-desk establishing shot. Subject sits in the UPPER half —
+// the case folder card overlays the lower half (visual full-frame spec 2026-07-24).
+func buildCoverPrompt(concept string, preset StylePreset, clipToken string) string {
+	return buildImagePromptCore(concept,
+		"cinematic high-angle desk scene at night, the key subject placed in the UPPER half of the frame, lower half dark and uncluttered",
+		preset, clipToken)
+}
+
+// promptForScene picks the image prompt for one scene. Single owner of this
+// choice so the fast (parallel) and sequential image paths can never drift:
+// case format routes casefile → cover shot, evidence → forensic photo;
+// classic mode keeps the original scene prompt.
 func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken string, caseEnabled bool) string {
 	if caseEnabled {
+		if agent.ClampLayout(s.Layout) == "casefile" {
+			return buildCoverPrompt(s.ImagePrompt, preset, clipToken)
+		}
 		return buildEvidencePrompt(s.ImagePrompt, preset, clipToken)
 	}
 	return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
@@ -53,10 +66,11 @@ type CaseInfo struct {
 	CaseNumber int // 0 = unknown; the template then omits the case number
 }
 
-// evidenceImageScenes returns the scene numbers eligible for AI image
-// generation in case format: evidence-layout scenes only, capped at 2
-// (spec §6). Returns nil in classic mode = no restriction.
-func evidenceImageScenes(scenes []agent.GeneratedScene, caseEnabled bool) map[int]bool {
+// caseImageScenes returns the scene numbers eligible for AI image generation
+// in case format: the casefile cover + evidence scenes, capped at 2 total
+// (visual full-frame spec 2026-07-24). Returns nil in classic mode = no
+// restriction.
+func caseImageScenes(scenes []agent.GeneratedScene, caseEnabled bool) map[int]bool {
 	if !caseEnabled {
 		return nil
 	}
@@ -65,7 +79,8 @@ func evidenceImageScenes(scenes []agent.GeneratedScene, caseEnabled bool) map[in
 		if len(allowed) >= 2 {
 			break
 		}
-		if agent.ClampLayout(s.Layout) == "evidence" && strings.TrimSpace(s.ImagePrompt) != "" {
+		layout := agent.ClampLayout(s.Layout)
+		if (layout == "casefile" || layout == "evidence") && strings.TrimSpace(s.ImagePrompt) != "" {
 			allowed[s.SceneNumber] = true
 		}
 	}

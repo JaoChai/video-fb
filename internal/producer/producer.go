@@ -311,7 +311,7 @@ type assembleOutput struct {
 // still used. Populates bgPaths (sceneNumber → file); errors are non-fatal by
 // design (BuildScenes renders a css background for any scene without a file).
 func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string, caseInfo CaseInfo) {
-	allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
+	allowedImg := caseImageScenes(scenes, caseInfo.Enabled)
 	var mu sync.Mutex
 	var primaryDown, fallbackDown atomic.Bool
 	var g errgroup.Group
@@ -391,7 +391,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if PipelineFastEnabled() {
 		p.generateSceneImagesParallel(ctx, scenes, preset, clipID, clipDir, bgPaths, caseInfo)
 	} else {
-		allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
+		allowedImg := caseImageScenes(scenes, caseInfo.Enabled)
 		imageDegraded := false
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) == "" {

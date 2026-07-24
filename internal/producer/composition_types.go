@@ -65,6 +65,7 @@ type SceneContent struct {
 	CaseNo string         `json:"caseNo,omitempty"` // "คดีที่ 91" — casefile + verdict only
 	Stamp  string         `json:"stamp,omitempty"`  // "ด่วนที่สุด" / "REJECTED" / "ปิดคดี - รอดได้"
 	Panels []ContentPanel `json:"panels,omitempty"` // comic layout only
+	Hook   string         `json:"hook,omitempty"`   // casefile poster headline (from on_screen_text, emphasis-highlighted)
 }
 
 // ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
