@@ -47,7 +47,7 @@ func TestRenderCaseFormat(t *testing.T) {
 			t.Errorf("output missing %q", want)
 		}
 	}
-	if strings.Contains(html, "-->") && strings.Contains(html[strings.Index(html, "<script>"):], "-->") {
+	if strings.Contains(html[strings.Index(html, "<script>"):], "-->") {
 		// "-->" หลัง <script> แรก = อันตราย (html/template ตัดบรรทัด)
 		t.Error("inline script must never contain the sequence minus-minus-gt")
 	}

@@ -31,18 +31,19 @@ var CaseFilePreset = StylePreset{
 // buildScenePrompt it does NOT reserve the lower 45% of the frame — the image
 // sits inside a polaroid card, not under a text card.
 func buildEvidencePrompt(concept string, preset StylePreset, clipToken string) string {
-	subject := strings.TrimSpace(concept)
-	if subject == "" {
-		subject = genericSceneSubject
+	return buildImagePromptCore(concept,
+		"single subject centered, plain background, generous margins on all sides",
+		preset, clipToken)
+}
+
+// promptForScene picks the image prompt for one scene: the classic scene
+// prompt, or the evidence-photo prompt in case format. Single owner of this
+// choice so the fast (parallel) and sequential image paths can never drift.
+func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken string, caseEnabled bool) string {
+	if caseEnabled {
+		return buildEvidencePrompt(s.ImagePrompt, preset, clipToken)
 	}
-	return preset.ImageAnchor + " " +
-		"Subject: " + subject + ". " +
-		"Composition: single subject centered, plain background, generous margins on all sides. " +
-		"Maintain a cohesive style across the whole set: same lighting direction, " +
-		"same color grade (style set: " + clipToken + "). " +
-		"Avoid: oversaturated colors, warped hands or faces, generic stock-photo look, " +
-		"watermarks, cluttered composition. " +
-		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image."
+	return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 }
 
 // CaseInfo carries the case-file production context down the producer path.

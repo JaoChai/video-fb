@@ -606,21 +606,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	caseInfo := producer.CaseInfo{Enabled: preset.Key == producer.CaseFilePreset.Key}
-	if caseInfo.Enabled {
-		if clip, cErr := o.clipsRepo.GetByID(ctx, clipID); cErr == nil &&
-			clip.CaseNumber != nil && *clip.CaseNumber > 0 {
-			caseInfo.CaseNumber = *clip.CaseNumber // resume keeps its number
-		} else if n, nErr := o.clipsRepo.NextCaseNumber(ctx); nErr == nil {
-			if sErr := o.clipsRepo.SetCaseNumber(ctx, clipID, n); sErr == nil {
-				caseInfo.CaseNumber = n
-			} else {
-				log.Printf("case number: set failed (fail-open, clip renders without number): %v", sErr)
-			}
-		} else {
-			log.Printf("case number: next failed (fail-open, clip renders without number): %v", nErr)
-		}
-	}
+	caseInfo := o.resolveCaseInfo(ctx, clipID, preset)
 	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, caseInfo)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
@@ -909,6 +895,30 @@ func (o *Orchestrator) caseAgentConfig(ctx context.Context, name string) (*model
 		log.Printf("case format: %s_case row missing/disabled — falling back to %s", name, name)
 	}
 	return o.agentsRepo.GetByName(ctx, name)
+}
+
+// resolveCaseInfo builds the CaseInfo for a clip about to render: a resumed
+// clip keeps its stored case number; a fresh case clip gets the next running
+// number. Every error path fails open — the clip renders without a number
+// rather than block production (spec §5).
+func (o *Orchestrator) resolveCaseInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.CaseInfo {
+	if preset.Key != producer.CaseFilePreset.Key {
+		return producer.CaseInfo{}
+	}
+	if clip, err := o.clipsRepo.GetByID(ctx, clipID); err == nil &&
+		clip.CaseNumber != nil && *clip.CaseNumber > 0 {
+		return producer.CaseInfo{Enabled: true, CaseNumber: *clip.CaseNumber} // resume keeps its number
+	}
+	n, err := o.clipsRepo.NextCaseNumber(ctx)
+	if err != nil {
+		log.Printf("case number: next failed (fail-open, clip renders without number): %v", err)
+		return producer.CaseInfo{Enabled: true}
+	}
+	if err := o.clipsRepo.SetCaseNumber(ctx, clipID, n); err != nil {
+		log.Printf("case number: set failed (fail-open, clip renders without number): %v", err)
+		return producer.CaseInfo{Enabled: true}
+	}
+	return producer.CaseInfo{Enabled: true, CaseNumber: n}
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {

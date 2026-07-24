@@ -327,10 +327,7 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 		g.Go(func() error {
 			if !fileExists(bgFile) {
-				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
-				if caseInfo.Enabled {
-					prompt = buildEvidencePrompt(s.ImagePrompt, preset, clipID)
-				}
+				prompt := promptForScene(s, preset, clipID, caseInfo.Enabled)
 				generated := false
 				if !primaryDown.Load() {
 					if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
@@ -405,10 +402,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 			if !fileExists(bgFile) && !imageDegraded {
-				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
-				if caseInfo.Enabled {
-					prompt = buildEvidencePrompt(s.ImagePrompt, preset, clipID)
-				}
+				prompt := promptForScene(s, preset, clipID, caseInfo.Enabled)
 				if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
 					log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
 					imageDegraded = true

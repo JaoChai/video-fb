@@ -285,21 +285,26 @@ const genericSceneSubject = "abstract modern digital-marketing concept art"
 // same string. It is placed in brand.go because it is purely brand-prompt
 // composition, building on ImageAnchor and SafeZone which live here.
 func buildScenePrompt(concept, aspect string, preset StylePreset, clipToken string) string {
+	sz := preset.Palette.SafeZone(aspect)
+	return buildImagePromptCore(concept, sz.NegativeSpace, preset, clipToken) + " " +
+		"Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% simple and uncluttered (a text card is overlaid there)."
+}
+
+// buildImagePromptCore is the shared body of buildScenePrompt and
+// buildEvidencePrompt: anchor + subject + composition + cross-scene cohesion +
+// anti-"AI-slop" exclusions. Callers append their own placement rule (or none).
+func buildImagePromptCore(concept, composition string, preset StylePreset, clipToken string) string {
 	subject := strings.TrimSpace(concept)
 	if subject == "" {
 		subject = genericSceneSubject
 	}
-	sz := preset.Palette.SafeZone(aspect)
 	return preset.ImageAnchor + " " +
 		"Subject: " + subject + ". " +
-		"Composition: " + sz.NegativeSpace + ". " +
+		"Composition: " + composition + ". " +
 		"Keep the image uncluttered with generous negative space. " +
-		// Cross-scene cohesion: all scenes in one clip share the same look.
 		"Maintain a cohesive style across the whole set: same lighting direction, " +
 		"same color grade, same rendering style (style set: " + clipToken + "). " +
-		// Anti-"AI-slop" exclusions.
 		"Avoid: oversaturated colors, plastic/glossy surfaces, warped hands or faces, " +
 		"generic stock-photo look, watermarks, extra limbs, cluttered composition. " +
-		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image. " +
-		"Place the main subject in the UPPER 55% of the frame; keep the LOWER 45% simple and uncluttered (a text card is overlaid there)."
+		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image."
 }
