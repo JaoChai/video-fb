@@ -321,7 +321,7 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 			continue
 		}
 		if allowedImg != nil && !allowedImg[s.SceneNumber] {
-			continue // case format: only evidence scenes get AI images (cap 2)
+			continue // case format: only cover + evidence scenes get AI images (cap 2)
 		}
 		s := s
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
@@ -398,7 +398,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 				continue
 			}
 			if allowedImg != nil && !allowedImg[s.SceneNumber] {
-				continue // case format: only evidence scenes get AI images (cap 2)
+				continue // case format: only cover + evidence scenes get AI images (cap 2)
 			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 			if !fileExists(bgFile) && !imageDegraded {

@@ -43,6 +43,7 @@ func TestRenderCaseFormat(t *testing.T) {
 		`data-format="case"`,
 		"cf-folder", "cf-panel", "cf-polaroid", "cf-note", "cf-stamp-green",
 		"cf-hook", "cf-wm", "const FORMAT_CASE = true",
+		"SCENES[0].bg", // hero/verdict cover-image reuse expression must survive edits
 		`คดีที่ 91`, // Go-injected case number
 	} {
 		if !strings.Contains(html, want) {
