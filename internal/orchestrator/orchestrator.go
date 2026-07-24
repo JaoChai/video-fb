@@ -604,7 +604,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset)
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, producer.CaseInfo{})
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}

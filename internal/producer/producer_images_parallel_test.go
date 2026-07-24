@@ -30,7 +30,7 @@ func TestGenerateSceneImagesParallel_SkipsAndReuses(t *testing.T) {
 
 	p := &Producer{} // kie == nil: a GenerateImage call would panic
 	bgPaths := map[int]string{}
-	p.generateSceneImagesParallel(context.Background(), scenes, StylePreset{}, "clip", clipDir, bgPaths)
+	p.generateSceneImagesParallel(context.Background(), scenes, StylePreset{}, "clip", clipDir, bgPaths, CaseInfo{})
 
 	if len(bgPaths) != 1 {
 		t.Fatalf("want only scene 2 collected, got %v", bgPaths)

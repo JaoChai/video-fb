@@ -45,6 +45,13 @@ func buildEvidencePrompt(concept string, preset StylePreset, clipToken string) s
 		"ABSOLUTELY NO text, letters, numbers, words, UI labels, or logos anywhere in the image."
 }
 
+// CaseInfo carries the case-file production context down the producer path.
+// Zero value = classic format (byte-identical to today's output).
+type CaseInfo struct {
+	Enabled    bool
+	CaseNumber int // 0 = unknown; the template then omits the case number
+}
+
 // evidenceImageScenes returns the scene numbers eligible for AI image
 // generation in case format: evidence-layout scenes only, capped at 2
 // (spec §6). Returns nil in classic mode = no restriction.

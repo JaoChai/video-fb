@@ -70,3 +70,10 @@ func TestEvidenceImageScenes(t *testing.T) {
 		t.Errorf("allowed = %v, want scenes 2 and 4 only (cap 2)", allowed)
 	}
 }
+
+func TestCaseInfoZeroValueIsClassic(t *testing.T) {
+	var ci CaseInfo
+	if ci.Enabled || ci.CaseNumber != 0 {
+		t.Error("zero CaseInfo must mean classic format")
+	}
+}
