@@ -52,7 +52,7 @@ func TestAssembleHyperframes916_Smoke(t *testing.T) {
 			Content: json.RawMessage(`{"title":"เจอปัญหานี้อยู่?","cta":"ทักหาเราเลย","brand":"ADS VANCE"}`)},
 	}
 
-	out, err := p.AssembleHyperframes916(context.Background(), "smoke-clip", scenes, PresetByKey("editorial-bold"))
+	out, err := p.AssembleHyperframes916(context.Background(), "smoke-clip", scenes, PresetByKey("editorial-bold"), CaseInfo{})
 	if err != nil {
 		t.Fatalf("assemble: %v", err)
 	}

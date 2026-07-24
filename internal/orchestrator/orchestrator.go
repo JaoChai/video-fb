@@ -303,7 +303,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	scriptCfg, err := o.caseAgentConfig(ctx, "script")
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -341,7 +341,9 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
 	preset := producer.PresetByKey("editorial-bold")
-	if producer.StylePresetsEnabled() {
+	if producer.CaseFormatEnabled() {
+		preset = producer.CaseFilePreset // case format: fixed identity, skip random/weighted pickers
+	} else if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
 		preset = producer.PickPreset(last)
 		if producer.StylePresetsPerformanceEnabled() {
@@ -470,7 +472,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
 	o.tracker.StartStep("scene")
-	sceneCfg, err := o.agentsRepo.GetByName(ctx, "scene")
+	sceneCfg, err := o.caseAgentConfig(ctx, "scene")
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
@@ -604,7 +606,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset)
+	caseInfo := o.resolveCaseInfo(ctx, clipID, preset)
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, caseInfo)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -825,7 +828,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-	scriptCfg, err := o.agentsRepo.GetByName(ctx, "script")
+	scriptCfg, err := o.caseAgentConfig(ctx, "script")
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}
@@ -839,9 +842,12 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	}
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
-	// Retried clips keep their original visual identity. PresetByKey falls back to
-	// editorial-bold (Presets[0]) if the stored key is empty (pre-flag clips have no stored preset).
-	retryPreset := producer.PresetByKey(clip.StylePreset)
+	// A full rebuild regenerates ALL content with the CURRENT format's prompts
+	// (caseAgentConfig above), so the preset must follow the current flag too —
+	// a stored classic preset + case prompts (or the inverse after a rollback)
+	// would render a mongrel clip. Resume-at-render keeps the stored identity
+	// instead because it reuses the stored scenes.
+	retryPreset := retryPresetForCurrentMode(clip.StylePreset)
 	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "")
 }
 
@@ -879,6 +885,59 @@ func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) str
 		b.WriteString(" ")
 	}
 	return sanitizeVoiceText(b.String(), brandAliases)
+}
+
+// caseAgentConfig resolves the agent row for a role: when the case format is
+// on it prefers the "<name>_case" row, failing open to the classic row so a
+// missing/disabled case row never blocks production (spec §4).
+func (o *Orchestrator) caseAgentConfig(ctx context.Context, name string) (*models.AgentConfig, error) {
+	if producer.CaseFormatEnabled() {
+		if cfg, err := o.agentsRepo.GetByName(ctx, name+"_case"); err == nil && cfg.Enabled {
+			return cfg, nil
+		}
+		log.Printf("case format: %s_case row missing/disabled — falling back to %s", name, name)
+	}
+	return o.agentsRepo.GetByName(ctx, name)
+}
+
+// retryPresetForCurrentMode picks the preset for a FULL-rebuild retry, which
+// regenerates every asset with the current mode's prompts: case format on →
+// always the case preset; off → the stored preset, except a stored case-file
+// key (flag rolled back mid-life) falls back to the classic default so prompts
+// and visuals never mix modes.
+func retryPresetForCurrentMode(stored string) producer.StylePreset {
+	if producer.CaseFormatEnabled() {
+		return producer.CaseFilePreset
+	}
+	p := producer.PresetByKey(stored)
+	if p.Key == producer.CaseFilePreset.Key {
+		return producer.PresetByKey("")
+	}
+	return p
+}
+
+// resolveCaseInfo builds the CaseInfo for a clip about to render: a resumed
+// clip keeps its stored case number; a fresh case clip gets the next running
+// number. Every error path fails open — the clip renders without a number
+// rather than block production (spec §5).
+func (o *Orchestrator) resolveCaseInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.CaseInfo {
+	if preset.Key != producer.CaseFilePreset.Key {
+		return producer.CaseInfo{}
+	}
+	if clip, err := o.clipsRepo.GetByID(ctx, clipID); err == nil &&
+		clip.CaseNumber != nil && *clip.CaseNumber > 0 {
+		return producer.CaseInfo{Enabled: true, CaseNumber: *clip.CaseNumber} // resume keeps its number
+	}
+	n, err := o.clipsRepo.NextCaseNumber(ctx)
+	if err != nil {
+		log.Printf("case number: next failed (fail-open, clip renders without number): %v", err)
+		return producer.CaseInfo{Enabled: true}
+	}
+	if err := o.clipsRepo.SetCaseNumber(ctx, clipID, n); err != nil {
+		log.Printf("case number: set failed (fail-open, clip renders without number): %v", err)
+		return producer.CaseInfo{Enabled: true}
+	}
+	return producer.CaseInfo{Enabled: true, CaseNumber: n}
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {

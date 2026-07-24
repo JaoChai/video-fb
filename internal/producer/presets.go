@@ -148,8 +148,12 @@ func PickPresetWeighted(lastKey string, scores []models.PresetScore, epsilon flo
 }
 
 // PresetByKey returns the preset with key, or the editorial-bold preset (Presets[0])
-// when key is unknown/empty. Never panics.
+// when key is unknown/empty. Resolves the out-of-pool case-file preset too, so a
+// retried case clip keeps its visual identity. Never panics.
 func PresetByKey(key string) StylePreset {
+	if key == CaseFilePreset.Key {
+		return CaseFilePreset
+	}
 	for _, p := range Presets {
 		if p.Key == key {
 			return p

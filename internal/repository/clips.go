@@ -21,7 +21,7 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
 	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format,
-	production_stage, review_retry_count, auto_review_held`
+	production_stage, review_retry_count, auto_review_held, case_number`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -31,7 +31,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.Video169URL, &c.Video916URL, &c.ThumbnailURL,
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
 		&c.FailReason, &c.RetryCount, &c.StylePreset, &c.ContentFormat,
-		&c.ProductionStage, &c.ReviewRetryCount, &c.AutoReviewHeld,
+		&c.ProductionStage, &c.ReviewRetryCount, &c.AutoReviewHeld, &c.CaseNumber,
 	)
 	return c, err
 }
@@ -255,6 +255,29 @@ func (r *ClipsRepo) ClearAutoReviewHeld(ctx context.Context, id string) error {
 func (r *ClipsRepo) IncrementReviewRetry(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE clips SET review_retry_count = review_retry_count + 1, updated_at = NOW() WHERE id = $1`, id)
 	return err
+}
+
+// NextCaseNumber returns the next case-file running number: continues from
+// MAX(case_number), seeded by the published-clip count so case #1 starts after
+// the channel's real history (spec 2026-07-24 §5).
+func (r *ClipsRepo) NextCaseNumber(ctx context.Context) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT GREATEST(
+		COALESCE((SELECT MAX(case_number) FROM clips), 0),
+		(SELECT COUNT(*) FROM clips WHERE status = 'published')) + 1`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("next case number: %w", err)
+	}
+	return n, nil
+}
+
+// SetCaseNumber pins a clip's case number (assigned once at production start).
+func (r *ClipsRepo) SetCaseNumber(ctx context.Context, id string, n int) error {
+	if _, err := r.pool.Exec(ctx,
+		`UPDATE clips SET case_number = $1, updated_at = NOW() WHERE id = $2`, n, id); err != nil {
+		return fmt.Errorf("set case number: %w", err)
+	}
+	return nil
 }
 
 // ClearFailReason wipes a stale fail_reason once a clip has successfully

@@ -310,7 +310,8 @@ type assembleOutput struct {
 // that stage (they start at the next one), but images already generated are
 // still used. Populates bgPaths (sceneNumber → file); errors are non-fatal by
 // design (BuildScenes renders a css background for any scene without a file).
-func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string) {
+func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string, caseInfo CaseInfo) {
+	allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
 	var mu sync.Mutex
 	var primaryDown, fallbackDown atomic.Bool
 	var g errgroup.Group
@@ -319,11 +320,14 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 		if strings.TrimSpace(s.ImagePrompt) == "" {
 			continue
 		}
+		if allowedImg != nil && !allowedImg[s.SceneNumber] {
+			continue // case format: only evidence scenes get AI images (cap 2)
+		}
 		s := s
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 		g.Go(func() error {
 			if !fileExists(bgFile) {
-				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
+				prompt := promptForScene(s, preset, clipID, caseInfo.Enabled)
 				generated := false
 				if !primaryDown.Load() {
 					if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
@@ -358,7 +362,7 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 // missing/failed → css) → GeneratedScene→SceneSpec → fill the multi-scene
 // template → render. Upload / thumbnail / clip-status are the caller's job
 // (orchestrator). Requires EnableHyperframes to have been called.
-func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*assembleOutput, error) {
+func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset, caseInfo CaseInfo) (*assembleOutput, error) {
 	if p.hf == nil {
 		return nil, fmt.Errorf("hyperframes not enabled (call EnableHyperframes)")
 	}
@@ -385,16 +389,20 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	//    turns a "kie is down" run from ~hours into ~minutes.
 	bgPaths := map[int]string{}
 	if PipelineFastEnabled() {
-		p.generateSceneImagesParallel(ctx, scenes, preset, clipID, clipDir, bgPaths)
+		p.generateSceneImagesParallel(ctx, scenes, preset, clipID, clipDir, bgPaths, caseInfo)
 	} else {
+		allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
 		imageDegraded := false
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) == "" {
 				continue
 			}
+			if allowedImg != nil && !allowedImg[s.SceneNumber] {
+				continue // case format: only evidence scenes get AI images (cap 2)
+			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 			if !fileExists(bgFile) && !imageDegraded {
-				prompt := buildScenePrompt(s.ImagePrompt, "9:16", preset, clipID)
+				prompt := promptForScene(s, preset, clipID, caseInfo.Enabled)
 				if genErr := p.kie.GenerateImage(ctx, prompt, "9:16", bgFile); genErr != nil {
 					log.Printf("AssembleHyperframes916: scene %d image gen failed — tripping circuit breaker, remaining scenes use css: %v", s.SceneNumber, genErr)
 					imageDegraded = true
@@ -417,6 +425,10 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if len(bounds) > 0 {
 		total = bounds[len(bounds)-1].End
 	}
+	format := ""
+	if caseInfo.Enabled {
+		format = "case"
+	}
 	params := ScenesParams{
 		AspectRatio:     "9:16",
 		BrandName:       BrandName,
@@ -429,6 +441,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		BrandCSS:        preset.BrandCSS(),
 		ThemeKey:        preset.Key,
 		Motion:          preset.Motion,
+		Format:          format,
+		CaseNumber:      caseInfo.CaseNumber,
 	}
 
 	params.MotionV2 = SceneMotionV2Enabled()
@@ -521,9 +535,9 @@ func (p *Producer) uploadPersistent(ctx context.Context, localPath, r2Key, kieDi
 // from the first frame, uploads both to kie.ai, and returns their URLs. It is the
 // multi-scene counterpart to the static Produce. Requires EnableHyperframes and a
 // non-nil tracker (the production path always provides one).
-func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset) (*ProduceResult, error) {
+func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, scenes []agent.GeneratedScene, preset StylePreset, caseInfo CaseInfo) (*ProduceResult, error) {
 	p.tracker.StartStep("assembly")
-	out, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset)
+	out, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset, caseInfo)
 	if err != nil {
 		p.tracker.FailStep("assembly", err)
 		return nil, fmt.Errorf("assemble hyperframes: %w", err)
