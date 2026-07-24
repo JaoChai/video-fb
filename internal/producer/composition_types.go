@@ -60,6 +60,11 @@ type SceneContent struct {
 	Pill      string        `json:"pill,omitempty"`
 	CTA       string        `json:"cta,omitempty"`
 	Brand     string        `json:"brand,omitempty"`
+
+	// case-file format (spec 2026-07-24). CaseNo is Go-injected (never LLM).
+	CaseNo string         `json:"caseNo,omitempty"` // "คดีที่ 91" — casefile + verdict only
+	Stamp  string         `json:"stamp,omitempty"`  // "ด่วนที่สุด" / "REJECTED" / "ปิดคดี - รอดได้"
+	Panels []ContentPanel `json:"panels,omitempty"` // comic layout only
 }
 
 // ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
@@ -72,6 +77,15 @@ type ContentRow struct {
 type ContentChip struct {
 	N string `json:"n"`
 	T string `json:"t"`
+}
+
+// ContentPanel is one comic panel (case-file format). Dark=true renders the
+// dramatic navy panel variant.
+type ContentPanel struct {
+	Time  string `json:"time,omitempty"`
+	T     string `json:"t"`
+	Quote string `json:"quote,omitempty"`
+	Dark  bool   `json:"dark,omitempty"`
 }
 
 // TransitionCue is one scene-transition sound effect placement. Name is the

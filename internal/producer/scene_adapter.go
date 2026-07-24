@@ -99,9 +99,9 @@ func highlightTitleStr(title string, words []string) string {
 // multiplies its per-theme ENTRANCE_DUR by the factor this maps to.
 func speedForLayout(layout string) string {
 	switch layout {
-	case "hook":
+	case "hook", "casefile":
 		return "fast"
-	case "hero", "stat":
+	case "hero", "stat", "evidence", "verdict":
 		return "slow"
 	default:
 		return "normal"
@@ -133,6 +133,7 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	}
 	var raw struct {
 		Kicker, Title, Sub, Stat, Unit, StatLabel, Num, Of, Pill, CTA, Brand string
+		Stamp                                                                string
 		Rows                                                                 []struct {
 			T   string `json:"t"`
 			Bad bool   `json:"bad"`
@@ -141,6 +142,12 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 			N string `json:"n"`
 			T string `json:"t"`
 		} `json:"chips"`
+		Panels []struct {
+			Time  string `json:"time"`
+			T     string `json:"t"`
+			Quote string `json:"quote"`
+			Dark  bool   `json:"dark"`
+		} `json:"panels"`
 	}
 	if len(s.Content) > 0 {
 		if err := json.Unmarshal(s.Content, &raw); err != nil {
@@ -165,10 +172,25 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	for _, ch := range raw.Chips {
 		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T)})
 	}
+	c.Stamp = agent.TruncateRunes(clean(raw.Stamp), 18)
+	for _, pn := range raw.Panels {
+		if len(c.Panels) >= 3 { // template จัดวางได้สูงสุด 3 ช่องโดยไม่ล้นเฟรม
+			break
+		}
+		if t := agent.TruncateRunes(clean(pn.T), 36); t != "" {
+			c.Panels = append(c.Panels, ContentPanel{
+				Time:  agent.TruncateRunes(clean(pn.Time), 12),
+				T:     t,
+				Quote: agent.TruncateRunes(clean(pn.Quote), 44),
+				Dark:  pn.Dark,
+			})
+		}
+	}
 	// Fallback: if the model gave no structured content, render a hero title from
 	// the legacy on_screen_text + emphasis_words so the scene is never blank.
 	empty := c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" &&
-		len(c.Chips) == 0 && c.Pill == "" && c.Sub == "" && c.StatLabel == ""
+		len(c.Chips) == 0 && c.Pill == "" && c.Sub == "" && c.StatLabel == "" &&
+		c.Stamp == "" && len(c.Panels) == 0
 	if empty {
 		log.Printf("scene %d: no structured content (layout %q) — hero fallback from on_screen_text", s.SceneNumber, s.Layout)
 		c.Layout = "hero"
