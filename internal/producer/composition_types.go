@@ -133,4 +133,10 @@ type ScenesParams struct {
 	MotionV2 bool // enable v2 scene motion (parallax drift, entrance variety, count-up)
 
 	Cover bool // enable frame-0 cover behavior for scene index 0 (COVER_SCENE_ENABLED)
+
+	// Case-file format (spec 2026-07-24). Format "case" switches the template's
+	// data-format attribute; CaseNumber > 0 injects "คดีที่ N" into the
+	// casefile/verdict scenes. Zero values = classic format, byte-identical output.
+	Format     string
+	CaseNumber int
 }

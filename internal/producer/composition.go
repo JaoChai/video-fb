@@ -35,6 +35,7 @@ type scenesTemplateData struct {
 	Cover          bool
 
 	ThemeKey     string
+	Format       string
 	EntranceDur  float64
 	EntranceEase string
 	BGZoomTo     float64
@@ -102,6 +103,11 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		if sc.BackgroundMode == "image" {
 			contents[i].BackgroundImage = sc.BackgroundImage
 		}
+		// Case number is Go-injected — never trusted from the LLM (spec §5).
+		if p.Format == "case" && p.CaseNumber > 0 &&
+			(contents[i].Layout == "casefile" || contents[i].Layout == "verdict") {
+			contents[i].CaseNo = fmt.Sprintf("คดีที่ %d", p.CaseNumber)
+		}
 	}
 	scenesJSON, err := json.Marshal(contents)
 	if err != nil {
@@ -142,6 +148,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		MotionV2:        p.MotionV2,
 		Cover:           p.Cover,
 		ThemeKey:        p.ThemeKey,
+		Format:          p.Format,
 		EntranceDur:     motion.EntranceDur,
 		EntranceEase:    motion.EntranceEase,
 		BGZoomTo:        motion.BGZoomTo,

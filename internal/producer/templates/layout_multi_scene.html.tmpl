@@ -121,6 +121,59 @@
         padding:26px 64px;border-radius:999px;box-shadow:0 20px 56px rgba(255,180,84,.4)}
       .brandbig{font-weight:800;font-size:88px;line-height:1.3;color:#fff;text-align:center;letter-spacing:.04em}
 
+      /* ── case-file format (data-format='case') ──
+         Thai-safe ตามกติกาไฟล์นี้: letter-spacing >= 0, line-height >= 1.3,
+         overflow-wrap:break-word เท่านั้น. Animation = GSAP timeline เดิม (ผ่าน
+         kids-stagger ที่มีอยู่) — ไม่มี CSS transition/keyframes ใหม่ */
+      .cf-folder{background:#E9DCB5;color:#3A2E12;border-radius:20px 34px 20px 20px;
+        padding:52px 48px 44px;position:relative;box-shadow:0 30px 80px rgba(0,0,0,.5);
+        display:flex;flex-direction:column;align-items:flex-start}
+      .cf-folder::before{content:"";position:absolute;top:-26px;left:44px;width:300px;height:40px;
+        background:#E9DCB5;border-radius:18px 18px 0 0}
+      .cf-label{font-weight:800;font-size:30px;letter-spacing:.16em;color:#8A6D2F}
+      .cf-name{font-weight:800;font-size:64px;line-height:1.32;padding-top:.06em;margin-top:8px;
+        overflow-wrap:break-word;max-width:100%}
+      .cf-meta{margin-top:18px;display:flex;flex-direction:column;gap:8px;max-width:100%}
+      .cf-meta-line{font-weight:600;font-size:34px;line-height:1.4;color:#6B5622;overflow-wrap:break-word}
+      .cf-stamp-red{display:inline-block;transform:rotate(-8deg);border:5px solid #C0392B;color:#C0392B;
+        font-weight:800;font-size:40px;line-height:1.3;letter-spacing:.14em;padding:10px 30px;
+        border-radius:14px;background:rgba(255,255,255,.55);margin-top:26px}
+      .cf-panels{display:flex;flex-direction:column;gap:26px}
+      .cf-panel{position:relative;background:#FFF6E6;color:#2A2113;border:6px solid #101C36;
+        border-radius:14px;padding:32px 32px 28px;box-shadow:10px 10px 0 rgba(0,0,0,.55)}
+      .cf-panel.dark{background:#16264A;color:#fff}
+      .cf-panel-halftone{position:absolute;inset:0;border-radius:8px;opacity:.10;pointer-events:none;
+        background-image:radial-gradient(#000 2px,transparent 2.4px);background-size:18px 18px}
+      .cf-panel.dark .cf-panel-halftone{background-image:radial-gradient(#fff 2px,transparent 2.4px)}
+      .cf-panel-time{position:absolute;top:-24px;left:26px;background:var(--amber);color:#fff;
+        font-weight:800;font-size:26px;line-height:1.3;letter-spacing:.1em;padding:6px 20px;
+        border-radius:10px;border:4px solid #101C36}
+      .cf-panel-title{font-weight:800;font-size:44px;line-height:1.32;padding-top:.06em;overflow-wrap:break-word}
+      .cf-panel-quote{font-weight:600;font-size:32px;line-height:1.4;margin-top:8px;color:#6B5622;overflow-wrap:break-word}
+      .cf-panel.dark .cf-panel-quote{color:#BCD2FF}
+      .cf-polaroid{align-self:center;background:#fff;padding:26px 26px 30px;border-radius:10px;
+        box-shadow:0 30px 70px rgba(0,0,0,.55);transform:rotate(-3deg);position:relative;width:720px;max-width:100%}
+      .cf-photo{display:block;width:100%;height:560px;object-fit:cover;border-radius:6px;background:#DDE4F0}
+      .cf-photo-blank{background:linear-gradient(160deg,#E7ECF6,#C9D4E8)}
+      .cf-stamp-onphoto{position:absolute;top:32%;left:10%;margin-top:0}
+      .cf-polaroid-label{margin-top:18px;text-align:center;font-weight:700;font-size:30px;
+        line-height:1.35;color:#43506B;overflow-wrap:break-word}
+      .cf-notes{display:flex;flex-direction:column;gap:30px}
+      .cf-note{position:relative;background:#FFF3C4;color:#4A3A08;border-radius:10px;
+        padding:30px 36px;font-weight:700;font-size:40px;line-height:1.35;
+        box-shadow:0 22px 50px rgba(0,0,0,.45);overflow-wrap:break-word}
+      .cf-note-pin{position:absolute;top:-14px;left:50%;margin-left:-15px;width:30px;height:30px;
+        border-radius:50%;background:var(--red);box-shadow:0 6px 12px rgba(0,0,0,.4)}
+      .cf-stamp-green{align-self:center;transform:rotate(-7deg);border:6px solid var(--green);
+        color:var(--green);font-weight:800;font-size:54px;line-height:1.3;letter-spacing:.14em;
+        padding:14px 40px;border-radius:16px}
+      .cf-folder .cf-label,.cf-name,.cf-panel-title,.cf-note,.cf-stamp-red,
+      .cf-stamp-green{font-family:var(--font-heading,"Sarabun"),sans-serif}
+      [data-format='case'] .scrim{background:
+        linear-gradient(180deg, rgba(6,24,64,.35) 0%, rgba(6,24,64,.75) 45%, rgba(6,24,64,.96) 62%, var(--navy-deep) 100%)}
+      [data-format='case'] .scene[data-layout="casefile"] .scene-content{bottom:480px}
+      [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:0;bottom:0;justify-content:center}
+
       /* ── progress / badges / caption ── */
       .progress-track{position:absolute;top:0;left:0;width:{{.Width}}px;height:10px;background:rgba(255,255,255,.08);z-index:30}
       .progress-fill{position:absolute;top:0;left:0;width:0;height:10px;
@@ -149,7 +202,7 @@
     </style>
   </head>
   <body>
-    <div id="root" data-theme="{{.ThemeKey}}" data-composition-id="main" data-start="0" data-duration="{{.DurationSeconds}}" data-width="{{.Width}}" data-height="{{.Height}}">
+    <div id="root" data-theme="{{.ThemeKey}}" data-format="{{.Format}}" data-composition-id="main" data-start="0" data-duration="{{.DurationSeconds}}" data-width="{{.Width}}" data-height="{{.Height}}">
 
       <div id="progress" class="clip progress-track" data-start="0" data-duration="{{.DurationSeconds}}" data-track-index="7">
         <div class="progress-fill" id="progressFill"></div></div>
@@ -189,8 +242,9 @@
         w.setAttribute("data-track-index", 10 + i);
         w.setAttribute("data-layout", sc.type || "");
         w.setAttribute("data-layout-allow-overflow", "");
+        const evPhoto = sc.type === "evidence";
         w.innerHTML =
-          (sc.bg ? '<div class="scene-bg" style="background-image:url(\'' + sc.bg + '\')"></div>' : '<div class="scene-bg"></div>') +
+          (sc.bg && !evPhoto ? '<div class="scene-bg" style="background-image:url(\'' + sc.bg + '\')"></div>' : '<div class="scene-bg"></div>') +
           '<div class="scrim"></div><div class="scene-content" data-i="' + i + '"></div>';
         root.insertBefore(w, document.getElementById("progress"));
       });
@@ -224,6 +278,59 @@
           c.appendChild(rowsBlock(sc.rows));
         }
         else if(sc.type==="tip"){ c.appendChild(el("div","pill",sc.pill)); c.appendChild(rowsBlock(sc.rows)); }
+        else if(sc.type==="casefile"){
+          const f=el("div","cf-folder");
+          f.appendChild(el("div","cf-label","CASE FILE"+(sc.caseNo?" · "+sc.caseNo:"")));
+          f.appendChild(el("div","cf-name",sc.title));
+          const meta=el("div","cf-meta");
+          (sc.rows||[]).forEach(r=>meta.appendChild(el("div","cf-meta-line",r.t)));
+          f.appendChild(meta);
+          if(sc.stamp)f.appendChild(el("div","cf-stamp-red",sc.stamp));
+          c.appendChild(f);
+        }
+        else if(sc.type==="comic"){
+          const w2=el("div","cf-panels");
+          (sc.panels||[]).forEach(pn=>{
+            const p2=el("div","cf-panel"+(pn.dark?" dark":""));
+            p2.appendChild(el("div","cf-panel-halftone"));
+            if(pn.time)p2.appendChild(el("div","cf-panel-time",pn.time));
+            p2.appendChild(el("div","cf-panel-title",pn.t));
+            if(pn.quote)p2.appendChild(el("div","cf-panel-quote",pn.quote));
+            w2.appendChild(p2);
+          });
+          c.appendChild(w2);
+        }
+        else if(sc.type==="evidence"){
+          const po=el("div","cf-polaroid");
+          if(sc.bg){
+            const im=document.createElement("img");
+            im.className="cf-photo"; im.src=sc.bg;
+            po.appendChild(im);
+          } else {
+            po.appendChild(el("div","cf-photo cf-photo-blank"));
+          }
+          if(sc.stamp)po.appendChild(el("div","cf-stamp-red cf-stamp-onphoto",sc.stamp));
+          if(sc.sub)po.appendChild(el("div","cf-polaroid-label",sc.sub));
+          c.appendChild(po);
+        }
+        else if(sc.type==="board"){
+          const w3=el("div","cf-notes");
+          (sc.rows||[]).forEach((r,ri)=>{
+            const n=el("div","cf-note",r.t);
+            n.style.transform="rotate("+((ri%2===0)?-2:2)+"deg)";
+            n.appendChild(el("div","cf-note-pin"));
+            w3.appendChild(n);
+          });
+          c.appendChild(w3);
+        }
+        else if(sc.type==="verdict"){
+          if(sc.caseNo)c.appendChild(el("div","kicker","สรุปสำนวน · "+sc.caseNo));
+          c.appendChild(el("h1","title",sc.title));
+          if(sc.stamp)c.appendChild(el("div","cf-stamp-green",sc.stamp));
+          if(sc.cta)c.appendChild(el("div","cta",sc.cta));
+          if(sc.brand)c.appendChild(el("div","brandbig",sc.brand));
+          if(sc.sub)c.appendChild(el("div","sub",sc.sub));
+        }
         else if(sc.type==="cta"){
           c.appendChild(el("h1","title",sc.title));
           c.appendChild(el("div","cta",sc.cta));
