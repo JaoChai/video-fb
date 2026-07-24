@@ -311,7 +311,7 @@ type assembleOutput struct {
 // still used. Populates bgPaths (sceneNumber → file); errors are non-fatal by
 // design (BuildScenes renders a css background for any scene without a file).
 func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []agent.GeneratedScene, preset StylePreset, clipID, clipDir string, bgPaths map[int]string, caseInfo CaseInfo) {
-	allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
+	allowedImg := caseImageScenes(scenes, caseInfo.Enabled)
 	var mu sync.Mutex
 	var primaryDown, fallbackDown atomic.Bool
 	var g errgroup.Group
@@ -321,7 +321,7 @@ func (p *Producer) generateSceneImagesParallel(ctx context.Context, scenes []age
 			continue
 		}
 		if allowedImg != nil && !allowedImg[s.SceneNumber] {
-			continue // case format: only evidence scenes get AI images (cap 2)
+			continue // case format: only cover + evidence scenes get AI images (cap 2)
 		}
 		s := s
 		bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
@@ -391,14 +391,14 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if PipelineFastEnabled() {
 		p.generateSceneImagesParallel(ctx, scenes, preset, clipID, clipDir, bgPaths, caseInfo)
 	} else {
-		allowedImg := evidenceImageScenes(scenes, caseInfo.Enabled)
+		allowedImg := caseImageScenes(scenes, caseInfo.Enabled)
 		imageDegraded := false
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) == "" {
 				continue
 			}
 			if allowedImg != nil && !allowedImg[s.SceneNumber] {
-				continue // case format: only evidence scenes get AI images (cap 2)
+				continue // case format: only cover + evidence scenes get AI images (cap 2)
 			}
 			bgFile := filepath.Join(clipDir, fmt.Sprintf("bg-scene%d.png", s.SceneNumber))
 			if !fileExists(bgFile) && !imageDegraded {

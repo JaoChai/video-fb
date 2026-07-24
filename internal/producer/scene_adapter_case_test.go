@@ -2,6 +2,7 @@ package producer
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jaochai/video-fb/internal/agent"
@@ -77,5 +78,23 @@ func TestBuildSceneContentStampOnlyNotHeroFallback(t *testing.T) {
 		sceneBound{Start: 0, End: 3})
 	if c.Layout != "comic" {
 		t.Errorf("comic with panels degraded to %q", c.Layout)
+	}
+}
+
+func TestBuildSceneContentCasefileHook(t *testing.T) {
+	s := agent.GeneratedScene{SceneNumber: 1, Layout: "casefile",
+		OnScreenText: "เงินค้าง 65,000 หายไปไหน", EmphasisWords: []string{"65,000"},
+		Content: json.RawMessage(`{"title":"คดีเงินหาย","stamp":"ด่วนที่สุด"}`)}
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 4})
+	if c.Hook == "" || !strings.Contains(c.Hook, "65,000") {
+		t.Fatalf("casefile Hook not built from on_screen_text: %q", c.Hook)
+	}
+	if !strings.Contains(c.Hook, `<span class="acc">`) {
+		t.Errorf("Hook must highlight emphasis words: %q", c.Hook)
+	}
+	// non-casefile layouts must not get a hook headline
+	h := buildSceneContent(caseScene("hero", `{"title":"x"}`), sceneBound{Start: 0, End: 3})
+	if h.Hook != "" {
+		t.Errorf("hero must not carry Hook, got %q", h.Hook)
 	}
 }

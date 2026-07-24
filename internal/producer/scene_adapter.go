@@ -173,6 +173,12 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T)})
 	}
 	c.Stamp = agent.TruncateRunes(clean(raw.Stamp), 18)
+	// Casefile poster headline: the scene's on_screen_text (hook line) rendered
+	// big above the folder, with emphasis words amber-highlighted. Go-derived —
+	// no prompt/schema change needed.
+	if c.Layout == "casefile" {
+		c.Hook = highlightTitleStr(clean(strings.TrimSpace(s.OnScreenText)), s.EmphasisWords)
+	}
 	for _, pn := range raw.Panels {
 		if len(c.Panels) >= 3 { // template จัดวางได้สูงสุด 3 ช่องโดยไม่ล้นเฟรม
 			break

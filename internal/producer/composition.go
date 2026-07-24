@@ -36,6 +36,7 @@ type scenesTemplateData struct {
 
 	ThemeKey     string
 	Format       string
+	CaseNumber   int // case-file watermark; 0 in classic mode
 	EntranceDur  float64
 	EntranceEase string
 	BGZoomTo     float64
@@ -149,6 +150,7 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		Cover:           p.Cover,
 		ThemeKey:        p.ThemeKey,
 		Format:          p.Format,
+		CaseNumber:      p.CaseNumber,
 		EntranceDur:     motion.EntranceDur,
 		EntranceEase:    motion.EntranceEase,
 		BGZoomTo:        motion.BGZoomTo,
