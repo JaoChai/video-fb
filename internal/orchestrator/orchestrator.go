@@ -842,9 +842,12 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	}
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
-	// Retried clips keep their original visual identity. PresetByKey falls back to
-	// editorial-bold (Presets[0]) if the stored key is empty (pre-flag clips have no stored preset).
-	retryPreset := producer.PresetByKey(clip.StylePreset)
+	// A full rebuild regenerates ALL content with the CURRENT format's prompts
+	// (caseAgentConfig above), so the preset must follow the current flag too —
+	// a stored classic preset + case prompts (or the inverse after a rollback)
+	// would render a mongrel clip. Resume-at-render keeps the stored identity
+	// instead because it reuses the stored scenes.
+	retryPreset := retryPresetForCurrentMode(clip.StylePreset)
 	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "")
 }
 
@@ -895,6 +898,22 @@ func (o *Orchestrator) caseAgentConfig(ctx context.Context, name string) (*model
 		log.Printf("case format: %s_case row missing/disabled — falling back to %s", name, name)
 	}
 	return o.agentsRepo.GetByName(ctx, name)
+}
+
+// retryPresetForCurrentMode picks the preset for a FULL-rebuild retry, which
+// regenerates every asset with the current mode's prompts: case format on →
+// always the case preset; off → the stored preset, except a stored case-file
+// key (flag rolled back mid-life) falls back to the classic default so prompts
+// and visuals never mix modes.
+func retryPresetForCurrentMode(stored string) producer.StylePreset {
+	if producer.CaseFormatEnabled() {
+		return producer.CaseFilePreset
+	}
+	p := producer.PresetByKey(stored)
+	if p.Key == producer.CaseFilePreset.Key {
+		return producer.PresetByKey("")
+	}
+	return p
 }
 
 // resolveCaseInfo builds the CaseInfo for a clip about to render: a resumed

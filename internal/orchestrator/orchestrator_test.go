@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/producer"
 )
 
 func TestScriptNarration(t *testing.T) {
@@ -26,4 +27,21 @@ func TestScriptNarration(t *testing.T) {
 			t.Errorf("got %q, want empty", got)
 		}
 	})
+}
+
+func TestRetryPresetForCurrentMode(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	if got := retryPresetForCurrentMode("editorial-bold"); got.Key != producer.CaseFilePreset.Key {
+		t.Errorf("flag on: stored classic must rebuild as case-file, got %q", got.Key)
+	}
+	t.Setenv("CASE_FORMAT_ENABLED", "")
+	if got := retryPresetForCurrentMode("case-file"); got.Key == producer.CaseFilePreset.Key {
+		t.Errorf("flag off: stored case-file must fall back to classic, got %q", got.Key)
+	}
+	if got := retryPresetForCurrentMode("neon-techno"); got.Key != "neon-techno" {
+		t.Errorf("flag off: stored classic preset must be kept, got %q", got.Key)
+	}
+	if got := retryPresetForCurrentMode(""); got.Key != "editorial-bold" {
+		t.Errorf("flag off: empty stored key must fall back to editorial-bold, got %q", got.Key)
+	}
 }
