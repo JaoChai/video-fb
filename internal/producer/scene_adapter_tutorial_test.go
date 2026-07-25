@@ -90,3 +90,26 @@ func TestBuildSceneSpecsFillsStepTotal(t *testing.T) {
 		}
 	}
 }
+
+// field ที่มี label แต่ไม่มี value = กล่องส้มเปล่าที่ซ้ำชื่อแถวด้านบน สอนอะไรไม่ได้
+// (เจอจากคลิปจริงตัวแรกบน prod 2026-07-25 ขั้นที่ 1)
+func TestBuildSceneContentUIStepDropsValuelessField(t *testing.T) {
+	s := uistepScene(3, `{"panel":{"items":[{"label":"Selected audience","state":"target"}],
+		"field":{"label":"Selected audience","value":""}}}`)
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 4})
+	if c.Panel == nil {
+		t.Fatal("panel not parsed")
+	}
+	if c.Panel.Field != nil {
+		t.Errorf("field with an empty value must be dropped, got %+v", c.Panel.Field)
+	}
+}
+
+func TestBuildSceneContentUIStepKeepsFieldWithValue(t *testing.T) {
+	s := uistepScene(3, `{"panel":{"items":[{"label":"Overlap","state":"target"}],
+		"field":{"label":"Overlap","value":"เกิน 30 เปอร์เซ็นต์"}}}`)
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 4})
+	if c.Panel.Field == nil || c.Panel.Field.Value != "เกิน 30 เปอร์เซ็นต์" {
+		t.Errorf("a field with a real value must survive, got %+v", c.Panel.Field)
+	}
+}
