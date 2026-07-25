@@ -83,6 +83,20 @@ func buildSceneSpecs(scenes []agent.GeneratedScene, bounds []sceneBound) []Scene
 		}
 		specs[i].Content.Entrance = entranceForScene(i)
 	}
+	// StepTotal is derived after the loop because a scene cannot know how many
+	// siblings share its layout. Go owns this value so the progress rail never
+	// depends on parsing the model's Thai "ขั้นที่ n / N" string.
+	stepTotal := 0
+	for i := range specs {
+		if specs[i].Content.Layout == "uistep" {
+			stepTotal++
+		}
+	}
+	for i := range specs {
+		if specs[i].Content.Layout == "uistep" {
+			specs[i].Content.StepTotal = stepTotal
+		}
+	}
 	return specs
 }
 
@@ -148,6 +162,19 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 			Quote string `json:"quote"`
 			Dark  bool   `json:"dark"`
 		} `json:"panels"`
+		Callout string `json:"callout"`
+		Panel   *struct {
+			Chrome     string `json:"chrome"`
+			Breadcrumb string `json:"breadcrumb"`
+			Items      []struct {
+				Label string `json:"label"`
+				State string `json:"state"`
+			} `json:"items"`
+			Field *struct {
+				Label string `json:"label"`
+				Value string `json:"value"`
+			} `json:"field"`
+		} `json:"panel"`
 	}
 	if len(s.Content) > 0 {
 		if err := json.Unmarshal(s.Content, &raw); err != nil {
@@ -158,6 +185,9 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	c.Kicker = clean(raw.Kicker)
 	c.Sub = agent.TruncateRunes(clean(raw.Sub), 50)
 	c.Title = clean(raw.Title) // may legitimately contain <span class="acc">…</span>
+	if c.Layout == "uistep" {
+		c.Title = agent.TruncateRunes(c.Title, 34)
+	}
 	c.Stat, c.Unit = clean(raw.Stat), clean(raw.Unit)
 	c.StatLabel = agent.TruncateRunes(clean(raw.StatLabel), 28)
 	c.Num, c.Of = clean(raw.Num), clean(raw.Of)
@@ -173,6 +203,31 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T)})
 	}
 	c.Stamp = agent.TruncateRunes(clean(raw.Stamp), 18)
+	// tutorial uistep: the simulated screen. Item labels are NOT truncated here —
+	// they must stay byte-comparable against the catalog's ui_vocab, which the
+	// render gate already validated. Only Thai copy gets clamped.
+	c.Callout = agent.TruncateRunes(clean(raw.Callout), 60)
+	if raw.Panel != nil {
+		p := &ContentUIPanel{
+			Chrome:     clean(raw.Panel.Chrome),
+			Breadcrumb: clean(raw.Panel.Breadcrumb),
+		}
+		for _, it := range raw.Panel.Items {
+			if len(p.Items) >= 5 { // เกิน 5 แถวล้นกรอบ 9:16
+				break
+			}
+			if lb := strings.TrimSpace(clean(it.Label)); lb != "" {
+				p.Items = append(p.Items, ContentUIItem{Label: lb, State: agent.ClampUIState(it.State)})
+			}
+		}
+		if raw.Panel.Field != nil {
+			p.Field = &ContentUIField{
+				Label: clean(raw.Panel.Field.Label),
+				Value: clean(raw.Panel.Field.Value),
+			}
+		}
+		c.Panel = p
+	}
 	// Casefile poster headline: the scene's on_screen_text (hook line) rendered
 	// big above the folder, with emphasis words amber-highlighted. Go-derived —
 	// no prompt/schema change needed.
@@ -196,7 +251,7 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	// the legacy on_screen_text + emphasis_words so the scene is never blank.
 	empty := c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" &&
 		len(c.Chips) == 0 && c.Pill == "" && c.Sub == "" && c.StatLabel == "" &&
-		c.Stamp == "" && len(c.Panels) == 0
+		c.Stamp == "" && len(c.Panels) == 0 && c.Panel == nil && c.Callout == ""
 	if empty {
 		log.Printf("scene %d: no structured content (layout %q) — hero fallback from on_screen_text", s.SceneNumber, s.Layout)
 		c.Layout = "hero"
