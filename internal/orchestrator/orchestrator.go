@@ -737,8 +737,17 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
 	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
+	wasReady := status == "ready"
 	downgradeIfReady(&status, result.InspectFlagged,
-		"clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked)", clipID)
+		"clip %s: hyperframes inspect flagged layout — status=needs_review (publish blocked): %s",
+		clipID, result.InspectDetail)
+	// Persist WHICH element the inspector objected to. The log line rotates away
+	// within hours; without this a needs_review clip carries no explanation and the
+	// next person has to reproduce the render to find out (learned the hard way on
+	// the first 4-step tutorial clip, 2026-07-25).
+	if wasReady && status == "needs_review" && strings.TrimSpace(result.InspectDetail) != "" {
+		o.clipsRepo.SetFailReason(ctx, clipID, "layout inspector: "+result.InspectDetail)
+	}
 
 	// A silent/too-short voice track can't be seen by the still-frame vision QA —
 	// route to needs_review when the audio gate is on.

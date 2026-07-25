@@ -190,6 +190,18 @@ func (r *ClipsRepo) IncrementRetry(ctx context.Context, id, reason string) error
 	return nil
 }
 
+// SetFailReason records WHY a clip was routed to needs_review without touching
+// retry_count — unlike IncrementRetry, this is not a failure that earns a retry,
+// it is an explanation attached to a clip a human has to look at.
+func (r *ClipsRepo) SetFailReason(ctx context.Context, id, reason string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET fail_reason = $2, updated_at = NOW() WHERE id = $1`, id, reason)
+	if err != nil {
+		return fmt.Errorf("set fail reason for clip %s: %w", id, err)
+	}
+	return nil
+}
+
 // ListNeedsReview returns needs_review clips eligible for auto-review: not held
 // and under the review-retry cap, oldest first, capped at `limit`.
 func (r *ClipsRepo) ListNeedsReview(ctx context.Context, retryCap, limit int) ([]models.Clip, error) {
