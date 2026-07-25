@@ -49,40 +49,71 @@ func buildCoverPrompt(concept string, preset StylePreset, clipToken string) stri
 // choice so the fast (parallel) and sequential image paths can never drift:
 // case format routes casefile → cover shot, evidence → forensic photo;
 // classic mode keeps the original scene prompt.
-func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken string, caseEnabled bool) string {
-	if caseEnabled {
+func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode string) string {
+	switch mode {
+	case ModeCase:
 		if agent.ClampLayout(s.Layout) == "casefile" {
 			return buildCoverPrompt(s.ImagePrompt, preset, clipToken)
 		}
 		return buildEvidencePrompt(s.ImagePrompt, preset, clipToken)
+	case ModeTutorial:
+		return buildTutorialCoverPrompt(s.ImagePrompt, preset, clipToken)
+	default:
+		return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 	}
-	return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 }
 
-// CaseInfo carries the case-file production context down the producer path.
+// buildTutorialCoverPrompt renders the single cover image of a tutorial clip.
+// Replaced with the real art direction in the tutorial-format task.
+func buildTutorialCoverPrompt(concept string, preset StylePreset, clipToken string) string {
+	return buildScenePrompt(concept, "9:16", preset, clipToken)
+}
+
+// Content mode of a clip. Derived per-clip (from clips.content_format), never
+// from a process-wide flag alone — so a tutorial clip and a case clip can be
+// produced by the same running server.
+const (
+	ModeClassic  = ""
+	ModeCase     = "case"
+	ModeTutorial = "tutorial"
+)
+
+// FormatInfo carries the per-clip content mode down the producer path.
 // Zero value = classic format (byte-identical to today's output).
-type CaseInfo struct {
-	Enabled    bool
-	CaseNumber int // 0 = unknown; the template then omits the case number
+type FormatInfo struct {
+	Mode       string // "" | "case" | "tutorial"
+	CaseNumber int    // case mode only; 0 = unknown, template omits the number
 }
 
-// caseImageScenes returns the scene numbers eligible for AI image generation
-// in case format: the casefile cover + evidence scenes, capped at 2 total
-// (visual full-frame spec 2026-07-24). Returns nil in classic mode = no
-// restriction.
-func caseImageScenes(scenes []agent.GeneratedScene, caseEnabled bool) map[int]bool {
-	if !caseEnabled {
+func (f FormatInfo) IsCase() bool     { return f.Mode == ModeCase }
+func (f FormatInfo) IsTutorial() bool { return f.Mode == ModeTutorial }
+
+// imageScenesForMode returns the scene numbers eligible for AI image generation.
+// nil = no restriction (classic). Case format: casefile cover + evidence, cap 2.
+// Tutorial format: the first scene carrying an image_prompt only, cap 1 — every
+// other tutorial scene is an HTML UI mock and must not compete with a photo.
+func imageScenesForMode(scenes []agent.GeneratedScene, mode string) map[int]bool {
+	switch mode {
+	case ModeCase:
+		allowed := map[int]bool{}
+		for _, s := range scenes {
+			if len(allowed) >= 2 {
+				break
+			}
+			layout := agent.ClampLayout(s.Layout)
+			if (layout == "casefile" || layout == "evidence") && strings.TrimSpace(s.ImagePrompt) != "" {
+				allowed[s.SceneNumber] = true
+			}
+		}
+		return allowed
+	case ModeTutorial:
+		for _, s := range scenes {
+			if strings.TrimSpace(s.ImagePrompt) != "" {
+				return map[int]bool{s.SceneNumber: true}
+			}
+		}
+		return map[int]bool{}
+	default:
 		return nil
 	}
-	allowed := map[int]bool{}
-	for _, s := range scenes {
-		if len(allowed) >= 2 {
-			break
-		}
-		layout := agent.ClampLayout(s.Layout)
-		if (layout == "casefile" || layout == "evidence") && strings.TrimSpace(s.ImagePrompt) != "" {
-			allowed[s.SceneNumber] = true
-		}
-	}
-	return allowed
 }

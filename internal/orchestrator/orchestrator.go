@@ -606,8 +606,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	caseInfo := o.resolveCaseInfo(ctx, clipID, preset)
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, caseInfo)
+	fi := o.resolveFormatInfo(ctx, clipID, preset)
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -916,28 +916,27 @@ func retryPresetForCurrentMode(stored string) producer.StylePreset {
 	return p
 }
 
-// resolveCaseInfo builds the CaseInfo for a clip about to render: a resumed
-// clip keeps its stored case number; a fresh case clip gets the next running
-// number. Every error path fails open — the clip renders without a number
-// rather than block production (spec §5).
-func (o *Orchestrator) resolveCaseInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.CaseInfo {
+// resolveFormatInfo builds the FormatInfo for a clip about to render. Case mode
+// resolves/persists the running case number; every error path fails open — the
+// clip renders without a number rather than block production.
+func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.FormatInfo {
 	if preset.Key != producer.CaseFilePreset.Key {
-		return producer.CaseInfo{}
+		return producer.FormatInfo{}
 	}
 	if clip, err := o.clipsRepo.GetByID(ctx, clipID); err == nil &&
 		clip.CaseNumber != nil && *clip.CaseNumber > 0 {
-		return producer.CaseInfo{Enabled: true, CaseNumber: *clip.CaseNumber} // resume keeps its number
+		return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: *clip.CaseNumber}
 	}
 	n, err := o.clipsRepo.NextCaseNumber(ctx)
 	if err != nil {
 		log.Printf("case number: next failed (fail-open, clip renders without number): %v", err)
-		return producer.CaseInfo{Enabled: true}
+		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
 	if err := o.clipsRepo.SetCaseNumber(ctx, clipID, n); err != nil {
 		log.Printf("case number: set failed (fail-open, clip renders without number): %v", err)
-		return producer.CaseInfo{Enabled: true}
+		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
-	return producer.CaseInfo{Enabled: true, CaseNumber: n}
+	return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: n}
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
