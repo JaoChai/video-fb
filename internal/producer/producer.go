@@ -76,6 +76,12 @@ type ProduceResult struct {
 	// overflow/clip issue for this clip. Surfaced so the orchestrator can route
 	// the clip to needs_review instead of publishing a visibly-broken layout.
 	InspectFlagged bool
+
+	// InspectDetail is the inspector's own message (which element overflowed /
+	// was clipped). Carried out so the caller can persist it: without this the
+	// only record is a log line that rotates away, leaving a needs_review clip
+	// with no explanation of what to fix.
+	InspectDetail string
 	// AudioFlagged is true when the rendered voice track is silent/too short
 	// (QA audio check). The orchestrator routes such clips to needs_review when
 	// QA_AUDIO_CHECK_ENABLED is on.
@@ -298,6 +304,7 @@ type assembleOutput struct {
 	mp4Path        string
 	sceneDurations []float64
 	inspectFlagged bool
+	inspectDetail  string
 	audioFlagged   bool
 	renderFlagged  bool // populated by the render browser-error gate
 }
@@ -482,9 +489,9 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
 		return nil, fmt.Errorf("build scenes: %w", err)
 	}
-	inspectFlagged := false
+	inspectFlagged, inspectDetail := false, ""
 	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
-		inspectFlagged = true
+		inspectFlagged, inspectDetail = true, err.Error()
 		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, err)
 	}
 	renderIssues, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
@@ -496,6 +503,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		mp4Path:        filepath.Join(projectDir, "output.mp4"),
 		sceneDurations: boundsToDurations(bounds),
 		inspectFlagged: inspectFlagged,
+		inspectDetail:  inspectDetail,
 		audioFlagged:   audioFlagged,
 		renderFlagged:  len(renderIssues) > 0,
 	}, nil
@@ -567,6 +575,7 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 		LocalVideo916Path: mp4Path,
 		SceneDurations:    out.sceneDurations,
 		InspectFlagged:    out.inspectFlagged,
+		InspectDetail:     out.inspectDetail,
 		AudioFlagged:      out.audioFlagged,
 		RenderFlagged:     out.renderFlagged,
 	}, nil
