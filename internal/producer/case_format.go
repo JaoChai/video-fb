@@ -63,12 +63,6 @@ func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode 
 	}
 }
 
-// buildTutorialCoverPrompt renders the single cover image of a tutorial clip.
-// Replaced with the real art direction in the tutorial-format task.
-func buildTutorialCoverPrompt(concept string, preset StylePreset, clipToken string) string {
-	return buildScenePrompt(concept, "9:16", preset, clipToken)
-}
-
 // Content mode of a clip. Derived per-clip (from clips.content_format), never
 // from a process-wide flag alone — so a tutorial clip and a case clip can be
 // produced by the same running server.

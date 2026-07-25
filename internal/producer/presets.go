@@ -154,6 +154,9 @@ func PresetByKey(key string) StylePreset {
 	if key == CaseFilePreset.Key {
 		return CaseFilePreset
 	}
+	if key == TutorialPreset.Key {
+		return TutorialPreset
+	}
 	for _, p := range Presets {
 		if p.Key == key {
 			return p
