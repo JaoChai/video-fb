@@ -117,3 +117,22 @@ func TestTutorialBriefNilIsEmpty(t *testing.T) {
 		t.Error("nil feature must render an empty brief (non-tutorial modes)")
 	}
 }
+
+func TestSceneTemplateDataSubstitutesTutorialBrief(t *testing.T) {
+	out, err := renderTemplate("script:{{.Script}}|brief:{{.TutorialBrief}}|dur:{{.TargetDurationSec}}",
+		SceneTemplateData{Script: "S", TutorialBrief: "B", TargetDurationSec: 55})
+	if err != nil {
+		t.Fatalf("renderTemplate: %v", err)
+	}
+	if out != "script:S|brief:B|dur:55" {
+		t.Errorf("got %q", out)
+	}
+}
+
+// โหมดอื่นต้องได้ค่าว่าง ไม่ใช่ตัว placeholder ค้างใน prompt
+func TestSceneTemplateDataEmptyBriefLeavesNoPlaceholder(t *testing.T) {
+	out, _ := renderTemplate("A{{.TutorialBrief}}B", SceneTemplateData{})
+	if out != "AB" {
+		t.Errorf("got %q, want %q", out, "AB")
+	}
+}

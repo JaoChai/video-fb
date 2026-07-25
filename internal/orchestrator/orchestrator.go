@@ -478,7 +478,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
 	}
 	narration := scriptNarration(script)
-	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, clipTheme, sceneCfg)
+	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, clipTheme, "", sceneCfg)
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
