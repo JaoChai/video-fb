@@ -1,0 +1,101 @@
+[
+  {
+    "scene_number": 1,
+    "voice_text": "บัญชีโดนปิดตอนตีสาม งบยังวิ่งอยู่สี่หมื่น",
+    "duration_seconds": 4.08,
+    "on_screen_text": "ตีสามบัญชีโดนปิด งบวิ่งอยู่ 40,000",
+    "emphasis_words": ["ตีสาม", "40,000"],
+    "caption_style": "word_pop",
+    "layout": "hook",
+    "content": {"rows": [{"t": "ตีสามบัญชีโดนปิด"}, {"t": "งบยังวิ่งอยู่ 40,000"}]},
+    "image_prompt": "Cinematic editorial photography, shot on 35mm, moody low-key lighting with a deep-navy #0047AF wash and a single warm amber #F0A030 practical light. A marketer's workspace at night: a phone lying face-up on a desk glowing with an alert, an open laptop casting cold light, an empty desk chair pushed back. Photorealistic, premium, restrained, no illustration, no 3D render, no cartoon, no text, no user interface, no screens with readable content. Atmosphere of the quiet moment before something expensive goes wrong."
+  },
+  {
+    "scene_number": 2,
+    "voice_text": "วันนี้สอนตั้งระบบให้ปิดงบเอง ทำครั้งเดียวจบ สี่ขั้น",
+    "duration_seconds": 5.360000000000001,
+    "on_screen_text": "กันได้ มีแค่ 4 ขั้น",
+    "emphasis_words": ["4 ขั้น"],
+    "caption_style": "phrase_block",
+    "layout": "hero",
+    "content": {"sub": "ทำครั้งเดียวจบ", "title": "เรื่องนี้กันได้ แค่ 4 ขั้น"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 3,
+    "voice_text": "หนึ่ง เข้า Ads Manager กด Rules แล้วกด Create new rule",
+    "duration_seconds": 5.68,
+    "on_screen_text": "เปิดหน้าสร้างกฎ",
+    "emphasis_words": ["Rules"],
+    "caption_style": "phrase_block",
+    "layout": "uistep",
+    "content": {"of": "ขั้นที่ 1 / 4", "num": "1", "panel": {"items": [{"label": "Campaigns", "state": "normal"}, {"label": "Rules", "state": "target"}, {"label": "Create new rule", "state": "normal"}], "chrome": "Ads Manager", "breadcrumb": "Rules"}, "title": "เปิดหน้าสร้างกฎ", "callout": "กด Rules แล้วกด Create new rule"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 4,
+    "voice_text": "สอง ที่ Action เลือก Turn off ad set บอกระบบว่าเจอเหตุให้ปิดเลย",
+    "duration_seconds": 8,
+    "on_screen_text": "เลือกสิ่งที่ระบบต้องปิด",
+    "emphasis_words": ["Turn off ad set"],
+    "caption_style": "phrase_block",
+    "layout": "uistep",
+    "content": {"of": "ขั้นที่ 2 / 4", "num": "2", "panel": {"items": [{"label": "Action", "state": "done"}, {"label": "Turn off ad set", "state": "target"}], "chrome": "Ads Manager", "breadcrumb": "Create new rule"}, "title": "เลือกสิ่งที่จะให้ระบบปิด", "callout": "ที่ Action เลือก Turn off ad set"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 5,
+    "voice_text": "สาม ที่ Conditions เลือก Cost per result แบบ Greater than ใส่สี่ร้อยบาท",
+    "duration_seconds": 6.800000000000001,
+    "on_screen_text": "ตั้งเงื่อนไขให้ตัดงบ",
+    "emphasis_words": ["Cost per result"],
+    "caption_style": "phrase_block",
+    "layout": "uistep",
+    "content": {"of": "ขั้นที่ 3 / 4", "num": "3", "panel": {"field": {"label": "Greater than", "value": "400 THB"}, "items": [{"label": "Cost per result", "state": "target"}, {"label": "Greater than", "state": "normal"}], "chrome": "Ads Manager", "breadcrumb": "Conditions"}, "title": "ตั้งเงื่อนไขให้ตัดงบ", "callout": "เลือก Cost per result แล้วใส่ 400 บาท"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 6,
+    "voice_text": "ระวังกับดักตรงนี้ คนส่วนใหญ่ตั้ง Time range ยาวเกินไป กฎเลยไม่ยิงตอนบัญชีเพิ่งเริ่มพัง",
+    "duration_seconds": 7.519999999999996,
+    "on_screen_text": "Time range ยาวไป กฎไม่ยิงทัน",
+    "emphasis_words": ["Time range"],
+    "caption_style": "phrase_block",
+    "layout": "tip",
+    "content": {"pill": "กับดัก", "rows": [{"t": "Time range ยาวไป กฎไม่ยิงทัน"}, {"t": "ตั้งสั้น วันนี้หรือ 3 วันล่าสุด"}]},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 7,
+    "voice_text": "สี่ ที่ Schedule เลือก Continuously แล้วกด Create ให้กฎทำงานตลอดเวลา",
+    "duration_seconds": 6.799999999999997,
+    "on_screen_text": "ให้กฎทำงานตลอดเวลา",
+    "emphasis_words": ["Continuously"],
+    "caption_style": "phrase_block",
+    "layout": "uistep",
+    "content": {"of": "ขั้นที่ 4 / 4", "num": "4", "panel": {"items": [{"label": "Continuously", "state": "target"}, {"label": "Create", "state": "normal"}], "chrome": "Ads Manager", "breadcrumb": "Schedule"}, "title": "ให้กฎทำงานตลอดเวลา", "callout": "เลือก Continuously แล้วกด Create"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 8,
+    "voice_text": "แคปไว้เลย ทำตามสี่ขั้นนี้ให้ครบ",
+    "duration_seconds": 3.6000000000000014,
+    "on_screen_text": "แคปเก็บไว้ทำตาม",
+    "emphasis_words": ["แคปเก็บ"],
+    "caption_style": "phrase_block",
+    "layout": "step",
+    "content": {"of": "สรุปทั้งหมด", "num": "", "rows": [{"t": "1. Rules > Create new rule"}, {"t": "2. Action: Turn off ad set"}, {"t": "3. Cost per result > 400 บาท"}, {"t": "4. Continuously แล้วกด Create"}], "title": "แคปเก็บไว้ทำตาม"},
+    "image_prompt": ""
+  },
+  {
+    "scene_number": 9,
+    "voice_text": "บัญชีคุณเคยโดนกัดตอนไม่มีใครดูไหม คอมเมนต์เล่าให้ฟังหน่อย แล้วกดติดตามรอคลิปหน้า",
+    "duration_seconds": 6.799999999999997,
+    "on_screen_text": "เคยโดนกัดไหม คอมเมนต์บอกหน่อย",
+    "emphasis_words": ["คอมเมนต์"],
+    "caption_style": "phrase_block",
+    "layout": "cta",
+    "content": {"cta": "ทักมาเช็ค", "sub": "ติดตามรอคลิปหน้า", "brand": "ADS VANCE", "title": "เคยโดนกัดตอนไม่มีใครดูไหม"},
+    "image_prompt": ""
+  }
+]

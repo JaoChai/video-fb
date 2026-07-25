@@ -427,3 +427,31 @@ func TestRenderScenes_EmptyCategoryLabelHidesPill(t *testing.T) {
 	withLabel := sampleScenesParams("9:16")
 	assertRenderContains(t, withLabel, `<div class="badge-cat">PIXEL</div>`)
 }
+
+// The ken-burns zoom scales .scene-bg past the 1080x1920 frame, which grows the
+// scene's scrollHeight by a few px. `hyperframes inspect` reads that as
+// clipped_text on the scene itself whenever it samples the ~0.1s window where
+// the scene has faded in but its content has not (the content is the only child
+// with text, so an invisible content makes the SCENE the text candidate). That
+// cost a real production clip a needs_review. Keeping the bg inside its own
+// clipping wrapper contains the overflow so no ancestor's scrollHeight grows.
+func TestRenderScenes_BackgroundIsWrappedInClippingLayer(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if !strings.Contains(html, ".scene-bg-wrap{position:absolute;inset:0;overflow:hidden}") {
+		t.Error("missing .scene-bg-wrap clipping rule — ken-burns overflow will reach the scene")
+	}
+	// the scene shell is assembled by the in-page builder, so assert on the
+	// builder's own source strings rather than on final markup.
+	for _, want := range []string{
+		`'<div class="scene-bg-wrap"><div class="scene-bg" data-layout-allow-overflow'`,
+		`'></div></div>' +`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("scene background markup missing %q", want)
+		}
+	}
+}

@@ -40,6 +40,10 @@
 
       /* ── scene shell ── */
       .scene{position:absolute;inset:0;opacity:0;overflow:hidden}
+      /* the ken-burns tween scales .scene-bg past the frame; without its own
+         clipping layer that overflow lands in .scene's scrollHeight, and
+         `hyperframes inspect` reports it as clipped_text on the scene itself */
+      .scene-bg-wrap{position:absolute;inset:0;overflow:hidden}
       .scene-bg{position:absolute;inset:0;background-position:center top;background-size:cover;
         background-repeat:no-repeat;will-change:transform;transform-origin:center center}
       /* strong scrim: image reads at top, content sits on clean navy below */
@@ -57,7 +61,11 @@
       .scene[data-layout="step"] .scene-content,
       .scene[data-layout="tip"]  .scene-content{align-items:flex-start}       /* left-align step & tip flow */
       .scene[data-layout="tip"]  .pill{align-self:flex-start}                 /* pill follows the left edge */
-      .scene[data-layout="cta"]  .scene-content{top:0;bottom:0;justify-content:center} /* dead-center the close */
+      /* dead-center the close. The 60px inset is a bumper, not a layout change:
+         it is symmetric so the centered block sits exactly where top/bottom:0 put
+         it, but the entrance tween (translateY 46px) can no longer push text past
+         the frame — which `hyperframes inspect` reads as clipped_text. */
+      .scene[data-layout="cta"]  .scene-content{top:60px;bottom:60px;justify-content:center}
 
       .kicker{font-weight:800;font-size:30px;line-height:1.3;letter-spacing:.10em;color:var(--amber-bright);text-align:center}
 
@@ -195,7 +203,8 @@
       /* hero/verdict reuse the cover image as a dim backdrop */
       [data-format='case'] .scene[data-layout="hero"] .scene-bg,
       [data-format='case'] .scene[data-layout="verdict"] .scene-bg{opacity:.45;filter:saturate(.7)}
-      [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:0;bottom:0;justify-content:center}
+      /* symmetric bumper — same reason as the cta rule above */
+      [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:60px;bottom:60px;justify-content:center}
 
       /* ── tutorial format: simulated product UI ── */
       /* center, not flex-start: the block is ~850px tall in a 1370px box, so
@@ -323,7 +332,9 @@
           (sc.type === "comic" || sc.type === "board" || sc.type === "step" || sc.type === "stat"))
           ? '<div class="cf-wm">' + "คดี " + CASE_NO + '</div>' : '';
         w.innerHTML =
-          (bgSrc && !evPhoto ? '<div class="scene-bg" style="background-image:url(\'' + bgSrc + '\')"></div>' : '<div class="scene-bg"></div>') +
+          '<div class="scene-bg-wrap"><div class="scene-bg" data-layout-allow-overflow' +
+          (bgSrc && !evPhoto ? ' style="background-image:url(\'' + bgSrc + '\')"' : '') +
+          '></div></div>' +
           '<div class="scrim"></div>' + wm + '<div class="scene-content" data-i="' + i + '"></div>';
         root.insertBefore(w, document.getElementById("progress"));
       });
