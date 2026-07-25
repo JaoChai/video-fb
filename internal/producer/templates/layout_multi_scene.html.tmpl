@@ -198,8 +198,10 @@
       [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:0;bottom:0;justify-content:center}
 
       /* ── tutorial format: simulated product UI ── */
+      /* center, not flex-start: the block is ~850px tall in a 1370px box, so
+         top-aligning leaves ~520px of dead space above the caption band */
       [data-format='tutorial'] .scene[data-layout="uistep"] .scene-content{top:150px;bottom:400px;
-        justify-content:flex-start;align-items:stretch;gap:26px}
+        justify-content:center;align-items:stretch;gap:26px}
       [data-format='tutorial'] .scene[data-layout="hook"] .scene-content{bottom:520px}
       [data-format='tutorial'] .scene[data-layout="hero"] .scene-content,
       [data-format='tutorial'] .scene[data-layout="tip"] .scene-content,
