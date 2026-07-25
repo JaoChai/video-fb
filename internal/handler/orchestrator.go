@@ -57,6 +57,31 @@ func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Reque
 	}()
 }
 
+// TriggerTutorial produces ONE tutorial clip from the catalog on demand. Exists
+// so a tutorial can be produced and eyeballed before the 21:00 schedule is turned
+// on — without it the only way to see a tutorial clip is to wait for the cron.
+// Takes no count: the topic is a catalog row, and one clip per run is the shape
+// the whole tutorial path is built around.
+func (h *OrchestratorHandler) TriggerTutorial(w http.ResponseWriter, r *http.Request) {
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, models.APIResponse{
+		Message: "Tutorial production started in background",
+	})
+
+	go func() {
+		// ProduceTutorial owns the production gate AND its cancellation
+		// registration, so the handler just kicks it off with a base context.
+		if err := h.orch.ProduceTutorial(context.Background()); err != nil {
+			log.Printf("Tutorial production failed: %v", err)
+			h.tracker.AddErrorLog(err.Error())
+		}
+	}()
+}
+
 func (h *OrchestratorHandler) StopProduction(w http.ResponseWriter, r *http.Request) {
 	h.tracker.Cancel()
 	h.tracker.AddErrorLog("Production stopped by user")
