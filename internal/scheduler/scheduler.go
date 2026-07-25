@@ -124,7 +124,21 @@ func (s *Scheduler) Reload(ctx context.Context) error {
 	return s.Start(ctx)
 }
 
+// produceAndPublish and produceTutorial share one tick body: the same pre-flight,
+// the same circuit breaker, and the same production gate. Only the produce call
+// differs — a tutorial tick must never skip those guards.
 func (s *Scheduler) produceAndPublish(ctx context.Context) error {
+	return s.produceTick(ctx, "1 new clip", func(c context.Context) error {
+		return s.orchestrator.ProduceWeekly(c, 1)
+	})
+}
+
+// produceTutorial produces the daily tutorial clip from the catalog.
+func (s *Scheduler) produceTutorial(ctx context.Context) error {
+	return s.produceTick(ctx, "the daily tutorial clip", s.orchestrator.ProduceTutorial)
+}
+
+func (s *Scheduler) produceTick(ctx context.Context, what string, produce func(context.Context) error) error {
 	check := preflight.Run(ctx, s.pool)
 	if !check.OK {
 		for _, e := range check.Errors {
@@ -153,8 +167,8 @@ func (s *Scheduler) produceAndPublish(ctx context.Context) error {
 		log.Printf("Scheduler: retry failed clips: %v", err)
 	}
 
-	log.Println("Scheduler: producing 1 new clip...")
-	if err := s.orchestrator.ProduceWeekly(ctx, 1); err != nil {
+	log.Printf("Scheduler: producing %s...", what)
+	if err := produce(ctx); err != nil {
 		if errors.Is(err, orchestrator.ErrProductionRunning) {
 			log.Println("Scheduler: a production is already running, skipping produce")
 			return nil
@@ -204,6 +218,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.publisher.PublishTikTok
 	case "produce_and_publish":
 		return s.produceAndPublish
+	case "produce_tutorial":
+		return s.produceTutorial
 	case "analyze_and_improve":
 		return s.analyzer.AnalyzeAndImprove
 	case "fetch_analytics":

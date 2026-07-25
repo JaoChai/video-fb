@@ -61,10 +61,10 @@ func TestCaseImageScenes(t *testing.T) {
 		evScene(3, "hero", "should be ignored"),
 		evScene(4, "evidence", "a phone - over cap"),
 	}
-	if caseImageScenes(scenes, false) != nil {
+	if imageScenesForMode(scenes, ModeClassic) != nil {
 		t.Error("classic mode must return nil (no restriction)")
 	}
-	allowed := caseImageScenes(scenes, true)
+	allowed := imageScenesForMode(scenes, ModeCase)
 	if len(allowed) != 2 || !allowed[1] || !allowed[2] || allowed[4] {
 		t.Errorf("allowed = %v, want cover scene 1 + evidence scene 2 (cap 2)", allowed)
 	}
@@ -81,9 +81,9 @@ func TestBuildCoverPrompt(t *testing.T) {
 }
 
 func TestPromptForSceneRouting(t *testing.T) {
-	cover := promptForScene(evScene(1, "casefile", "a desk"), CaseFilePreset, "c", true)
-	ev := promptForScene(evScene(2, "evidence", "a jar"), CaseFilePreset, "c", true)
-	classic := promptForScene(evScene(3, "hero", "a graph"), CaseFilePreset, "c", false)
+	cover := promptForScene(evScene(1, "casefile", "a desk"), CaseFilePreset, "c", ModeCase)
+	ev := promptForScene(evScene(2, "evidence", "a jar"), CaseFilePreset, "c", ModeCase)
+	classic := promptForScene(evScene(3, "hero", "a graph"), CaseFilePreset, "c", ModeClassic)
 	if !strings.Contains(cover, "UPPER half") {
 		t.Error("casefile scene must get the cover prompt")
 	}
@@ -95,9 +95,9 @@ func TestPromptForSceneRouting(t *testing.T) {
 	}
 }
 
-func TestCaseInfoZeroValueIsClassic(t *testing.T) {
-	var ci CaseInfo
-	if ci.Enabled || ci.CaseNumber != 0 {
-		t.Error("zero CaseInfo must mean classic format")
+func TestFormatInfoZeroValueIsClassic(t *testing.T) {
+	var fi FormatInfo
+	if fi.Mode != ModeClassic {
+		t.Error("zero FormatInfo must mean classic format")
 	}
 }

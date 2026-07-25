@@ -82,7 +82,15 @@ type Orchestrator struct {
 	analyticsRepo       *repository.AnalyticsRepo
 	topicCategoriesRepo *repository.TopicCategoriesRepo
 	titleArchetypesRepo *repository.TitleArchetypesRepo
-	tracker             *progress.Tracker
+
+	// tutorial format (spec 2026-07-25). researchAgent + tutorialVerifier are the
+	// menu-freshness safety net; both are optional — a nil either side simply
+	// skips the check (fail-open, see featureLooksStale).
+	tutorialFeaturesRepo *repository.TutorialFeaturesRepo
+	researchAgent        *agent.ResearchAgent
+	tutorialVerifier     *agent.TutorialVerifier
+
+	tracker *progress.Tracker
 }
 
 func New(
@@ -109,6 +117,9 @@ func New(
 	formats *repository.FormatsRepo,
 	topicCategories *repository.TopicCategoriesRepo,
 	titleArchetypes *repository.TitleArchetypesRepo,
+	tutorialFeatures *repository.TutorialFeaturesRepo,
+	research *agent.ResearchAgent,
+	tutorialVerifier *agent.TutorialVerifier,
 	tracker *progress.Tracker,
 ) *Orchestrator {
 	return &Orchestrator{
@@ -118,6 +129,7 @@ func New(
 		autoReviewsRepo: autoreviews, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
 		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
+		tutorialFeaturesRepo: tutorialFeatures, researchAgent: research, tutorialVerifier: tutorialVerifier,
 		tracker: tracker,
 	}
 }
@@ -303,7 +315,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, err := o.caseAgentConfig(ctx, "script")
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(format.FormatName))
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -322,7 +334,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, nil); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -339,9 +351,11 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
 	preset := producer.PresetByKey("editorial-bold")
-	if producer.CaseFormatEnabled() {
+	if format.FormatName == tutorialFormatName {
+		preset = producer.TutorialPreset // tutorial: fixed identity, skip random/weighted pickers
+	} else if producer.CaseFormatEnabled() {
 		preset = producer.CaseFilePreset // case format: fixed identity, skip random/weighted pickers
 	} else if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
@@ -359,6 +373,10 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		}
 	}
 
+	featKey := ""
+	if feat != nil {
+		featKey = feat.FeatureKey
+	}
 	today := time.Now().Format("2006-01-02")
 	clip, err := o.clipsRepo.Create(ctx, models.CreateClipRequest{
 		Title:           q.Question,
@@ -370,6 +388,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 		ClipRole:        role,
 		TitleArchetype:  archetype.ArchetypeName,
 		AudiencePersona: persona,
+		TutorialFeature: featKey,
 	})
 	if err != nil {
 		return fmt.Errorf("create clip: %w", err)
@@ -378,7 +397,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status, StylePreset: &preset.Key})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, feat)
 }
 
 // Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
@@ -453,7 +472,7 @@ func applyGeneratedMetadata(script *agent.GeneratedScript, md *agent.GeneratedMe
 	return true
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
 	// rendered. When the flag is off clipTheme == theme — no behavior change.
 	clipTheme := theme
@@ -462,7 +481,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	}
 
 	o.tracker.StartStep("script")
-	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), scriptCfg)
+	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), agent.TutorialBrief(feat), scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -472,13 +491,17 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
 	o.tracker.StartStep("scene")
-	sceneCfg, err := o.caseAgentConfig(ctx, "scene")
+	sceneCfg, err := o.modeAgentConfig(ctx, "scene", clipMode(format.FormatName))
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
 	}
 	narration := scriptNarration(script)
-	scenes, err := o.sceneAgent.Generate(ctx, narration, targetSceneCount, targetDurationSec, clipTheme, sceneCfg)
+	sceneCount, durationSec := targetSceneCount, targetDurationSec
+	if feat != nil {
+		sceneCount, durationSec = tutorialSceneShape(len(feat.Steps))
+	}
+	scenes, err := o.sceneAgent.Generate(ctx, narration, sceneCount, durationSec, clipTheme, agent.TutorialBrief(feat), sceneCfg)
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
@@ -487,7 +510,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Content Critic: review + revise content before render. Optional gate;
 	//    on disable/error/anomaly it returns the original content unchanged. ──
-	if criticCfg, cErr := o.agentsRepo.GetByName(ctx, "critic"); cErr == nil && criticCfg.Enabled {
+	if criticCfg, cErr := o.modeAgentConfig(ctx, "critic", clipMode(format.FormatName)); cErr == nil && criticCfg.Enabled {
 		o.tracker.StartStep("critic")
 		res := o.criticAgent.Review(ctx, agent.CriticInput{
 			Question:  q.Question,
@@ -598,6 +621,18 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	contentStage := stageContentReady
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{ProductionStage: &contentStage})
 
+	// Tutorial gate — this clip auto-publishes, so a deterministic check replaces
+	// the human reviewer. A clip that would teach a menu the catalog never
+	// authorized (or the wrong number of steps) is routed to needs_review instead
+	// of rendering. Not failClip: the content is wrong, not the infrastructure, so
+	// a blind retry would just burn another LLM run on the same bad output.
+	if msg := tutorialGateFailure(scenes, feat); msg != "" {
+		log.Printf("tutorial gate blocked clip %s: %s", clipID, msg)
+		reviewStatus := "needs_review"
+		o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
+		return fmt.Errorf("tutorial gate: %s", msg)
+	}
+
 	return o.renderAndFinalize(ctx, clipID, q, scenes, preset, narration)
 }
 
@@ -606,8 +641,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 // persisted. On render failure it fails the clip (retriable); on success it marks
 // the clip ready/needs_review and records stage=rendered.
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
-	caseInfo := o.resolveCaseInfo(ctx, clipID, preset)
-	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, caseInfo)
+	fi := o.resolveFormatInfo(ctx, clipID, preset)
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -828,7 +863,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-	scriptCfg, err := o.caseAgentConfig(ctx, "script")
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(clip.ContentFormat))
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}
@@ -836,19 +871,41 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get image config: %w", err))
 	}
-	format, err := o.formatsRepo.GetByName(ctx, "qa")
+	// Rebuild with the clip's OWN format, not a hardcoded "qa": a full retry of a
+	// tutorial (or news/tips) clip previously came back as Q&A, silently changing
+	// what the clip is. The tutorial path additionally needs the format name to
+	// resolve its mode and preset.
+	format, err := o.formatsRepo.GetByName(ctx, clip.ContentFormat)
 	if err != nil {
-		format = &models.ContentFormat{FormatName: "qa", DisplayName: "Q&A"}
+		log.Printf("retry: content format %q unavailable (%v) — falling back to qa", clip.ContentFormat, err)
+		format, err = o.formatsRepo.GetByName(ctx, "qa")
+		if err != nil {
+			format = &models.ContentFormat{FormatName: "qa", DisplayName: "Q&A"}
+		}
+	}
+
+	// A tutorial retry must re-fetch its catalog row: without it the ui_vocab gate
+	// has nothing to check against and the scene agent has no menu names to use.
+	var feat *models.TutorialFeature
+	if clip.ContentFormat == tutorialFormatName {
+		if clip.TutorialFeature == "" {
+			return o.failClip(ctx, clip.ID, fmt.Errorf("tutorial clip has no tutorial_feature recorded — cannot rebuild safely"))
+		}
+		f, fErr := o.tutorialFeaturesRepo.GetByKey(ctx, clip.TutorialFeature)
+		if fErr != nil {
+			return o.failClip(ctx, clip.ID, fmt.Errorf("load tutorial feature %s: %w", clip.TutorialFeature, fErr))
+		}
+		feat = f
 	}
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
-	// A full rebuild regenerates ALL content with the CURRENT format's prompts
-	// (caseAgentConfig above), so the preset must follow the current flag too —
-	// a stored classic preset + case prompts (or the inverse after a rollback)
-	// would render a mongrel clip. Resume-at-render keeps the stored identity
-	// instead because it reuses the stored scenes.
-	retryPreset := retryPresetForCurrentMode(clip.StylePreset)
-	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "")
+	// A full rebuild regenerates ALL content with the CURRENT mode's prompts
+	// (modeAgentConfig above), so the preset must follow the same mode — a stored
+	// classic preset + case prompts (or the inverse after a rollback) would render
+	// a mongrel clip. Resume-at-render keeps the stored identity instead because
+	// it reuses the stored scenes.
+	retryPreset := retryPresetForCurrentMode(clip.StylePreset, clip.ContentFormat)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "", feat)
 }
 
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
@@ -887,57 +944,63 @@ func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) str
 	return sanitizeVoiceText(b.String(), brandAliases)
 }
 
-// caseAgentConfig resolves the agent row for a role: when the case format is
-// on it prefers the "<name>_case" row, failing open to the classic row so a
-// missing/disabled case row never blocks production (spec §4).
-func (o *Orchestrator) caseAgentConfig(ctx context.Context, name string) (*models.AgentConfig, error) {
-	if producer.CaseFormatEnabled() {
-		if cfg, err := o.agentsRepo.GetByName(ctx, name+"_case"); err == nil && cfg.Enabled {
+// modeAgentConfig resolves the agent row for a role in a given content mode: it
+// prefers "<name>_<mode>" and fails open to the classic row so a missing or
+// disabled mode-specific row never blocks production (spec §4).
+func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (*models.AgentConfig, error) {
+	if mode != producer.ModeClassic {
+		if cfg, err := o.agentsRepo.GetByName(ctx, name+"_"+mode); err == nil && cfg.Enabled {
 			return cfg, nil
 		}
-		log.Printf("case format: %s_case row missing/disabled — falling back to %s", name, name)
+		log.Printf("mode %s: %s_%s row missing/disabled — falling back to %s", mode, name, mode, name)
 	}
 	return o.agentsRepo.GetByName(ctx, name)
 }
 
 // retryPresetForCurrentMode picks the preset for a FULL-rebuild retry, which
-// regenerates every asset with the current mode's prompts: case format on →
-// always the case preset; off → the stored preset, except a stored case-file
-// key (flag rolled back mid-life) falls back to the classic default so prompts
-// and visuals never mix modes.
-func retryPresetForCurrentMode(stored string) producer.StylePreset {
+// regenerates every asset with the current mode's prompts. The clip's own
+// content_format decides first (a tutorial clip stays a tutorial even while the
+// case flag is on), then the flag, then the stored preset — with a stored
+// case/tutorial key on a clip that is neither falling back to the classic
+// default so prompts and visuals never mix modes.
+func retryPresetForCurrentMode(stored, contentFormat string) producer.StylePreset {
+	if contentFormat == tutorialFormatName {
+		return producer.TutorialPreset
+	}
 	if producer.CaseFormatEnabled() {
 		return producer.CaseFilePreset
 	}
 	p := producer.PresetByKey(stored)
-	if p.Key == producer.CaseFilePreset.Key {
+	if p.Key == producer.CaseFilePreset.Key || p.Key == producer.TutorialPreset.Key {
 		return producer.PresetByKey("")
 	}
 	return p
 }
 
-// resolveCaseInfo builds the CaseInfo for a clip about to render: a resumed
-// clip keeps its stored case number; a fresh case clip gets the next running
-// number. Every error path fails open — the clip renders without a number
-// rather than block production (spec §5).
-func (o *Orchestrator) resolveCaseInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.CaseInfo {
+// resolveFormatInfo builds the FormatInfo for a clip about to render. Case mode
+// resolves/persists the running case number; every error path fails open — the
+// clip renders without a number rather than block production.
+func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.FormatInfo {
+	if preset.Key == producer.TutorialPreset.Key {
+		return producer.FormatInfo{Mode: producer.ModeTutorial}
+	}
 	if preset.Key != producer.CaseFilePreset.Key {
-		return producer.CaseInfo{}
+		return producer.FormatInfo{}
 	}
 	if clip, err := o.clipsRepo.GetByID(ctx, clipID); err == nil &&
 		clip.CaseNumber != nil && *clip.CaseNumber > 0 {
-		return producer.CaseInfo{Enabled: true, CaseNumber: *clip.CaseNumber} // resume keeps its number
+		return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: *clip.CaseNumber}
 	}
 	n, err := o.clipsRepo.NextCaseNumber(ctx)
 	if err != nil {
 		log.Printf("case number: next failed (fail-open, clip renders without number): %v", err)
-		return producer.CaseInfo{Enabled: true}
+		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
 	if err := o.clipsRepo.SetCaseNumber(ctx, clipID, n); err != nil {
 		log.Printf("case number: set failed (fail-open, clip renders without number): %v", err)
-		return producer.CaseInfo{Enabled: true}
+		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
-	return producer.CaseInfo{Enabled: true, CaseNumber: n}
+	return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: n}
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {

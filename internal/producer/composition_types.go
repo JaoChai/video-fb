@@ -66,6 +66,13 @@ type SceneContent struct {
 	Stamp  string         `json:"stamp,omitempty"`  // "ด่วนที่สุด" / "REJECTED" / "ปิดคดี - รอดได้"
 	Panels []ContentPanel `json:"panels,omitempty"` // comic layout only
 	Hook   string         `json:"hook,omitempty"`   // casefile poster headline (from on_screen_text, emphasis-highlighted)
+
+	// tutorial format (spec 2026-07-25). Panel is the simulated Ads Manager
+	// screen of a uistep scene; StepTotal is Go-derived (never LLM) so the
+	// progress rail can draw N dots without parsing the Thai "ขั้นที่ n / N".
+	Panel     *ContentUIPanel `json:"panel,omitempty"`
+	Callout   string          `json:"callout,omitempty"`
+	StepTotal int             `json:"stepTotal,omitempty"`
 }
 
 // ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
@@ -87,6 +94,27 @@ type ContentPanel struct {
 	T     string `json:"t"`
 	Quote string `json:"quote,omitempty"`
 	Dark  bool   `json:"dark,omitempty"`
+}
+
+// ContentUIPanel is the simulated product screen rendered inside a uistep scene.
+type ContentUIPanel struct {
+	Chrome     string          `json:"chrome,omitempty"`
+	Breadcrumb string          `json:"breadcrumb,omitempty"`
+	Items      []ContentUIItem `json:"items,omitempty"`
+	Field      *ContentUIField `json:"field,omitempty"`
+}
+
+// ContentUIItem is one menu row inside a ContentUIPanel.
+// State is one of normal|target|done (clamped by agent.ClampUIState).
+type ContentUIItem struct {
+	Label string `json:"label"`
+	State string `json:"state"`
+}
+
+// ContentUIField is the highlighted input row of a ContentUIPanel.
+type ContentUIField struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // TransitionCue is one scene-transition sound effect placement. Name is the

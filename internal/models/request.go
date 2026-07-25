@@ -12,6 +12,10 @@ type CreateClipRequest struct {
 	ClipRole        string  `json:"clip_role"`
 	TitleArchetype  string  `json:"title_archetype"`
 	AudiencePersona string  `json:"audience_persona"`
+	// TutorialFeature is the tutorial_features.feature_key this clip teaches.
+	// Empty for every other format. Persisted so a retry can re-fetch the same
+	// catalog row and re-run the ui_vocab gate against it.
+	TutorialFeature string `json:"tutorial_feature"`
 }
 
 type UpdateClipRequest struct {

@@ -197,6 +197,48 @@
       [data-format='case'] .scene[data-layout="verdict"] .scene-bg{opacity:.45;filter:saturate(.7)}
       [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:0;bottom:0;justify-content:center}
 
+      /* ── tutorial format: simulated product UI ── */
+      /* center, not flex-start: the block is ~850px tall in a 1370px box, so
+         top-aligning leaves ~520px of dead space above the caption band */
+      [data-format='tutorial'] .scene[data-layout="uistep"] .scene-content{top:150px;bottom:400px;
+        justify-content:center;align-items:stretch;gap:26px}
+      [data-format='tutorial'] .scene[data-layout="hook"] .scene-content{bottom:520px}
+      [data-format='tutorial'] .scene[data-layout="hero"] .scene-content,
+      [data-format='tutorial'] .scene[data-layout="tip"] .scene-content,
+      [data-format='tutorial'] .scene[data-layout="step"] .scene-content{top:150px;bottom:430px;justify-content:center}
+      [data-format='tutorial'] .scene[data-layout="hero"] .scene-bg,
+      [data-format='tutorial'] .scene[data-layout="tip"] .scene-bg,
+      [data-format='tutorial'] .scene[data-layout="cta"] .scene-bg{opacity:.35;filter:saturate(.6)}
+      .ui-rail{display:flex;align-items:center;gap:18px}
+      .ui-rail .rl{font-weight:700;font-size:32px;letter-spacing:.04em;color:var(--amber-bright)}
+      .ui-rail .dots{display:flex;gap:12px}
+      .ui-rail .dot{width:18px;height:18px;border-radius:50%;background:rgba(188,210,255,.25);display:block}
+      .ui-rail .dot.on{background:var(--amber-bright);box-shadow:0 0 14px rgba(255,180,84,.55)}
+      .ui-step-title{font-weight:800;font-size:58px;line-height:1.24;color:#fff;overflow-wrap:break-word}
+      .ui-panel{background:#F2F4F8;border-radius:24px;overflow:hidden;
+        box-shadow:0 26px 64px rgba(0,0,0,.48);border:2px solid rgba(255,255,255,.14)}
+      .ui-chrome{display:flex;align-items:center;gap:16px;padding:20px 26px;
+        background:#E2E6ED;border-bottom:2px solid #CDD3DD}
+      .ui-chrome .dotset{display:flex;gap:10px}
+      .ui-chrome .dotset i{width:16px;height:16px;border-radius:50%;background:#B9C0CC;display:block}
+      .ui-chrome .title{font-weight:700;font-size:30px;color:#3A4351}
+      .ui-crumb{padding:18px 26px;font-weight:600;font-size:27px;color:#66707F;border-bottom:1px solid #DDE2EA}
+      .ui-list{padding:14px 20px 18px;display:flex;flex-direction:column;gap:8px}
+      .ui-item{display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:14px;
+        font-weight:600;font-size:33px;color:#2C3341}
+      .ui-item .lb{overflow-wrap:break-word}
+      .ui-item .mk{margin-left:auto;flex:0 0 auto}
+      .ui-item.done{color:#5A6373}
+      .ui-item.done .mk{width:22px;height:22px;border-radius:50%;background:#2FA36B}
+      .ui-item.target{background:#FFF3E0;border:3px solid var(--amber);color:#1D2430;font-weight:800}
+      .ui-item.target .mk{width:0;height:0;border-top:15px solid transparent;
+        border-bottom:15px solid transparent;border-right:22px solid var(--amber)}
+      .ui-field{margin:0 20px 20px;padding:20px 22px;border:3px solid var(--amber);
+        border-radius:14px;background:#FFF8EE}
+      .ui-field .fl{font-weight:600;font-size:27px;color:#66707F}
+      .ui-field .fv{font-weight:800;font-size:40px;color:#1D2430;overflow-wrap:break-word}
+      .ui-callout{font-weight:700;font-size:42px;line-height:1.32;color:var(--ink);overflow-wrap:break-word}
+
       /* ── progress / badges / caption ── */
       .progress-track{position:absolute;top:0;left:0;width:{{.Width}}px;height:10px;background:rgba(255,255,255,.08);z-index:30}
       .progress-fill{position:absolute;top:0;left:0;width:0;height:10px;
@@ -251,6 +293,7 @@
       const ENTRANCE_EASE = "{{.EntranceEase}}" || "power3.out";
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;
       const FORMAT_CASE = {{if eq .Format "case"}}true{{else}}false{{end}};
+      const FORMAT_TUTORIAL = {{if eq .Format "tutorial"}}true{{else}}false{{end}};
       const CASE_NO = {{.CaseNumber}} || 0;
 
       // ── Scene content (cleaned: NO emoji, real slots) ──
@@ -268,10 +311,13 @@
         w.setAttribute("data-layout", sc.type || "");
         w.setAttribute("data-layout-allow-overflow", "");
         const evPhoto = sc.type === "evidence";
-        // hero/verdict without their own image reuse the cover shot (scene 0's
-        // bg) as a dim backdrop — bookends the clip at zero extra image cost.
-        const bgSrc = (!sc.bg && FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict") &&
-          SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
+        // hero/verdict (case) and hero/tip/cta (tutorial) without their own image
+        // reuse the cover shot (scene 0's bg) as a dim backdrop — bookends the
+        // clip at zero extra image cost.
+        const reuseCover =
+          (FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict")) ||
+          (FORMAT_TUTORIAL && (sc.type === "hero" || sc.type === "tip" || sc.type === "cta"));
+        const bgSrc = (!sc.bg && reuseCover && SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
         // giant faint case-number watermark fills imageless case scenes
         const wm = (FORMAT_CASE && CASE_NO > 0 &&
           (sc.type === "comic" || sc.type === "board" || sc.type === "step" || sc.type === "stat"))
@@ -364,6 +410,43 @@
           if(sc.cta)c.appendChild(el("div","cta",sc.cta));
           if(sc.brand)c.appendChild(el("div","brandbig",sc.brand));
           if(sc.sub)c.appendChild(el("div","sub",sc.sub));
+        }
+        else if(sc.type==="uistep"){
+          const rail=el("div","ui-rail");
+          if(sc.of) rail.appendChild(el("div","rl",sc.of));
+          const total=sc.stepTotal||0, cur=parseInt(sc.num,10)||0;
+          if(total>0){
+            const dots=el("div","dots");
+            for(let k=1;k<=total;k++) dots.appendChild(el("i","dot"+(k<=cur?" on":"")));
+            rail.appendChild(dots);
+          }
+          c.appendChild(rail);
+          if(sc.title) c.appendChild(el("div","ui-step-title",sc.title));
+          const p=sc.panel||{};
+          const box=el("div","ui-panel");
+          const ch=el("div","ui-chrome");
+          const ds=el("div","dotset");
+          for(let k=0;k<3;k++) ds.appendChild(el("i"));
+          ch.appendChild(ds);
+          if(p.chrome) ch.appendChild(el("div","title",p.chrome));
+          box.appendChild(ch);
+          if(p.breadcrumb) box.appendChild(el("div","ui-crumb",p.breadcrumb));
+          const list=el("div","ui-list");
+          (p.items||[]).forEach(it=>{
+            const row=el("div","ui-item "+(it.state||"normal"));
+            row.appendChild(el("span","lb",it.label));
+            row.appendChild(el("span","mk"));
+            list.appendChild(row);
+          });
+          box.appendChild(list);
+          if(p.field){
+            const f=el("div","ui-field");
+            f.appendChild(el("div","fl",p.field.label));
+            f.appendChild(el("div","fv",p.field.value));
+            box.appendChild(f);
+          }
+          c.appendChild(box);
+          if(sc.callout) c.appendChild(el("div","ui-callout",sc.callout));
         }
         else if(sc.type==="cta"){
           c.appendChild(el("h1","title",sc.title));

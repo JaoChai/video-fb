@@ -14,6 +14,11 @@ type SceneTemplateData struct {
 	TargetSceneCount  int
 	TargetDurationSec int
 	ThemeDescription  string
+	// TutorialBrief is the catalog block for tutorial-mode clips (menu path,
+	// steps, trap, and the ONLY UI vocabulary allowed on screen). Empty string
+	// in every other mode — renderTemplate is a plain string replacer, so an
+	// empty value simply erases the placeholder.
+	TutorialBrief string
 }
 
 // SceneAgent is the Director: it breaks a finished script into 6-10 constrained
@@ -31,12 +36,13 @@ func NewSceneAgent(llm *KieLLMClient) *SceneAgent {
 // Generate turns a script into an ordered scene array. cfg is the `scene`
 // AgentConfig (fetched by the caller via GetByName). targetSceneCount and
 // targetDurationSec steer length; theme supplies brand styling for image_prompt.
-func (a *SceneAgent) Generate(ctx context.Context, script string, targetSceneCount, targetDurationSec int, theme *models.BrandTheme, cfg *models.AgentConfig) ([]GeneratedScene, error) {
+func (a *SceneAgent) Generate(ctx context.Context, script string, targetSceneCount, targetDurationSec int, theme *models.BrandTheme, tutorialBrief string, cfg *models.AgentConfig) ([]GeneratedScene, error) {
 	userPrompt, err := renderTemplate(cfg.PromptTemplate, SceneTemplateData{
 		Script:            script,
 		TargetSceneCount:  targetSceneCount,
 		TargetDurationSec: targetDurationSec,
 		ThemeDescription:  buildSceneThemeDescription(theme),
+		TutorialBrief:     tutorialBrief,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render scene template: %w", err)
