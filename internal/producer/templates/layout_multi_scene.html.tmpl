@@ -207,10 +207,14 @@
       [data-format='case'] .scene[data-layout="verdict"] .scene-content{top:60px;bottom:60px;justify-content:center}
 
       /* ── tutorial format: simulated product UI ── */
-      /* center, not flex-start: the block is ~850px tall in a 1370px box, so
-         top-aligning leaves ~520px of dead space above the caption band */
-      [data-format='tutorial'] .scene[data-layout="uistep"] .scene-content{top:150px;bottom:400px;
-        justify-content:center;align-items:stretch;gap:26px}
+      /* Full-bleed step: this is watched on a phone mid-scroll, so the simulated
+         screen takes the full frame width (44px inset vs the shared 56px) and the
+         type is sized to be read at a glance. flex-start, not center — a 2-row
+         panel centred in the box left a dead band above the title, which is where
+         the eye lands first. bottom:420 keeps the note off the caption band now
+         that the panel grows into the free height. */
+      [data-format='tutorial'] .scene[data-layout="uistep"] .scene-content{top:190px;bottom:420px;
+        left:44px;right:44px;justify-content:flex-start;align-items:stretch;gap:28px}
       [data-format='tutorial'] .scene[data-layout="hook"] .scene-content{bottom:520px}
       [data-format='tutorial'] .scene[data-layout="hero"] .scene-content,
       [data-format='tutorial'] .scene[data-layout="tip"] .scene-content,
@@ -219,34 +223,59 @@
       [data-format='tutorial'] .scene[data-layout="tip"] .scene-bg,
       [data-format='tutorial'] .scene[data-layout="cta"] .scene-bg{opacity:.35;filter:saturate(.6)}
       .ui-rail{display:flex;align-items:center;gap:18px}
-      .ui-rail .rl{font-weight:700;font-size:32px;letter-spacing:.04em;color:var(--amber-bright)}
-      .ui-rail .dots{display:flex;gap:12px}
-      .ui-rail .dot{width:18px;height:18px;border-radius:50%;background:rgba(188,210,255,.25);display:block}
-      .ui-rail .dot.on{background:var(--amber-bright);box-shadow:0 0 14px rgba(255,180,84,.55)}
-      .ui-step-title{font-weight:800;font-size:58px;line-height:1.24;color:#fff;overflow-wrap:break-word}
-      .ui-panel{background:#F2F4F8;border-radius:24px;overflow:hidden;
-        box-shadow:0 26px 64px rgba(0,0,0,.48);border:2px solid rgba(255,255,255,.14)}
-      .ui-chrome{display:flex;align-items:center;gap:16px;padding:20px 26px;
-        background:#E2E6ED;border-bottom:2px solid #CDD3DD}
-      .ui-chrome .dotset{display:flex;gap:10px}
-      .ui-chrome .dotset i{width:16px;height:16px;border-radius:50%;background:#B9C0CC;display:block}
-      .ui-chrome .title{font-weight:700;font-size:30px;color:#3A4351}
-      .ui-crumb{padding:18px 26px;font-weight:600;font-size:27px;color:#66707F;border-bottom:1px solid #DDE2EA}
-      .ui-list{padding:14px 20px 18px;display:flex;flex-direction:column;gap:8px}
-      .ui-item{display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:14px;
-        font-weight:600;font-size:33px;color:#2C3341}
+      .ui-rail .rl{font-weight:700;font-size:36px;letter-spacing:.04em;color:var(--amber-bright)}
+      .ui-rail .dots{display:flex;gap:14px}
+      .ui-rail .dot{width:24px;height:24px;border-radius:50%;background:rgba(188,210,255,.25);display:block}
+      .ui-rail .dot.on{background:var(--amber-bright);box-shadow:0 0 16px rgba(255,180,84,.6)}
+      .ui-step-title{font-weight:800;font-size:74px;line-height:1.18;color:#fff;overflow-wrap:break-word}
+      /* The panel is the anchor for the tap ring + pointer tag (both absolute) and
+         it fills the frame's free height: a real product screen does not shrink to
+         fit two menu rows, and a short panel left a dead band under the step. */
+      .ui-panel{position:relative;flex:1 1 auto;display:flex;flex-direction:column;
+        background:#F2F4F8;border-radius:28px;
+        box-shadow:0 30px 76px rgba(0,0,0,.52);border:2px solid rgba(255,255,255,.14)}
+      .ui-chrome{display:flex;align-items:center;gap:18px;padding:24px 30px;
+        background:#E2E6ED;border-bottom:3px solid #CDD3DD;border-radius:26px 26px 0 0}
+      .ui-chrome .dotset{display:flex;gap:12px}
+      .ui-chrome .dotset i{width:20px;height:20px;border-radius:50%;background:#B9C0CC;display:block}
+      .ui-chrome .title{font-weight:700;font-size:38px;color:#3A4351}
+      .ui-crumb{padding:22px 30px;font-weight:600;font-size:33px;color:#66707F;border-bottom:2px solid #DDE2EA}
+      .ui-list{flex:1 1 auto;padding:26px 24px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+      /* rows that are not the step's target recede: the viewer's eye should land
+         on one row only, the same way a spotlight works on stage */
+      .ui-item{display:flex;align-items:center;gap:20px;padding:34px 30px;border-radius:18px;
+        font-weight:600;font-size:52px;color:#2C3341;background:#fff;border:2px solid #E3E7EE;
+        opacity:.42;filter:blur(1.2px)}
       .ui-item .lb{overflow-wrap:break-word}
       .ui-item .mk{margin-left:auto;flex:0 0 auto}
-      .ui-item.done{color:#5A6373}
-      .ui-item.done .mk{width:22px;height:22px;border-radius:50%;background:#2FA36B}
-      .ui-item.target{background:#FFF3E0;border:3px solid var(--amber);color:#1D2430;font-weight:800}
-      .ui-item.target .mk{width:0;height:0;border-top:15px solid transparent;
-        border-bottom:15px solid transparent;border-right:22px solid var(--amber)}
-      .ui-field{margin:0 20px 20px;padding:20px 22px;border:3px solid var(--amber);
-        border-radius:14px;background:#FFF8EE}
-      .ui-field .fl{font-weight:600;font-size:27px;color:#66707F}
-      .ui-field .fv{font-weight:800;font-size:40px;color:#1D2430;overflow-wrap:break-word}
-      .ui-callout{font-weight:700;font-size:42px;line-height:1.32;color:var(--ink);overflow-wrap:break-word}
+      .ui-item.done{color:#6C7688;background:#EDF1F6}
+      .ui-item.done .mk{width:28px;height:28px;border-radius:50%;background:#2FA36B}
+      .ui-item.target{background:#FFF3E0;border:5px solid var(--amber);color:#141B28;font-weight:800;
+        opacity:1;filter:none;box-shadow:0 0 0 12px rgba(255,180,84,.16),0 20px 46px rgba(0,0,0,.32)}
+      .ui-item.target .mk{width:0;height:0;border-top:20px solid transparent;
+        border-bottom:20px solid transparent;border-right:28px solid var(--amber)}
+      .ui-field{margin:0 24px 24px;padding:26px 30px;border:5px solid var(--amber);
+        border-radius:18px;background:#FFF8EE}
+      .ui-field .fl{font-weight:600;font-size:32px;color:#66707F}
+      .ui-field .fv{font-weight:800;font-size:62px;color:#141B28;overflow-wrap:break-word}
+      /* "กดตรงนี้" pointer: a fixed two-word tag, not the model's sentence — it
+         floats ABOVE the target row so it never covers the menu name the viewer
+         has to read and copy. The model's full instruction stays in .ui-note. */
+      .ui-point{position:absolute;right:26px;transform:translateY(-100%);z-index:7;
+        background:var(--amber-bright);color:#0B1C3F;font-weight:800;font-size:36px;line-height:1;
+        padding:14px 22px;border-radius:14px;box-shadow:0 14px 32px rgba(0,0,0,.4)}
+      .ui-point:after{content:"";position:absolute;right:34px;bottom:-16px;width:0;height:0;
+        border-left:14px solid transparent;border-right:14px solid transparent;
+        border-top:18px solid var(--amber-bright)}
+      /* the step instruction, full sentence, directly under the panel */
+      .ui-note{font-weight:700;font-size:44px;line-height:1.28;color:var(--ink);overflow-wrap:break-word}
+      /* tap ring: borrowed from the phone-capture direction — it answers "where do
+         I press" without a word of copy */
+      .ui-tap{position:absolute;z-index:5;pointer-events:none}
+      .ui-tap .rg{position:absolute;left:-70px;top:-70px;width:140px;height:140px;border-radius:50%;
+        border:7px solid rgba(255,180,84,.9);box-shadow:0 0 40px rgba(255,180,84,.55)}
+      .ui-tap .dt{position:absolute;left:-30px;top:-30px;width:60px;height:60px;border-radius:50%;
+        background:rgba(255,255,255,.92);box-shadow:0 0 22px rgba(255,255,255,.6)}
 
       /* ── progress / badges / caption ── */
       .progress-track{position:absolute;top:0;left:0;width:{{.Width}}px;height:10px;background:rgba(255,255,255,.08);z-index:30}
@@ -345,6 +374,9 @@
       function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
       function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",c.t.replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
 
+      // uistep scenes register their target row here; the markers (pointer tag +
+      // tap ring) are positioned after layout, when offsets are real.
+      const uiStepMarkers=[];
       SCENES.forEach((sc,i)=>{
         const c=document.querySelector('.scene-content[data-i="'+i+'"]');
         if(!c)return;
@@ -443,11 +475,13 @@
           box.appendChild(ch);
           if(p.breadcrumb) box.appendChild(el("div","ui-crumb",p.breadcrumb));
           const list=el("div","ui-list");
+          let targetRow=null;
           (p.items||[]).forEach(it=>{
             const row=el("div","ui-item "+(it.state||"normal"));
             row.appendChild(el("span","lb",it.label));
             row.appendChild(el("span","mk"));
             list.appendChild(row);
+            if((it.state||"")==="target" && !targetRow) targetRow=row;
           });
           box.appendChild(list);
           if(p.field){
@@ -457,7 +491,11 @@
             box.appendChild(f);
           }
           c.appendChild(box);
-          if(sc.callout) c.appendChild(el("div","ui-callout",sc.callout));
+          if(sc.callout) c.appendChild(el("div","ui-note",sc.callout));
+          // The pointer tag + tap ring are pinned to the target row's centre,
+          // measured after layout (offsets are relative to .ui-panel, which is
+          // position:relative). A panel with no target row gets neither.
+          if(targetRow) uiStepMarkers.push({box:box,row:targetRow});
         }
         else if(sc.type==="cta"){
           c.appendChild(el("h1","title",sc.title));
@@ -466,6 +504,25 @@
           if(sc.sub)c.appendChild(el("div","sub",sc.sub));
         }
       });
+
+      // ── uistep markers: pin the "กดตรงนี้" tag above the target row and the tap
+      // ring on it. Runs once after the builder so offsetTop/offsetHeight reflect
+      // the final wrapped layout.
+      function placeUIStepMarkers(){
+        uiStepMarkers.forEach(function(m){
+          const top=m.row.offsetTop, mid=top+m.row.offsetHeight/2;
+          const tag=el("div","ui-point","กดตรงนี้");
+          tag.style.top=(top-14)+"px";
+          m.box.appendChild(tag);
+          const tap=el("div","ui-tap");
+          tap.appendChild(el("div","rg"));
+          tap.appendChild(el("div","dt"));
+          tap.style.top=mid+"px";
+          tap.style.left=(m.row.offsetLeft+m.row.offsetWidth-104)+"px";
+          m.box.appendChild(tap);
+        });
+      }
+      if(document.fonts&&document.fonts.ready){document.fonts.ready.then(placeUIStepMarkers);}else{placeUIStepMarkers();}
 
       // ── auto-fit: Kanit/Prompt Thai glyphs run wider than the Sarabun these px
       // sizes were tuned for. Both .stat and .chip .n are nowrap blocks that can

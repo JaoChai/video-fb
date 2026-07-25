@@ -53,7 +53,10 @@ func TestRenderTutorialFormat(t *testing.T) {
 	for _, want := range []string{
 		`data-format="tutorial"`,
 		"const FORMAT_TUTORIAL = true",
-		"ui-panel", "ui-chrome", "ui-crumb", "ui-item", "ui-field", "ui-rail", "ui-callout",
+		"ui-panel", "ui-chrome", "ui-crumb", "ui-item", "ui-field", "ui-rail",
+		// spotlight design: the model's sentence renders under the panel (.ui-note)
+		// while a fixed tag + tap ring mark the row the viewer must press
+		"ui-note", "ui-point", "ui-tap", "กดตรงนี้",
 		"Cost per result", "Ads Manager", "400 THB",
 		"เลือก Cost per result แล้วใส่ 400 บาท",
 	} {
