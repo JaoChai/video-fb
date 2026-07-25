@@ -95,9 +95,21 @@ func runScriptDebate(lenses []debateLens, gen scriptGenFn, judge scriptJudgeFn) 
 // gap) → the plain single-pass path, byte-for-byte the old behavior. Flag on →
 // newsroom debate with the fail-open ladder in runScriptDebate; if even that
 // errors, fall back to single-pass. The debate can never fail a clip.
-func (o *Orchestrator) generateScript(ctx context.Context, clipID string, q agent.GeneratedQuestion, format *models.ContentFormat, persona, archetypeInstr, roleInstr string, scriptCfg *models.AgentConfig) (*agent.GeneratedScript, error) {
+func (o *Orchestrator) generateScript(ctx context.Context, clipID string, q agent.GeneratedQuestion, format *models.ContentFormat, persona, archetypeInstr, roleInstr, brief string, scriptCfg *models.AgentConfig) (*agent.GeneratedScript, error) {
 	single := func() (*agent.GeneratedScript, error) {
+		if brief != "" {
+			// Tutorial mode: the catalog block IS the grounding context. Skip the
+			// KB/web lookup — inventing extra facts is exactly what we prevent here.
+			return o.scriptAgent.GenerateWithContext(ctx, q.Question, q.QuestionerName, q.Category,
+				format, persona, archetypeInstr, roleInstr, brief, "", scriptCfg)
+		}
 		return o.scriptAgent.Generate(ctx, q.Question, q.QuestionerName, q.Category, format, persona, archetypeInstr, roleInstr, "", scriptCfg)
+	}
+
+	// Tutorial never runs the 3-lens debate: the structure is fixed by the catalog,
+	// so three writers would only vary wording at 3x the cost.
+	if brief != "" {
+		return single()
 	}
 
 	if raw, _ := o.settingsRepo.Get(ctx, "script_debate_enabled"); raw != "true" {
