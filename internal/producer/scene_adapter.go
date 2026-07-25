@@ -220,10 +220,13 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 				p.Items = append(p.Items, ContentUIItem{Label: lb, State: agent.ClampUIState(it.State)})
 			}
 		}
+		// A field with no value is worse than no field: it renders an empty
+		// highlighted box that usually just repeats the target row's label and
+		// teaches the viewer nothing. Only keep the field when there is an actual
+		// value to type or read.
 		if raw.Panel.Field != nil {
-			p.Field = &ContentUIField{
-				Label: clean(raw.Panel.Field.Label),
-				Value: clean(raw.Panel.Field.Value),
+			if val := strings.TrimSpace(clean(raw.Panel.Field.Value)); val != "" {
+				p.Field = &ContentUIField{Label: clean(raw.Panel.Field.Label), Value: val}
 			}
 		}
 		c.Panel = p
