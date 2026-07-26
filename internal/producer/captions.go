@@ -54,9 +54,11 @@ func captionSegmentsFromScenes(scenes []agent.GeneratedScene, bounds []sceneBoun
 			if j == len(phrases)-1 {
 				end = b.End // pin the last phrase to the boundary; kills float drift
 			}
+			// หา emphasis จากข้อความดิบก่อน แล้วค่อยประกบคำทับศัพท์ด้วย ZWSP —
+			// สลับลำดับแล้วคำเน้นที่เป็นคำทับศัพท์จะจับคู่ไม่เจอ
 			emph := emphasisInPhrase(scenes[i].EmphasisWords, ph)
 			segs = append(segs, TranscriptSegment{
-				Text:     ph,
+				Text:     GuardLoanWords(ph),
 				Start:    math.Round(start*100) / 100,
 				End:      math.Round(end*100) / 100,
 				Emphasis: emph,
