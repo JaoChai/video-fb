@@ -262,5 +262,44 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	}
 	// Derive after the hero fallback so speed follows the final layout.
 	c.Speed = speedForLayout(c.Layout)
+	guardSceneContent(&c)
 	return c
+}
+
+// guardSceneContent ประกบคำทับศัพท์ในทุกช่องข้อความที่ผู้ชมเห็น เรียกเป็นขั้นสุดท้าย
+// ของ buildSceneContent เพื่อให้ทำงานหลัง highlightTitleStr และ TruncateRunes แล้ว
+// (guard ก่อน highlight = zwsp ไปขวางการจับคู่คำเน้น, guard ก่อน truncate =
+// zwsp ถูกนับเป็นตัวอักษรจนข้อความโดนตัดสั้นกว่าที่ควร)
+//
+// ยกเว้น Panel.Items[].Label และ Panel.Field.Value โดยตั้งใจ — สองช่องนี้ต้อง
+// เทียบกับ ui_vocab ของ catalog ได้ทุกไบต์ (agent.UIVocabViolations) และเป็นชื่อ
+// เมนูภาษาอังกฤษของ Meta อยู่แล้ว จึงไม่มีคำทับศัพท์ไทยให้ต้องประกบ.
+func guardSceneContent(c *SceneContent) {
+	c.Kicker = GuardLoanWords(c.Kicker)
+	c.Title = GuardLoanWords(c.Title)
+	c.Sub = GuardLoanWords(c.Sub)
+	c.StatLabel = GuardLoanWords(c.StatLabel)
+	c.Pill = GuardLoanWords(c.Pill)
+	c.CTA = GuardLoanWords(c.CTA)
+	c.Brand = GuardLoanWords(c.Brand)
+	c.Stamp = GuardLoanWords(c.Stamp)
+	c.Callout = GuardLoanWords(c.Callout)
+	c.Hook = GuardLoanWords(c.Hook)
+	for i := range c.Rows {
+		c.Rows[i].Text = GuardLoanWords(c.Rows[i].Text)
+	}
+	for i := range c.Chips {
+		c.Chips[i].N = GuardLoanWords(c.Chips[i].N)
+		c.Chips[i].T = GuardLoanWords(c.Chips[i].T)
+	}
+	for i := range c.Panels {
+		c.Panels[i].T = GuardLoanWords(c.Panels[i].T)
+		c.Panels[i].Quote = GuardLoanWords(c.Panels[i].Quote)
+	}
+	if c.Panel != nil {
+		c.Panel.Breadcrumb = GuardLoanWords(c.Panel.Breadcrumb)
+		if c.Panel.Field != nil {
+			c.Panel.Field.Label = GuardLoanWords(c.Panel.Field.Label)
+		}
+	}
 }
