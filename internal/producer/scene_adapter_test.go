@@ -1,6 +1,7 @@
 package producer
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -109,5 +110,66 @@ func TestEntranceForSceneNoConsecutiveRepeat(t *testing.T) {
 		if entranceForScene(i) == entranceForScene(i-1) {
 			t.Fatalf("idx %d and %d have the same entrance %q", i-1, i, entranceForScene(i))
 		}
+	}
+}
+
+// ข้อความบนจอต้องถูก guard ทุกช่อง — Title ผ่าน highlightTitleStr มาก่อน
+// จึงต้องยืนยันว่าแท็ก <span class="acc"> ยังอยู่ครบ
+func TestBuildSceneContent_GuardsOnScreenText(t *testing.T) {
+	s := agent.GeneratedScene{
+		SceneNumber: 1,
+		Layout:      "hero",
+		Content:     json.RawMessage(`{"title":"เปิดแอดมินให้ครบ","cta":"ทักไอดี","sub":"เช็คเฟซบุ๊กก่อน"}`),
+	}
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 5})
+
+	if !strings.Contains(c.Title, zwsp+"แอดมิน"+zwsp) {
+		t.Errorf("Title ไม่ถูก guard: %q", c.Title)
+	}
+	if !strings.Contains(c.CTA, zwsp+"ไอดี"+zwsp) {
+		t.Errorf("CTA ไม่ถูก guard: %q", c.CTA)
+	}
+	if !strings.Contains(c.Sub, zwsp+"เฟซบุ๊ก"+zwsp) {
+		t.Errorf("Sub ไม่ถูก guard: %q", c.Sub)
+	}
+}
+
+// ป้ายเมนูใน uistep ต้องคงค่าเดิมทุกไบต์ — gate UIVocabViolations เทียบกับ
+// catalog แบบตรงตัว ถ้าแทรก ZWSP เข้าไปคลิปจะถูกบล็อกทั้งใบ
+func TestBuildSceneContent_LeavesUIPanelUntouched(t *testing.T) {
+	s := agent.GeneratedScene{
+		SceneNumber: 1,
+		Layout:      "uistep",
+		Content: json.RawMessage(`{"title":"เปิดแอดมิน",
+			"panel":{"chrome":"Meta Business Suite","breadcrumb":"Settings",
+			"items":[{"label":"Business settings","state":"target"}],
+			"field":{"label":"ชื่อบัญชี","value":"Ads Vance"}}}`),
+	}
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 5})
+
+	if c.Panel == nil || len(c.Panel.Items) == 0 {
+		t.Fatal("panel หายไป")
+	}
+	if got := c.Panel.Items[0].Label; got != "Business settings" {
+		t.Errorf("ป้ายเมนูถูกแก้: %q", got)
+	}
+	if c.Panel.Field == nil {
+		t.Fatal("field หายไป")
+	}
+	if got := c.Panel.Field.Value; got != "Ads Vance" {
+		t.Errorf("ค่าในช่องถูกแก้: %q", got)
+	}
+}
+
+// คำที่ไม่ได้อยู่ในรายการต้องไม่ถูกแตะ — กัน guard ไปยุ่งกับข้อความปกติ
+func TestBuildSceneContent_LeavesPlainThaiUntouched(t *testing.T) {
+	s := agent.GeneratedScene{
+		SceneNumber: 1,
+		Layout:      "hero",
+		Content:     json.RawMessage(`{"title":"เปลี่ยนโดเมนแล้วอัดงบต่อทันที"}`),
+	}
+	c := buildSceneContent(s, sceneBound{Start: 0, End: 5})
+	if strings.Contains(c.Title, zwsp) {
+		t.Errorf("แทรก ZWSP ในข้อความที่ไม่มีคำทับศัพท์: %q", c.Title)
 	}
 }
