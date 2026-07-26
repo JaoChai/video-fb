@@ -1,0 +1,260 @@
+[
+ {
+  "frame": "bad_1.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_1.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_1.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"คอนเวอร์ชัน\" ถูกตัดกลางคำเป็นคนละบรรทัด (คอน / เวอร์ชัน)"
+  ]
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำไทยถูกตัดกลางคำ: \"อัลกอริ\" ขึ้นบรรทัดใหม่ต่อด้วย \"ทึม\" ทำให้ \"อัลกอริทึม\" ถูกผ่ากลางคำ"
+  ]
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอริ/ทึม)"
+  ]
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำเป็น \"แดช\" กับ \"บอร์ด\" คนละบรรทัด"
+  ]
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"เฟซบุ๊ก\" ถูกตัดกลางคำคนละบรรทัด (บรรทัดบนจบด้วย \"เฟ\" บรรทัดล่างขึ้นด้วย \"ซบุ๊ก\")"
+  ]
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แอดมิน\" ถูกตัดกลางคำคนละบรรทัด (แอด/มิน)"
+  ]
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"คอนเวอร์ชัน\" ถูกตัดกลางคำเป็น \"คอนเวอร์\" และ \"ชัน\" คนละบรรทัด"
+  ]
+ },
+ {
+  "frame": "good_2.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_2.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_2.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_3.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_3.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แอด\" กับ \"ชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดชบอร์ด)"
+  ]
+ },
+ {
+  "frame": "good_3.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_5.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_5.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แอดมิน\" ถูกตัดกลางคำคนละบรรทัด (แอด/มิน)"
+  ]
+ },
+ {
+  "frame": "good_5.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แอดมิน\" ถูกตัดกลางคำคนละบรรทัด (แอด/มิน)"
+  ]
+ }
+]
