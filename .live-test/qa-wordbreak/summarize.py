@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""สรุป eval_raw.json เป็นตารางสำหรับ RESULT.md — กันการพิมพ์ตัวเลขตามด้วยมือแล้วคลาดเคลื่อน
+"""สรุปผลดิบเป็นตารางสำหรับ RESULT.md — กันการพิมพ์ตัวเลขตามด้วยมือแล้วคลาดเคลื่อน
 
-  python3 summarize.py
+  python3 summarize.py                      # อ่าน eval_raw.json (รอบ A: bad/good)
+  python3 summarize.py eval_raw_zwsp.json   # รอบ B: bad/good/zwsp ครบสามชุด
 
-อ่าน eval_raw.json ที่ eval.py เขียนไว้ แล้วพิมพ์ตาราง markdown + ตัวเลขรวมของทั้งสามชุด
 ground truth ของชุด zwsp อ่านจาก ZWSP_HAS_DEFECT ใน eval.py (แหล่งเดียวกัน ไม่ให้หลุดกัน)
 """
 import json
 import os
+import sys
 
 from eval import ZWSP_HAS_DEFECT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-rows = json.load(open(os.path.join(HERE, "eval_raw.json"), encoding="utf-8"))
+src = sys.argv[1] if len(sys.argv) > 1 else "eval_raw.json"
+rows = json.load(open(os.path.join(HERE, src), encoding="utf-8"))
+print(f"# จาก {src} ({len(rows)} คำตอบ)\n")
 
 by_frame = {}
 for r in rows:

@@ -1,0 +1,381 @@
+[
+ {
+  "frame": "bad_1.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"คอนเวอร์ชัน\" ถูกตัดกลางคำคนละบรรทัด (คอน / เวอร์ชัน)"
+  ]
+ },
+ {
+  "frame": "bad_1.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_1.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำเป็น \"อัลกอริ\" กับ \"ทึม\" คนละบรรทัด"
+  ]
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอริ / ทึม)"
+  ]
+ },
+ {
+  "frame": "bad_2.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอริ / ทึม)"
+  ]
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำเป็น \"แดช\" ท้ายบรรทัดบนกับ \"บอร์ด\" ต้นบรรทัดล่าง"
+  ]
+ },
+ {
+  "frame": "bad_3.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_4.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"เฟซบุ๊ก\" ถูกตัดกลางคำคนละบรรทัด (เฟ / ซบุ๊ก)"
+  ]
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แอดมิน\" ถูกตัดกลางคำ (แอดมิ/น คนละบรรทัด)"
+  ]
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "bad_5.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_1.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_2.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_2.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอ/ริทึม)"
+  ]
+ },
+ {
+  "frame": "good_2.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_3.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_3.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_3.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_4.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_5.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_5.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "good_5.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_1.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_1.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_1.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_2.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอริ / ทึม)"
+  ]
+ },
+ {
+  "frame": "zwsp_2.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำคนละบรรทัด (อัลกอริ/ทึม)"
+  ]
+ },
+ {
+  "frame": "zwsp_2.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"อัลกอริทึม\" ถูกตัดกลางคำเป็น \"อัลกอริ\" และ \"ทึม\" คนละบรรทัด"
+  ]
+ },
+ {
+  "frame": "zwsp_3.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "zwsp_3.png",
+  "run": 2,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "zwsp_3.png",
+  "run": 3,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"แดชบอร์ด\" ถูกตัดกลางคำคนละบรรทัด (แดช/บอร์ด)"
+  ]
+ },
+ {
+  "frame": "zwsp_4.png",
+  "run": 1,
+  "ok": false,
+  "codes": [
+   "wordbreak"
+  ],
+  "issues": [
+   "คำว่า \"เฟซบุ๊ก\" ถูกตัดกลางคำ แยกเป็น \"เฟ\" ท้ายบรรทัดแรกและ \"ซบุ๊ก\" ต้นบรรทัดที่สอง"
+  ]
+ },
+ {
+  "frame": "zwsp_4.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_4.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_5.png",
+  "run": 1,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_5.png",
+  "run": 2,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ },
+ {
+  "frame": "zwsp_5.png",
+  "run": 3,
+  "ok": true,
+  "codes": [],
+  "issues": []
+ }
+]
