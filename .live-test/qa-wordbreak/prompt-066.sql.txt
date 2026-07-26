@@ -1,3 +1,18 @@
+-- ⚠️ ไฟล์นี้ไม่ใช่ migration — เป็นสำเนาถ้อยคำ SQL ที่เคยใช้วัดผลในรอบนี้ เก็บไว้เป็นหลักฐาน
+-- และให้ทำซ้ำการวัดได้ (ดู RESULT.md) เท่านั้น การวัดจริงพบว่าไม่ผ่านเกณฑ์ (recall 53%,
+-- FP ระดับคลิป ~66%) จึง **ไม่ได้ merge เข้า migrations/ หรือขึ้น prod**
+-- **ห้ามย้ายไฟล์นี้กลับเข้า migrations/** เด็ดขาด — RunMigrations จะ apply ให้ทันทีตอน
+-- deploy ครั้งถัดไปโดยไม่มีการ review ซ้ำ (นามสกุล .txt ในชื่อไฟล์ตั้งใจ กันสคริปต์ migration
+-- runner หยิบไปรันเอง)
+--
+-- บั๊กที่พบตอน final review: บล็อก Rollback ข้างล่างสั่ง strip แค่ system_prompt ด้วย
+-- split_part แต่ migration นี้ยัง `skills = skills || ...` ต่อท้ายให้ทั้ง visual_qa และ
+-- auto_review ด้วย และ AgentConfig.BuildSystemPrompt() (internal/models/agent.go:18-27)
+-- เอา skills มาต่อรวมกับ system_prompt เสมอ — รันตาม Rollback ที่เขียนไว้จริงจึง **ไม่ลบ
+-- เกณฑ์ wordbreak ออกหมด** (ส่วนที่อยู่ใน skills ยังหลงเหลืออยู่) ซ้ำร้ายถ้ารัน 066 ซ้ำ
+-- หลัง "rollback" แบบนี้ WHERE ของ UPDATE skills ไม่มีเงื่อนไขกันซ้ำ (ต่างจาก UPDATE
+-- system_prompt ที่เช็ค NOT LIKE '%wordbreak%') → skills จะถูกต่อท้ายซ้ำเป็นรอบสอง
+--
 -- 066: เกณฑ์ "คำไทยถูกตัดกลางคำ" สำหรับ visual_qa + auto_review
 --
 -- ทำไมต้องมี: ตำหนิคลาสนี้มองไม่เห็นจากทุกด่านอัตโนมัติที่มีอยู่ — hyperframes inspect

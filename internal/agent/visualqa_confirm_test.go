@@ -69,39 +69,3 @@ func TestConfirmMerge_Mixed(t *testing.T) {
 		t.Errorf("want scene2 failed, scenes 1&3 ok; got %+v", got.Verdicts)
 	}
 }
-
-// TestConfirmMerge_StickyCodeSurvivesCleanConfirm คือหัวใจของแผนนี้: เฟรมยืนยัน
-// ที่ 85% เป็นคนละวลีคาราโอเกะ จึงไม่มีสิทธิ์ล้างตำหนิที่ผูกกับตัวข้อความ
-func TestConfirmMerge_StickyCodeSurvivesCleanConfirm(t *testing.T) {
-	first := VisualQAResult{Verdicts: []SceneVerdict{
-		{SceneNumber: 1, OK: false, Issues: []string{`คำว่า "แอดมิน" ถูกผ่ากลางเป็น "แอด"/"มิน"`}, Codes: []string{"wordbreak"}},
-	}}
-	confirm := VisualQAResult{Verdicts: []SceneVerdict{{SceneNumber: 1, OK: true}}, Passed: true}
-
-	got := ConfirmMerge(first, confirm)
-
-	if got.Passed {
-		t.Fatal("ตำหนิ sticky ต้องไม่ถูกรอบยืนยันเคลียร์")
-	}
-	if got.Verdicts[0].OK {
-		t.Fatal("verdict ซีน 1 ต้องยังเป็น OK=false")
-	}
-	if len(got.Verdicts[0].Codes) != 1 || got.Verdicts[0].Codes[0] != "wordbreak" {
-		t.Fatalf("codes ต้องถูกส่งต่อ ได้ %v", got.Verdicts[0].Codes)
-	}
-}
-
-// TestConfirmMerge_NonStickyStillClears ยืนยันว่าพฤติกรรมเดิม (ลด false positive
-// ของตำหนิที่เกิดจากจังหวะ) ยังอยู่ครบ
-func TestConfirmMerge_NonStickyStillClears(t *testing.T) {
-	first := VisualQAResult{Verdicts: []SceneVerdict{
-		{SceneNumber: 1, OK: false, Issues: []string{"หัวข้อดูล้นกรอบ"}, Codes: []string{"overflow"}},
-	}}
-	confirm := VisualQAResult{Verdicts: []SceneVerdict{{SceneNumber: 1, OK: true}}, Passed: true}
-
-	got := ConfirmMerge(first, confirm)
-
-	if !got.Passed {
-		t.Fatal("ตำหนิที่ไม่ sticky ต้องยังถูกรอบยืนยันเคลียร์ได้เหมือนเดิม")
-	}
-}

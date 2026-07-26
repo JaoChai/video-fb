@@ -705,22 +705,21 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 			// Two-strike confirm: re-sample every flagged scene later in the scene
 			// (past the entrance animation, on a different caption phrase) and
 			// re-judge. A scene only stays failed when BOTH frames show the defect.
-			// ยกเว้นตำหนิที่พกรหัส sticky (เช่น คำไทยถูกตัดกลางคำ) — เฟรมยืนยันเป็น
-			// คนละวลีคาราโอเกะ จึงตัดสินซ้ำไม่ได้ ไม่ต้องเสีย credit ยิงเลย
-			flagged := agent.ScenesNeedingConfirm(qaRes.Verdicts)
-			if len(flagged) > 0 {
-				confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, probedDur, flagged)
-				confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
-					Question: q.Question,
-					Frames:   confirmFrames,
-					Fast:     producer.PipelineFastEnabled(),
-				}, qaCfg)
-				qaRes = agent.ConfirmMerge(qaRes, confirmRes)
-				log.Printf("visualqa: clip %s confirm pass done — %d scene(s) rechecked, passed=%v",
-					clipID, len(confirmFrames), qaRes.Passed)
-			} else {
-				log.Printf("visualqa: clip %s — ตำหนิทุกซีนเป็นชนิดที่รอบยืนยันตัดสินซ้ำไม่ได้ ข้ามรอบยืนยัน", clipID)
+			flagged := make(map[int]bool)
+			for _, v := range qaRes.Verdicts {
+				if !v.OK {
+					flagged[v.SceneNumber] = true
+				}
 			}
+			confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, probedDur, flagged)
+			confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{
+				Question: q.Question,
+				Frames:   confirmFrames,
+				Fast:     producer.PipelineFastEnabled(),
+			}, qaCfg)
+			qaRes = agent.ConfirmMerge(qaRes, confirmRes)
+			log.Printf("visualqa: clip %s confirm pass done — %d scene(s) rechecked, passed=%v",
+				clipID, len(confirmFrames), qaRes.Passed)
 		}
 		if wErr := o.visualQARepo.Create(ctx, clipID, qaRes.Passed, agent.MarshalVerdicts(qaRes.Verdicts)); wErr != nil {
 			log.Printf("visualqa: persist result failed (non-fatal): %v", wErr)
