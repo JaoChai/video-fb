@@ -34,6 +34,54 @@ func TestStickyCodesNonEmpty(t *testing.T) {
 	}
 }
 
+// TestScenesNeedingConfirm ครอบ predicate ที่ orchestrator ใช้ตัดสินว่าจะยิงรอบยืนยัน
+// ซีนไหน — ต้องไม่รวมซีนที่ตกด้วย sticky code เพราะรอบยืนยันตัดสินซ้ำไม่ได้อยู่แล้ว
+func TestScenesNeedingConfirm(t *testing.T) {
+	cases := []struct {
+		name     string
+		verdicts []SceneVerdict
+		want     map[int]bool
+	}{
+		{
+			"verdict ผ่านหมด",
+			[]SceneVerdict{{SceneNumber: 1, OK: true}, {SceneNumber: 2, OK: true}},
+			map[int]bool{},
+		},
+		{
+			"ตกแบบ non-sticky ต้องอยู่ในชุด",
+			[]SceneVerdict{{SceneNumber: 1, OK: false, Codes: []string{"overflow"}}},
+			map[int]bool{1: true},
+		},
+		{
+			"ตกแบบ sticky ต้องไม่อยู่ในชุด",
+			[]SceneVerdict{{SceneNumber: 1, OK: false, Codes: []string{"wordbreak"}}},
+			map[int]bool{},
+		},
+		{
+			"ปนกัน — มีเฉพาะ non-sticky",
+			[]SceneVerdict{
+				{SceneNumber: 1, OK: true},
+				{SceneNumber: 2, OK: false, Codes: []string{"overflow"}},
+				{SceneNumber: 3, OK: false, Codes: []string{"wordbreak"}},
+			},
+			map[int]bool{2: true},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ScenesNeedingConfirm(c.verdicts)
+			if len(got) != len(c.want) {
+				t.Fatalf("ScenesNeedingConfirm(%+v) = %v, want %v", c.verdicts, got, c.want)
+			}
+			for scene := range c.want {
+				if !got[scene] {
+					t.Errorf("ScenesNeedingConfirm(%+v) = %v, want scene %d included", c.verdicts, got, scene)
+				}
+			}
+		})
+	}
+}
+
 // TestMigration066DeclaresStickyCodes กันความพังที่เงียบที่สุดของฟีเจอร์นี้: ถ้า prompt
 // สะกดรหัสไม่ตรงกับ stickyCodes ใน Go (เช่น "word_break" กับ "wordbreak") ตำหนิจะไหลผ่าน
 // รอบยืนยันไปเผยแพร่โดยไม่มีใครรู้ว่าสาเหตุอยู่ที่การสะกด ไม่ใช่ที่โมเดล

@@ -40,6 +40,12 @@ ZWSP_HAS_DEFECT = {
     "zwsp_5.png": False,   # แอดมิน     → ไม่ถูกตัด (สะอาด)
 }
 
+def is_flagged(ok, codes):
+    """ตำหนิ wordbreak ตัวจริง: ok=false พร้อมรหัส wordbreak (ทน case/whitespace
+    เหมือน HasStickyCode ฝั่ง Go). ใช้ทั้งใน eval.py และ summarize.py — อย่านิยามซ้ำ"""
+    return (not ok) and any(str(c).strip().lower() == "wordbreak" for c in codes)
+
+
 def api_key():
     """อ่านตอนจะยิงจริงเท่านั้น — summarize.py import ไฟล์นี้มาใช้ ZWSP_HAS_DEFECT โดยไม่ต้องมีคีย์"""
     key = os.environ.get("KIE_API_KEY") or ""
@@ -110,7 +116,7 @@ def main():
                 rows.append({"frame": name, "run": k + 1, "error": f"{type(e).__name__}: {e}"})
                 print(f"{name} #{k+1}: ยิงไม่ผ่าน — {type(e).__name__}: {e}", flush=True)
                 continue
-            flagged_wordbreak = (not ok) and any(c.strip().lower() == "wordbreak" for c in codes)
+            flagged_wordbreak = is_flagged(ok, codes)
             if is_zwsp:
                 # แยกหมวด ไม่ปนกับ gate — ground truth ปนกันจึงต้องดูรายใบ
                 if ZWSP_HAS_DEFECT[name]:

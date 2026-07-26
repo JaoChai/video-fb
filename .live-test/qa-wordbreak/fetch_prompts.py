@@ -17,6 +17,10 @@ import os
 
 import psycopg2  # ไม่ใช่ stdlib แต่เครื่องมีอยู่แล้ว และดีกว่าก๊อป prompt 6KB ด้วยมือ
 
+# SQL นี้ re-derive ตรรกะของ AgentConfig.BuildSystemPrompt() (internal/models/agent.go:18-27)
+# — ถ้าโค้ด Go เปลี่ยนวิธีต่อ system_prompt+skills+insights ต้องมาแก้ query นี้ตาม ไม่งั้น
+# prompts.json จะไม่ตรงกับ prompt จริงที่ยิงบน prod เงียบๆ (agent.go คือ source of truth)
+#
 # raw string เพื่อให้ \n ตกถึง Postgres เป็น escape ของ E'' ตามเดิม ไม่ใช่ให้ Python แปลงก่อน
 SQL = r"""
 SELECT json_build_object(

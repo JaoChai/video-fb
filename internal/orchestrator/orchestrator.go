@@ -707,12 +707,7 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 			// re-judge. A scene only stays failed when BOTH frames show the defect.
 			// ยกเว้นตำหนิที่พกรหัส sticky (เช่น คำไทยถูกตัดกลางคำ) — เฟรมยืนยันเป็น
 			// คนละวลีคาราโอเกะ จึงตัดสินซ้ำไม่ได้ ไม่ต้องเสีย credit ยิงเลย
-			flagged := make(map[int]bool)
-			for _, v := range qaRes.Verdicts {
-				if !v.OK && !agent.HasStickyCode(v.Codes) {
-					flagged[v.SceneNumber] = true
-				}
-			}
+			flagged := agent.ScenesNeedingConfirm(qaRes.Verdicts)
 			if len(flagged) > 0 {
 				confirmFrames := o.extractQAFramesAt(clipID, result.LocalVideo916Path, scenes, qaRecheckSceneFrac, probedDur, flagged)
 				confirmRes := o.visualQAAgent.Review(ctx, agent.VisualQAInput{

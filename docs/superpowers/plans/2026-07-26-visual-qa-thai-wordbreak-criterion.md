@@ -775,7 +775,7 @@ git commit -m "test(qa): ชุดเฟรมทองคำวัดเกณ�
 **สิ่งที่แผนนี้ไม่ทำ (จงใจ):**
 
 - **ไม่ทำข้อ 1 ของ brief** — two-strike กับ Claude เปิดอยู่แล้ว ไม่มี flag ให้เปิด: `orchestrator.go:704-723` เรียก `agent.ConfirmMerge` แบบไม่มีเงื่อนไข เข้ามาตั้งแต่ commit `f345544` และ prod DB ยืนยันว่ามันทำงานจริง (15 จาก 64 แถวใน `visual_qa` ช่วง 20 วันหลัง มีโน้ต "เฟรมยืนยัน (recheck) ไม่พบปัญหา") ตัวเลข 12.6% → 4.9% คือผลที่ backtest วัดกับ **Gemini** ไม่ใช่ส่วนต่างที่ Claude ยังไม่ได้รับ
-- **ไม่ทำตัวตรวจ wordbreak แบบ deterministic ฝั่ง Go** — เป็นทางที่ถูกกว่าและแม่นกว่าในระยะยาว (รัน `Intl.Segmenter` ตอน `hyperframes inspect` แล้วเทียบกับจุดขึ้นบรรทัดจริง) แต่ต้องแก้ inspector ในฝั่ง hyperframes ซึ่งอยู่นอกขอบเขตที่สั่งมา ถ้าสนใจเป็นแผนแยกได้
+- **ไม่ทำตัวตรวจ wordbreak แบบ deterministic ฝั่ง Go** — เป็นทางที่ถูกกว่าและแม่นกว่าในระยะยาว **และไม่ต้องแตะ `hyperframes inspect` เลย** (นั่นเป็น CLI ภายนอกจาก npm package จริง — ดู `internal/producer/hyperframes.go:111-115` — จะแก้ต้อง fork/patch package) เทคนิคที่พิสูจน์แล้วคือวางตัวตรวจไว้ข้าง `GuardLoanWords` ใน `internal/producer/thaiwrap.go`: เปิดซีนใน headless Chromium แล้ววัดจุดขึ้นบรรทัดจริงด้วย `Range.getClientRects()` เทียบกับ `thaiLoanWords` (พิสูจน์แนวคิดแล้วที่ `.live-test/qa-wordbreak/repro.html` — ฟังก์ชัน `breakIndexes`/`cutsInsideWord`) เหตุผลที่เลื่อนออกไปคือ**อยู่นอกขอบเขตที่สั่งมา ไม่ใช่เพราะยากหรือทำไม่ได้** ถ้าสนใจเป็นแผนแยกได้
 
 **ต้นทุนที่เพิ่ม:** ศูนย์ credit ต่อคลิปในกรณีปกติ (`codes` เป็น field ในคำตอบเดิม ไม่ใช่คอลใหม่) และ **ลด** credit ลงในกรณีที่ตำหนิทุกซีนเป็น sticky — Step 8 ของ Task 1 ข้ามรอบยืนยันทิ้งไปเลย
 

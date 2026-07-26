@@ -10,7 +10,7 @@ import json
 import os
 import sys
 
-from eval import ZWSP_HAS_DEFECT
+from eval import ZWSP_HAS_DEFECT, is_flagged
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = sys.argv[1] if len(sys.argv) > 1 else "eval_raw.json"
@@ -23,9 +23,9 @@ for r in rows:
 
 
 def flagged(r):
-    """ตั้ง ok=false พร้อมรหัส wordbreak"""
-    return (not r.get("ok", True)) and any(
-        str(c).strip().lower() == "wordbreak" for c in r.get("codes", []))
+    """ตั้ง ok=false พร้อมรหัส wordbreak — delegate ไปยัง is_flagged ใน eval.py
+    (ตัวเดียวกับที่ eval.py ใช้เอง) กันสองไฟล์นิยาม predicate เดียวกันคนละที่"""
+    return is_flagged(r.get("ok", True), r.get("codes", []))
 
 
 print("| เฟรม | ผลแต่ละครั้ง | จับได้/ครั้ง |")

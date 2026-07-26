@@ -182,6 +182,21 @@ func HasStickyCode(codes []string) bool {
 	return false
 }
 
+// ScenesNeedingConfirm คือ scene number ของ verdict ที่ตก (OK=false) และคุ้มจะยิง
+// รอบยืนยัน — ไม่รวมซีนที่พก sticky code เพราะรอบยืนยันตัดสินซ้ำไม่ได้อยู่แล้ว
+// (เฟรมยืนยันเป็นคนละวลีคาราโอเกะ ดูเหตุผลที่ stickyCodes) ยิงไปก็เสีย credit ฟรี
+// โดยที่ผลลัพธ์จาก ConfirmMerge เหมือนเดิมทุกกรณี. ตัวเรียก (orchestrator) ใช้ผลนี้
+// ตัดสินใจว่าจะขอเฟรมยืนยันซีนไหนบ้าง โดยไม่ต้อง re-derive ตรรกะ sticky เอง.
+func ScenesNeedingConfirm(verdicts []SceneVerdict) map[int]bool {
+	out := make(map[int]bool)
+	for _, v := range verdicts {
+		if !v.OK && !HasStickyCode(v.Codes) {
+			out[v.SceneNumber] = true
+		}
+	}
+	return out
+}
+
 // ConfirmMerge resolves a two-strike QA: a scene flagged by the first pass stays
 // failed only if the confirm pass (a frame sampled later in the same scene) also
 // flagged it. This kills timing false positives — karaoke captions mid-reveal,
