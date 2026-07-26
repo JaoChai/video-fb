@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/jaochai/video-fb/internal/models"
 	"golang.org/x/sync/errgroup"
@@ -30,19 +31,22 @@ type VisualQAInput struct {
 	Fast bool
 }
 
-// SceneVerdict is the model's judgement for one scene. OK=false means a
-// confident visual defect that should block auto-publish. Issues are the
-// human-readable reasons (also written to the visual_qa log).
+// SceneVerdict คือคำตัดสินของโมเดลสำหรับหนึ่งซีน. OK=false คือตำหนิที่มั่นใจว่าจริง
+// และต้องบล็อกการเผยแพร่อัตโนมัติ. Issues คือเหตุผลภาษาไทย (เขียนลง visual_qa ด้วย).
+// Codes คือรหัสประเภทตำหนิจากชุดปิดที่ prompt กำหนด — ใช้แยกว่าตำหนิไหน "ขึ้นกับ
+// จังหวะเวลา" (รอบยืนยันตัดสินซ้ำได้) กับไหน "ผูกกับตัวข้อความ" (รอบยืนยันตัดสินซ้ำไม่ได้).
 type SceneVerdict struct {
 	SceneNumber int      `json:"scene_number"`
 	OK          bool     `json:"ok"`
 	Issues      []string `json:"issues"`
+	Codes       []string `json:"codes,omitempty"`
 }
 
-// visionVerdict is the raw single-frame JSON the model returns (one scene).
+// visionVerdict คือ JSON ดิบที่โมเดลคืนต่อหนึ่งเฟรม
 type visionVerdict struct {
 	OK     bool     `json:"ok"`
 	Issues []string `json:"issues"`
+	Codes  []string `json:"codes"`
 }
 
 // VisualQAResult is what Review hands back to the orchestrator: per-scene
@@ -144,7 +148,7 @@ func (a *VisualQAAgent) reviewFrame(ctx context.Context, question string, f QAFr
 		log.Printf("visualqa: scene %d vision error (fail-open): %v", f.SceneNumber, err)
 		return ok(fmt.Sprintf("vision error: %v", err))
 	}
-	return SceneVerdict{SceneNumber: f.SceneNumber, OK: out.OK, Issues: out.Issues}
+	return SceneVerdict{SceneNumber: f.SceneNumber, OK: out.OK, Issues: out.Issues, Codes: out.Codes}
 }
 
 // MarshalVerdicts is a small helper for the orchestrator to JSON-encode verdicts
@@ -157,13 +161,35 @@ func MarshalVerdicts(verdicts []SceneVerdict) []byte {
 	return b
 }
 
+// stickyCodes คือรหัสตำหนิที่ "ผูกกับตัวข้อความ ไม่ใช่จังหวะเวลา" — รอบยืนยันเคลียร์
+// ไม่ได้. เหตุผล: เฟรมยืนยันถูกสุ่มที่ 85% ของซีน ซึ่งเป็นคนละวลีคาราโอเกะกับเฟรมรอบแรก
+// ที่ 60% (ดู qaRecheckSceneFrac ใน orchestrator). คำที่ถูกผ่ากลางในวลีหนึ่งย่อมไม่โผล่
+// ในอีกวลีหนึ่ง ถ้าปล่อยให้เคลียร์ได้ ตำหนิจริงที่คนดูเห็นเต็มตาตอนวินาทีนั้นจะหลุดขึ้น
+// YouTube เงียบๆ ทุกครั้ง. two-strike มีไว้ฆ่า false positive จากอนิเมชันที่ยังไม่นิ่ง
+// เท่านั้น — ตำหนิคลาสนี้ไม่ได้เกิดจากอนิเมชัน จึงไม่อยู่ในขอบเขตของมัน.
+var stickyCodes = map[string]bool{
+	"wordbreak": true,
+}
+
+// HasStickyCode บอกว่า verdict นี้มีรหัสที่รอบยืนยันแตะไม่ได้ไหม. ทน whitespace และ
+// ตัวพิมพ์ใหญ่เพราะค่านี้มาจาก LLM ไม่ใช่จาก enum ในโค้ด.
+func HasStickyCode(codes []string) bool {
+	for _, c := range codes {
+		if stickyCodes[strings.ToLower(strings.TrimSpace(c))] {
+			return true
+		}
+	}
+	return false
+}
+
 // ConfirmMerge resolves a two-strike QA: a scene flagged by the first pass stays
 // failed only if the confirm pass (a frame sampled later in the same scene) also
 // flagged it. This kills timing false positives — karaoke captions mid-reveal,
 // entrance animations still settling — while a baked-in defect (an overflowing
 // headline is wrong at every timestamp) survives both passes. A flagged scene
 // the confirm pass has no verdict for (frame extraction failed) is cleared:
-// fail-open, matching reviewFrame's infra policy.
+// fail-open, matching reviewFrame's infra policy. ข้อยกเว้นเดียวคือ verdict ที่พก
+// รหัสใน stickyCodes — รอบยืนยันแตะไม่ได้ (ดูเหตุผลที่ stickyCodes).
 func ConfirmMerge(first, confirm VisualQAResult) VisualQAResult {
 	if first.Passed {
 		return first
@@ -180,9 +206,14 @@ func ConfirmMerge(first, confirm VisualQAResult) VisualQAResult {
 			out[i] = v
 			continue
 		}
+		if HasStickyCode(v.Codes) {
+			// ตำหนิผูกกับตัวข้อความ — เฟรมยืนยันเป็นคนละวลี ไม่มีสิทธิ์ล้างผลรอบแรก
+			out[i] = v
+			continue
+		}
 		if issues, still := confirmFailed[v.SceneNumber]; still {
 			merged := append(append([]string{}, v.Issues...), issues...)
-			out[i] = SceneVerdict{SceneNumber: v.SceneNumber, OK: false, Issues: merged}
+			out[i] = SceneVerdict{SceneNumber: v.SceneNumber, OK: false, Issues: merged, Codes: v.Codes}
 			continue
 		}
 		note := append([]string{"เฟรมยืนยัน (recheck) ไม่พบปัญหา — เคลียร์ผลรอบแรก"}, v.Issues...)
