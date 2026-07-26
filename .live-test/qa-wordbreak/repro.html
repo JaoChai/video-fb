@@ -135,28 +135,32 @@ document.fonts.ready.then(() => {
     }
     if (!found) { report.push({ n: n + 1, word, status: "ไม่พบจุดตัดกลางคำ" }); return; }
 
-    // bad = ข้อความดิบ (Chromium ตัดกลางคำ) / good = คำเดียวกันที่ห้ามตัดข้างใน
+    // สามชุด: bad = ข้อความดิบ / good = ห้ามตัดข้างในคำ / zwsp = สภาพจริงบน prod วันนี้
     const goodText = keepWhole(found.text, word);
-    for (const kind of ["bad", "good"]) {
+    const zwspText = found.text.split(word).join(ZWSP + word + ZWSP);
+    const texts = { bad: found.text, good: goodText, zwsp: zwspText };
+    for (const kind of ["bad", "good", "zwsp"]) {
       const el = document.createElement("div");
       el.className = "cap-phrase";
       el.id = `${kind}${n + 1}`;
       const inner = document.createElement("span");
       inner.className = "cap-word";
-      inner.textContent = kind === "bad" ? found.text : goodText;
+      inner.textContent = texts[kind];
       el.appendChild(inner);
       out.appendChild(el);
     }
 
+    // ground truth ของชุด zwsp วัดเอง ไม่ได้สมมติ — บางใบสะอาดบางใบยังมีตำหนิ
+    const zwspCut = anyLoanCut(zwspText, breakIndexes(probe, zwspText));
     report.push({
       n: n + 1, word, status: "ok", filler: found.filler, text: found.text,
       // ยืนยันด้วยตาได้ว่า bad ผ่ากลางคำจริงตรงไหน
       badSplit: found.text.slice(found.at, found.i) + " / " + found.text.slice(found.i, found.at + word.length),
       // ต้องเป็น null เสมอ ไม่งั้นเฟรม good ป้ายผิด แล้วผล FP ใช้ไม่ได้
       goodStillCut: anyLoanCut(goodText, breakIndexes(probe, goodText)),
-      // ZWSP คร่อมคำแบบ GuardLoanWords กันได้จริงไหม — เก็บไว้เป็นหลักฐาน ไม่ได้ใช้สร้างเฟรม
-      zwspStillCut: anyLoanCut(found.text.split(word).join(ZWSP + word + ZWSP),
-                               breakIndexes(probe, found.text.split(word).join(ZWSP + word + ZWSP))),
+      // ZWSP คร่อมคำแบบ GuardLoanWords กันได้จริงไหม = ground truth ของ zwsp_N.png
+      zwspStillCut: zwspCut,
+      zwspGroundTruth: zwspCut ? "มีตำหนิ" : "สะอาด",
     });
   });
   probe.remove();
