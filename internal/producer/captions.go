@@ -3,7 +3,6 @@ package producer
 import (
 	"math"
 	"strings"
-	"unicode"
 
 	"github.com/jaochai/video-fb/internal/agent"
 )
@@ -68,21 +67,15 @@ func captionSegmentsFromScenes(scenes []agent.GeneratedScene, bounds []sceneBoun
 	return segs
 }
 
-// safeCut returns the largest index <= max where tr[idx] is not a combining mark
-// (Unicode Mn), so a hard split never separates a Thai vowel/tone mark from its
-// base consonant (which would render as a floating mark / "corrupted" text).
-func safeCut(tr []rune, max int) int {
-	cut := max
-	for cut > 1 && unicode.Is(unicode.Mn, tr[cut]) {
-		cut--
-	}
-	return cut
-}
-
 // splitCaptionPhrases breaks one scene's narration into caption-sized phrases.
 // It packs whitespace-separated tokens (Thai uses spaces between phrases, not
-// words) up to captionMaxRunes. A single token longer than captionMaxRunes — an
-// unspaced Thai run — is hard-split by runes so no phrase ever overflows.
+// words) up to captionMaxRunes.
+//
+// A single token longer than captionMaxRunes stays WHOLE. เดิมโค้ดนี้หั่นมันตาม
+// จำนวนตัวอักษร ซึ่งตัดกลางคำแล้วทำให้ผู้ชมเห็นคำขาดข้ามเฟรม ("…แอดมินอ" ค้าง
+// จนจบวลี แล้ววลีถัดไปขึ้นต้นด้วย "ยู่…") — backtest 2026-07-26 พบว่าเกิดกับ
+// 20% ของซีน. ปล่อยให้ Chromium ขึ้นบรรทัดเองดีกว่า เพราะมันรู้ขอบเขตคำไทย
+// (ส่วนคำทับศัพท์ที่มันไม่รู้จัก GuardLoanWords ช่วยประกบไว้อีกชั้น)
 func splitCaptionPhrases(text string) []string {
 	var phrases []string
 	var cur []rune
@@ -96,18 +89,6 @@ func splitCaptionPhrases(text string) []string {
 
 	for _, tok := range strings.Fields(text) {
 		tr := []rune(tok)
-
-		// Hard-split an over-long single token into max-sized pieces.
-		if len(tr) > captionMaxRunes {
-			flush()
-			for len(tr) > captionMaxRunes {
-				cut := safeCut(tr, captionMaxRunes)
-				phrases = append(phrases, string(tr[:cut]))
-				tr = tr[cut:]
-			}
-			cur = append(cur, tr...)
-			continue
-		}
 
 		// Flush the current line if adding this token would overflow it.
 		if len(cur) > 0 && len(cur)+1+len(tr) > captionMaxRunes {

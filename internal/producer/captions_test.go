@@ -3,7 +3,6 @@ package producer
 import (
 	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/jaochai/video-fb/internal/agent"
 )
@@ -66,8 +65,8 @@ func TestCaptionSegmentsFromScenes_TimingWithinBoundsAndMonotonic(t *testing.T) 
 
 func TestCaptionSegmentsFromScenes_SkipsEmptyAndZeroWidth(t *testing.T) {
 	scenes := []agent.GeneratedScene{
-		{SceneNumber: 1, VoiceText: ""},                       // empty text → skip
-		{SceneNumber: 2, VoiceText: "มีข้อความ"},               // zero-width bound → skip
+		{SceneNumber: 1, VoiceText: ""},          // empty text → skip
+		{SceneNumber: 2, VoiceText: "มีข้อความ"}, // zero-width bound → skip
 		{SceneNumber: 3, VoiceText: "ปกติ"},
 	}
 	bounds := []sceneBound{{Start: 0, End: 0}, {Start: 0, End: 0}, {Start: 0, End: 4}}
@@ -91,7 +90,10 @@ func TestCaptionSegmentsFromScenes_LongTextSplitsIntoPhrases(t *testing.T) {
 		t.Fatalf("expected long text to split into multiple phrases, got %d", len(segs))
 	}
 	for i, s := range segs {
-		if n := len([]rune(s.Text)); n > captionMaxRunes {
+		// วลีที่แพ็กจากหลาย token ต้องไม่เกิน captionMaxRunes — แต่ token เดี่ยวที่
+		// ยาวเกินอยู่แล้ว (ข้อความไทยไม่มีช่องว่าง) ตั้งใจปล่อยไว้ทั้งคำ เพราะการ
+		// หั่นให้พอดีจำนวนตัวอักษรคือการตัดกลางคำ ซึ่งคือบั๊กที่เรากำลังแก้
+		if n := len([]rune(s.Text)); n > captionMaxRunes && len(strings.Fields(s.Text)) > 1 {
 			t.Errorf("seg %d has %d runes, exceeds captionMaxRunes=%d: %q", i, n, captionMaxRunes, s.Text)
 		}
 	}
@@ -121,18 +123,41 @@ func TestCaptionSegments_CarryEmphasisFromScene(t *testing.T) {
 	}
 }
 
-func TestSafeCut_doesNotSplitCombiningMark(t *testing.T) {
-	// "ที่" = ท + ◌ี(U+0E35 Mn) ; a naive cut at an index landing on the mark
-	// would orphan it. Build a >max run ending so index `max` is a combining mark.
-	base := []rune("กกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกกก") // 42 base consonants
-	tr := append(base, 'ี')                                        // index 42 = combining mark
-	cut := safeCut(tr, 42)
-	if unicodeIsMn(tr[cut]) {
-		t.Errorf("safeCut returned index %d which is a combining mark", cut)
+// หกประโยคนี้คือ voice_text จริงของซีนที่ backtest (2026-07-26) จับได้ว่าผู้ชม
+// เห็นคำขาดกลางคำ: แอดมินอ|ยู่ · บัญชีที่เค|ยมีปัญหา · ของทั้|งบัญชี ·
+// เป็นปัญห|าแบบนี้ · ขาดไม่ไ|ด้ · ตัวตนผู้จ่|ายเงิน
+func TestSplitCaptionPhrases_KeepsTokensWhole(t *testing.T) {
+	voices := []string{
+		"จุดที่สาม domain กับ Page ที่ยังผูกกับ BM เดิม ถ้ายังชี้กลับไปหาเขา เจ้าของเก่าเคลมคืนได้ทั้งที่คุณคุมแอดมินอยู่",
+		"ถ้าเป็นบัญชีซื้อมา อย่าเอาบัตรใบเดียวกันไปผูกซ้ำกับบัญชีที่เคยมีปัญหา เพราะมันลากทั้งพอร์ตเสียหายได้",
+		"เพราะระบบมองอัตราเปลี่ยนพฤติกรรมสะสมของทั้งบัญชี ไม่ใช่ขนาดงบต่อแคมเปญ",
+		"พอร์ตคุณเคยพังจากจุดที่ไม่คิดว่าจะเป็นปัญหาแบบนี้ไหม ทักไลน์ทีมงานมาคุยกันได้ครับ",
+		"ปี 2026 CAPI ไม่ใช่ทางเลือกแล้ว มันคือมาตรฐานขั้นต่ำที่ถือหลายบัญชีขาดไม่ได้",
+		"ข้อสอง สำคัญมากสำหรับสาย agency คือ Payer KYC ถ้าใครจ่ายเงินแทนคนอื่น แพลตฟอร์มต้องเก็บข้อมูลและยืนยันตัวตนผู้จ่ายเงินด้วย",
 	}
-	if cut < 1 {
-		t.Errorf("safeCut backed off too far: %d", cut)
+	for _, v := range voices {
+		whole := map[string]bool{}
+		for _, tok := range strings.Fields(v) {
+			whole[tok] = true
+		}
+		for _, ph := range splitCaptionPhrases(v) {
+			for _, tok := range strings.Fields(ph) {
+				if !whole[tok] {
+					t.Errorf("token %q ถูกหั่นมาจากคำเต็ม\nประโยค: %q", tok, v)
+				}
+			}
+		}
 	}
 }
 
-func unicodeIsMn(r rune) bool { return unicode.Is(unicode.Mn, r) }
+// วลีเดี่ยวที่ยาวเกิน captionMaxRunes ต้องอยู่ครบเป็นวลีเดียว ไม่ถูกซอย
+func TestSplitCaptionPhrases_LongThaiRunStaysWhole(t *testing.T) {
+	long := "แพลตฟอร์มต้องเก็บข้อมูลและยืนยันตัวตนผู้จ่ายเงินให้ครบทุกขั้นตอนก่อนอนุมัติ"
+	got := splitCaptionPhrases(long)
+	if len(got) != 1 {
+		t.Fatalf("คาดว่าได้ 1 วลี ได้ %d วลี: %q", len(got), got)
+	}
+	if got[0] != long {
+		t.Errorf("วลีเพี้ยน\n got: %q\nwant: %q", got[0], long)
+	}
+}
