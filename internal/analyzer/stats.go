@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jaochai/video-fb/internal/scoreboard"
 )
 
 // ClipStat is one clip's latest performance on one platform, assembled for the
@@ -71,6 +73,18 @@ func FillPercentiles(stats []ClipStat) {
 	}
 }
 
+// CountClips returns how many distinct clips the stats cover. The small-sample
+// gate needs this for the FULL window even though only the top/bottom clips are
+// rendered into the prompt, so it is separate from BuildAnalysisData — counting
+// must not force the caller to format a string it will throw away.
+func CountClips(stats []ClipStat) int {
+	seen := map[string]bool{}
+	for _, s := range stats {
+		seen[s.ID] = true
+	}
+	return len(seen)
+}
+
 // BuildAnalysisData renders stats as one line per clip-platform for the LLM
 // and returns the number of distinct clips.
 func BuildAnalysisData(stats []ClipStat) (string, int) {
@@ -92,4 +106,59 @@ func BuildAnalysisData(stats []ClipStat) (string, int) {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n"), len(seen)
+}
+
+// TopBottom คัดเฉพาะคลิปที่ดีที่สุดและแย่ที่สุด k ตัวของแต่ละแพลตฟอร์ม
+// ตัวกลางไม่ได้สอนอะไรโมเดล และการส่งคลิปทั้งหมดไปทำให้โมเดลเสียความสนใจ
+// กับรายละเอียดแทนที่จะอธิบายว่าอะไรทำให้ตัวบนชนะ
+func TopBottom(stats []ClipStat, k int) []ClipStat {
+	byPlatform := map[string][]ClipStat{}
+	for _, s := range stats {
+		byPlatform[s.Platform] = append(byPlatform[s.Platform], s)
+	}
+	var out []ClipStat
+	for _, group := range byPlatform {
+		sort.Slice(group, func(a, b int) bool { return group[a].Percentile > group[b].Percentile })
+		n := len(group)
+		if n <= 2*k {
+			out = append(out, group...)
+			continue
+		}
+		out = append(out, group[:k]...)
+		out = append(out, group[n-k:]...)
+	}
+	return out
+}
+
+// BuildScoreboardSection เรนเดอร์กระดานคะแนนเป็นข้อความสำหรับใส่ในพรอมป์
+// ตัวเลขถูกคำนวณมาแล้ว โมเดลจึงไม่ต้องเดาว่าสูตรไหนชนะ — หน้าที่มันคืออธิบายว่าทำไม
+func BuildScoreboardSection(scores []scoreboard.Score) string {
+	if len(scores) == 0 {
+		return "(ยังไม่มีกระดานคะแนน)"
+	}
+	byDim := map[string][]scoreboard.Score{}
+	var dims []string
+	for _, s := range scores {
+		if _, seen := byDim[s.Dimension]; !seen {
+			dims = append(dims, s.Dimension)
+		}
+		byDim[s.Dimension] = append(byDim[s.Dimension], s)
+	}
+	sort.Strings(dims)
+
+	var b strings.Builder
+	for _, d := range dims {
+		group := byDim[d]
+		sort.Slice(group, func(i, j int) bool { return group[i].ScoreFinal > group[j].ScoreFinal })
+		fmt.Fprintf(&b, "\n### %s\n", d)
+		for _, s := range group {
+			fmt.Fprintf(&b, "- %s (%s): คะแนน %.2f | n=%d | median วิว P%.0f | flop %.0f%%",
+				s.Value, s.Platform, s.ScoreFinal, s.N, s.MedianPct*100, s.FlopRate*100)
+			if s.MedianRetention > 0 {
+				fmt.Fprintf(&b, " | retention %.2f", s.MedianRetention)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }

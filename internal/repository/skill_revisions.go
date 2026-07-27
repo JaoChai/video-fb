@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
@@ -34,6 +35,21 @@ func (r *SkillRevisionsRepo) List(ctx context.Context, limit int) ([]models.Skil
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// LastRevisionAt returns when this agent's skills were last rewritten, or nil if
+// they never were. The learner uses it as a cooldown: its frequency gate is a
+// LEVEL trigger on a slow-moving condition (an issue appearing in >= 40% of
+// critiques), and rewriting skills does not move that number within a week — so
+// without a cooldown the gate would re-fire every single run.
+func (r *SkillRevisionsRepo) LastRevisionAt(ctx context.Context, agentName string) (*time.Time, error) {
+	var at *time.Time
+	err := r.pool.QueryRow(ctx,
+		`SELECT MAX(created_at) FROM skill_revisions WHERE agent_name = $1`, agentName).Scan(&at)
+	if err != nil {
+		return nil, fmt.Errorf("last skill revision for %s: %w", agentName, err)
+	}
+	return at, nil
 }
 
 // Record appends one audit row capturing the full old + new skills, the

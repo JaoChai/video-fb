@@ -232,3 +232,29 @@ type CategoryScore struct {
 	AvgViews      float64 `json:"avg_views"`
 	N             int     `json:"n"`
 }
+
+// FormulaScoreRow คือหนึ่งแถวของกระดานคะแนนสูตรที่อ่านกลับมาจาก DB
+// (สำหรับส่งออก API — ฝั่งคำนวณใช้ scoreboard.Score)
+type FormulaScoreRow struct {
+	ComputedAt      time.Time `json:"computed_at"`
+	Dimension       string    `json:"dimension"`
+	Value           string    `json:"value"`
+	Platform        string    `json:"platform"`
+	N               int       `json:"n"`
+	MedianPct       float64   `json:"median_pct"`
+	MedianRetention float64   `json:"median_retention"`
+	FlopRate        float64   `json:"flop_rate"`
+	ScoreFinal      float64   `json:"score_final"`
+}
+
+// WeightRevision คือ audit หนึ่งบรรทัดของการหมุนน้ำหนักหนึ่งสูตร
+type WeightRevision struct {
+	Dimension  string    `json:"dimension"`
+	Value      string    `json:"value"`
+	OldWeight  int       `json:"old_weight"`
+	NewWeight  int       `json:"new_weight"`
+	ScoreFinal float64   `json:"score_final"`
+	N          int       `json:"n"`
+	ComputedAt time.Time `json:"computed_at"`
+	CreatedAt  time.Time `json:"created_at"`
+}

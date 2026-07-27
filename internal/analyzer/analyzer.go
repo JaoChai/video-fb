@@ -15,13 +15,14 @@ import (
 const historyPrefixInsights = "[insights] "
 
 type Analyzer struct {
-	pool       *pgxpool.Pool
-	llm        *agent.KieLLMClient
-	agentsRepo *repository.AgentsRepo
+	pool        *pgxpool.Pool
+	llm         *agent.KieLLMClient
+	agentsRepo  *repository.AgentsRepo
+	formulaRepo *repository.FormulaScoresRepo
 }
 
-func New(pool *pgxpool.Pool, llm *agent.KieLLMClient, agentsRepo *repository.AgentsRepo) *Analyzer {
-	return &Analyzer{pool: pool, llm: llm, agentsRepo: agentsRepo}
+func New(pool *pgxpool.Pool, llm *agent.KieLLMClient, agentsRepo *repository.AgentsRepo, formulaRepo *repository.FormulaScoresRepo) *Analyzer {
+	return &Analyzer{pool: pool, llm: llm, agentsRepo: agentsRepo, formulaRepo: formulaRepo}
 }
 
 type improvementResult struct {
@@ -40,20 +41,35 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 		return fmt.Errorf("gather analytics data: %w", err)
 	}
 
-	data, clipCount := BuildAnalysisData(stats)
-	// Small-sample gate: below 8 measurable clips the signal is noise.
+	// ประตูกลุ่มตัวอย่างเล็กวัดจากคลิป "ทั้งหน้าต่าง" ไม่ใช่จำนวนที่ส่งให้โมเดล
+	// จึงนับก่อน แล้วค่อยตัดสินว่าจะทำงานต่อไหม
+	clipCount := CountClips(stats)
 	if clipCount < 8 {
 		log.Printf("Analyzer: only %d measurable clips in window (need 8), skipping", clipCount)
 		return nil
 	}
+
+	// ป้อนกระดานคะแนนแทนตารางคลิปทั้งหมด: ตัวเลขว่าสูตรไหนชนะคำนวณมาแล้ว
+	// โมเดลมีหน้าที่อธิบายว่าทำไม ไม่ใช่เดาความสัมพันธ์เอง
+	scoreboardSection := "(ยังไม่มีกระดานคะแนน)"
+	if _, scores, serr := a.formulaRepo.Latest(ctx); serr != nil {
+		log.Printf("Analyzer: อ่านกระดานคะแนนไม่ได้ (ใช้ตารางคลิปอย่างเดียว): %v", serr)
+	} else {
+		scoreboardSection = BuildScoreboardSection(scores)
+	}
+	data, _ := BuildAnalysisData(TopBottom(stats, 10))
 
 	analyticsAgent, err := a.agentsRepo.GetByName(ctx, "analytics")
 	if err != nil {
 		return fmt.Errorf("get analytics agent config: %w", err)
 	}
 
-	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube Shorts + TikTok posts for the last 14 days (n=%d clips — a small sample; calibrate your confidence accordingly):
+	userPrompt := fmt.Sprintf(`Here is the performance data from our YouTube Shorts + TikTok posts for the last 14 days (n=%d clips — a small sample; calibrate your confidence accordingly).
 
+FORMULA SCOREBOARD (60-day window, already computed — do NOT re-derive which formula wins; explain WHY the winners win):
+%s
+
+EXAMPLE CLIPS (top 10 and bottom 10 per platform only):
 %s
 
 Notes on the data:
@@ -83,7 +99,7 @@ Return JSON only:
     {"agent_name": "scene", "new_insights": "...", "reason": "..."},
     {"agent_name": "image", "new_insights": "...", "reason": "..."}
   ]
-}`, clipCount, data, a.currentPrompts(ctx))
+}`, clipCount, scoreboardSection, data, a.currentPrompts(ctx))
 
 	var result improvementResult
 	err = a.llm.GenerateJSON(ctx, analyticsAgent.Model, analyticsAgent.BuildSystemPrompt(), userPrompt, analyticsAgent.Temperature, &result)

@@ -4,13 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 )
 
+// sceneIndexPattern จับ index ของซีนในชื่อ field (`scene[5].image_prompt`)
+// เพื่อยุบให้เป็นปัญหาเดียวกัน — ไม่งั้นปัญหาเดียวกันที่เกิดคนละซีนจะถูกนับแยก
+// จนไม่มีวันถึงเกณฑ์ความถี่
+var sceneIndexPattern = regexp.MustCompile(`\[\d+\]`)
 
+// NormalizeField ตัด index ของซีนออกจากชื่อ field
+func NormalizeField(field string) string {
+	return sceneIndexPattern.ReplaceAllString(field, "")
+}
 
 type CritiquesRepo struct {
 	pool *pgxpool.Pool
@@ -44,8 +53,13 @@ func (r *CritiquesRepo) Create(ctx context.Context, clipID string, score, change
 	return err
 }
 
-// FieldIssue is one recurring critic edit (a changes[] entry) and how often it
-// occurred in the window.
+// FieldIssue is one recurring critic edit (a changes[] entry, with the scene
+// index stripped from the field name). Count is how many DISTINCT critique rows
+// touched this field in the window — NOT how many times the edit appears, since
+// one critique can edit the same field across multiple scenes (e.g. scene[0],
+// scene[1], scene[2].voice_text) and that should count once, not thrice. The
+// frequency gate in the learner compares Count against the number of critique
+// rows (N), so it must be a critique count.
 type FieldIssue struct {
 	Field  string
 	Reason string
@@ -65,10 +79,11 @@ type ScorePatterns struct {
 	TopIssues   []FieldIssue
 }
 
-// LowScorePatterns aggregates clip_critiques over the last sinceDays days:
-// per-dimension score averages + count, plus the most common changes[] entries.
+// LowScorePatterns aggregates clip_critiques over the window
+// [now-sinceDays, now-untilDays): untilDays = 0 คือถึงปัจจุบัน ใช้ baseline
+// ที่ไม่ทับ window ได้ด้วยการเรียกด้วย (90, 30)
 // topN caps how many recurring issues are returned (0 or negative -> 10).
-func (r *CritiquesRepo) LowScorePatterns(ctx context.Context, sinceDays, topN int) (ScorePatterns, error) {
+func (r *CritiquesRepo) LowScorePatterns(ctx context.Context, sinceDays, untilDays, topN int) (ScorePatterns, error) {
 	if topN <= 0 {
 		topN = 10
 	}
@@ -84,8 +99,9 @@ SELECT
   COALESCE(AVG((score->>'overall')::numeric),   0)              AS avg_overall
 FROM clip_critiques
 WHERE created_at >= NOW() - make_interval(days => $1)
+  AND created_at <  NOW() - make_interval(days => $2)
   AND applied = TRUE`,
-		sinceDays,
+		sinceDays, untilDays,
 	).Scan(&p.N, &p.AvgHook, &p.AvgClarity, &p.AvgBrandFit, &p.AvgOverall)
 	if err != nil {
 		return ScorePatterns{}, fmt.Errorf("aggregate score patterns: %w", err)
@@ -95,21 +111,28 @@ WHERE created_at >= NOW() - make_interval(days => $1)
 		return p, nil
 	}
 
-	// Most common changes[] field+reason pairs over the same window (applied rows only).
+	// จัดกลุ่มด้วย field ที่ตัด index ซีนออกแล้วเท่านั้น — reason เป็นข้อความอิสระ
+	// ที่โมเดลเขียนใหม่ทุกครั้ง จึงเก็บไว้แค่เป็นตัวอย่าง ไม่ใช้จัดกลุ่ม
+	// cnt นับจำนวน critique (DISTINCT cc.id) ที่แตะ field นี้ ไม่ใช่จำนวนครั้งที่แก้ —
+	// critique ใบเดียวแก้ scene[0].voice_text, scene[1].voice_text, scene[2].voice_text
+	// ถือเป็น field เดียวใน 1 ใบ ไม่ใช่ 3 ครั้ง เพราะเกณฑ์ frequency ใน learner
+	// เทียบ Count กับจำนวนใบ critique (N) ถ้านับเป็นครั้ง ตัวเลขจะเกิน N และประตู
+	// จะเปิดเกือบทุกครั้งโดยไม่มีความหมาย
 	rows, err := r.pool.Query(ctx, `
 SELECT
-  c->>'field'  AS field,
-  c->>'reason' AS reason,
-  COUNT(*)     AS cnt
+  regexp_replace(c->>'field', '\[[0-9]+\]', '', 'g') AS field,
+  (array_agg(c->>'reason' ORDER BY cc.created_at DESC))[1] AS reason,
+  COUNT(DISTINCT cc.id) AS cnt
 FROM clip_critiques cc,
      LATERAL jsonb_array_elements(cc.changes) AS c
 WHERE cc.created_at >= NOW() - make_interval(days => $1)
+  AND cc.created_at <  NOW() - make_interval(days => $2)
   AND cc.applied = TRUE
   AND c->>'field' IS NOT NULL
-GROUP BY c->>'field', c->>'reason'
+GROUP BY 1
 ORDER BY cnt DESC, field ASC
-LIMIT $2`,
-		sinceDays, topN,
+LIMIT $3`,
+		sinceDays, untilDays, topN,
 	)
 	if err != nil {
 		return ScorePatterns{}, fmt.Errorf("aggregate top issues: %w", err)

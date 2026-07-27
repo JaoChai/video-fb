@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
@@ -18,7 +19,13 @@ const (
 	// windowDays is how far back LowScorePatterns aggregates for the CURRENT window.
 	windowDays = 30
 	// baselineDays is the trailing window the current scores are compared against.
+	// It starts at sinceDays=90 and excludes the most recent baselineUntilDays so it
+	// does NOT overlap the CURRENT window (otherwise the baseline absorbs the very
+	// regression we're trying to detect).
 	baselineDays = 90
+	// baselineUntilDays is the upper bound of the baseline window (exclusive):
+	// baseline covers [now-90, now-30), leaving [now-30, now) for the window.
+	baselineUntilDays = 30
 	// minCritiques is the minimum critique rows (in a window) before we act.
 	minCritiques = 8
 	// regressionMargin: the weakest dimension must sit this far below its own
@@ -30,6 +37,15 @@ const (
 	issueFrequencyThreshold = 0.4
 	// topIssuesN caps how many recurring issues feed the pattern summary.
 	topIssuesN = 8
+	// flopRegressionMargin: flop rate ของ window ต้องแย่กว่า baseline เท่านี้
+	// ถึงจะถือว่าผลลัพธ์จริงถดถอย (คะแนน critic เป็นตัวแทน ยอดวิวคือของจริง)
+	flopRegressionMargin = 0.10
+	// minFlopSample: จำนวนคลิปขั้นต่ำในแต่ละช่วงก่อนเชื่อ flop rate
+	minFlopSample = 8
+	// revisionCooldown: ระยะพักขั้นต่ำก่อนที่ agent เดิมจะถูกเขียน skills ใหม่อีกครั้ง
+	// 28 วันคือหน้าต่างวัดผล 30 วันโดยประมาณ — ต้องรอให้ critique ชุดใหม่หลังการแก้
+	// ครั้งก่อนสะสมพอจะบอกได้ว่ามันช่วยจริงไหม ก่อนจะแก้ทับอีกรอบ
+	revisionCooldown = 28 * 24 * time.Hour
 )
 
 // allowedAgents is the FIXED allowlist of agents the learner may ever touch.
@@ -40,6 +56,20 @@ var allowedAgents = []string{"scene", "script"}
 // tiny repo; declared here so the service depends on a narrow interface.
 type SkillRevisionsWriter interface {
 	Record(ctx context.Context, agentName, oldSkills, newSkills, rationale string, critiqueWindow int) error
+	LastRevisionAt(ctx context.Context, agentName string) (*time.Time, error)
+}
+
+// cooldownElapsed บอกว่าพ้นระยะพักของ agent นี้แล้วหรือยัง Pure — ทดสอบได้โดยไม่ต้องมี DB
+//
+// ทำไมต้องมี: ประตูทั้งสามเป็น "ระดับ" ไม่ใช่ "เหตุการณ์" — เกณฑ์ frequency ดูว่า
+// ปัญหาหนึ่งโผล่ใน critique เกิน 40% ของใบหรือไม่ ซึ่งเป็นสภาพที่ค้างอยู่หลายสัปดาห์
+// (ของจริงบน prod ตอนนี้ 0.47) การเขียน skills ใหม่ไม่ทำให้ตัวเลขนั้นลดลงภายในรอบเดียว
+// ถ้าไม่มีระยะพัก loop จะเขียนทับ skills ของ agent เดิมทุกวันจันทร์ตลอดไป
+func cooldownElapsed(last *time.Time, now time.Time) bool {
+	if last == nil {
+		return true
+	}
+	return now.Sub(*last) >= revisionCooldown
 }
 
 // agentsRepoIface is the subset of *repository.AgentsRepo the Learner needs.
@@ -51,7 +81,12 @@ type agentsRepoIface interface {
 
 // critiquesRepoIface is the subset of *repository.CritiquesRepo the Learner needs.
 type critiquesRepoIface interface {
-	LowScorePatterns(ctx context.Context, sinceDays, topN int) (repository.ScorePatterns, error)
+	LowScorePatterns(ctx context.Context, sinceDays, untilDays, topN int) (repository.ScorePatterns, error)
+}
+
+// flopRepoIface คือสิ่งเดียวที่ learner ต้องการจาก analytics
+type flopRepoIface interface {
+	FlopRate(ctx context.Context, sinceDays, untilDays int) (float64, int, error)
 }
 
 // learnerAgentIface is the subset of *agent.LearnerAgent the Learner needs.
@@ -79,12 +114,22 @@ func strongSignal(p, base repository.ScorePatterns) (bool, string, float64, stri
 	return false, name, val, "no_gate"
 }
 
+// outcomeGate เปิดเมื่อสัดส่วนคลิปที่แป้กในหน้าต่างล่าสุดแย่กว่าช่วงก่อนหน้า
+// อย่างมีนัย และทั้งสองช่วงมีคลิปมากพอจะเชื่อได้ Pure — ทดสอบได้โดยไม่ต้องมี DB
+func outcomeGate(windowFlop, baselineFlop float64, windowN, baselineN int) bool {
+	if windowN < minFlopSample || baselineN < minFlopSample {
+		return false
+	}
+	return windowFlop-baselineFlop >= flopRegressionMargin
+}
+
 // Learner runs the guardrailed auto-apply loop.
 type Learner struct {
 	agents    agentsRepoIface
 	critiques critiquesRepoIface
 	llmAgent  learnerAgentIface
 	audit     SkillRevisionsWriter
+	flops     flopRepoIface
 }
 
 func New(
@@ -92,8 +137,9 @@ func New(
 	critiques critiquesRepoIface,
 	llmAgent learnerAgentIface,
 	audit SkillRevisionsWriter,
+	flops flopRepoIface,
 ) *Learner {
-	return &Learner{agents: agents, critiques: critiques, llmAgent: llmAgent, audit: audit}
+	return &Learner{agents: agents, critiques: critiques, llmAgent: llmAgent, audit: audit, flops: flops}
 }
 
 // RunOnce executes one pass: for each allowlisted agent, aggregate recent
@@ -111,14 +157,28 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 	}
 
 	// Fetch the full patterns once; each agent then operates on a filtered copy.
-	patterns, err := l.critiques.LowScorePatterns(ctx, windowDays, topIssuesN)
+	patterns, err := l.critiques.LowScorePatterns(ctx, windowDays, 0, topIssuesN)
 	if err != nil {
 		return fmt.Errorf("learner: aggregate failed: %w", err)
 	}
 
-	baseline, err := l.critiques.LowScorePatterns(ctx, baselineDays, topIssuesN)
+	baseline, err := l.critiques.LowScorePatterns(ctx, baselineDays, baselineUntilDays, topIssuesN)
 	if err != nil {
 		return fmt.Errorf("learner: baseline aggregate failed: %w", err)
+	}
+
+	// ประตูที่สาม: ผลลัพธ์จริงถดถอย แม้คะแนน critic จะปกติ
+	outcomeFired := false
+	if l.flops != nil {
+		wFlop, wN, ferr := l.flops.FlopRate(ctx, windowDays, 0)
+		bFlop, bN, berr := l.flops.FlopRate(ctx, baselineDays, baselineUntilDays)
+		if ferr != nil || berr != nil {
+			log.Printf("learner: อ่าน flop rate ไม่ได้ (ข้าม outcome gate): %v %v", ferr, berr)
+		} else {
+			outcomeFired = outcomeGate(wFlop, bFlop, wN, bN)
+			log.Printf("learner: outcome gate = %v (window flop %.2f n=%d, baseline flop %.2f n=%d)",
+				outcomeFired, wFlop, wN, bFlop, bN)
+		}
 	}
 
 	for _, name := range allowedAgents {
@@ -139,9 +199,26 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		agentPatterns.TopIssues = ownedIssues
 
 		ok, lowDim, lowVal, gate := strongSignal(agentPatterns, baseline)
+		if !ok && outcomeFired {
+			ok, gate = true, "outcome"
+		}
 		if !ok {
 			log.Printf("learner: [%s] skip — weak signal (%s; n=%d weakest=%s avg=%.2f baseline=%.2f)",
 				name, gate, agentPatterns.N, lowDim, lowVal, baseline.Dim(lowDim))
+			continue
+		}
+
+		// ระยะพัก: ประตูทุกบานเป็นสภาพที่ค้างอยู่หลายสัปดาห์ ไม่ใช่เหตุการณ์ชั่ววูบ
+		// ถ้าไม่กันตรงนี้ agent เดิมจะถูกเขียน skills ใหม่ทุกรอบจนกว่าตัวเลขจะขยับ
+		// ซึ่งอาจไม่ขยับเลย
+		lastRev, rerr := l.audit.LastRevisionAt(ctx, name)
+		if rerr != nil {
+			log.Printf("learner: [%s] อ่านเวลาแก้ครั้งล่าสุดไม่ได้ — ข้ามเพื่อความปลอดภัย: %v", name, rerr)
+			continue
+		}
+		if !cooldownElapsed(lastRev, time.Now()) {
+			log.Printf("learner: [%s] skip — ยังอยู่ในระยะพัก (แก้ล่าสุด %s, ต้องเว้น %s)",
+				name, lastRev.Format("2006-01-02"), revisionCooldown)
 			continue
 		}
 
@@ -179,8 +256,15 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 			log.Printf("learner: [%s] apply failed AFTER audit (revert from skill_revisions if needed): %v", name, err)
 			continue
 		}
-		log.Printf("learner: [%s] APPLIED new skills (gate=%s weakest=%s avg=%.2f n=%d) — rationale: %s",
-			name, gate, lowDim, lowVal, agentPatterns.N, out.Rationale)
+		// เมื่อยิงด้วยประตู outcome สัญญาณมาจาก flop rate ไม่ใช่มิติคะแนนที่อ่อนสุด —
+		// พิมพ์มิตินั้นออกไปด้วยจะอ่านเหมือนว่ามันคือเหตุผลที่ยิง ทั้งที่ไม่ใช่
+		if gate == "outcome" {
+			log.Printf("learner: [%s] APPLIED new skills (gate=outcome — flop rate ถดถอย ไม่ใช่คะแนน critic; n=%d) — rationale: %s",
+				name, agentPatterns.N, out.Rationale)
+		} else {
+			log.Printf("learner: [%s] APPLIED new skills (gate=%s weakest=%s avg=%.2f n=%d) — rationale: %s",
+				name, gate, lowDim, lowVal, agentPatterns.N, out.Rationale)
+		}
 	}
 	return nil
 }

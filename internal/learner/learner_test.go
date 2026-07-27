@@ -3,6 +3,7 @@ package learner
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaochai/video-fb/internal/repository"
 )
@@ -70,6 +71,50 @@ func TestStrongSignalRelativeGates(t *testing.T) {
 	}
 }
 
+func TestStrongSignalFiresOnRegressionAgainstNonOverlappingBaseline(t *testing.T) {
+	// window แย่กว่า baseline เกิน 0.5 → ต้องยิง
+	window := repository.ScorePatterns{N: 20, AvgHook: 7.0, AvgClarity: 8.0, AvgBrandFit: 8.5, AvgOverall: 7.9}
+	baseline := repository.ScorePatterns{N: 20, AvgHook: 7.8, AvgClarity: 8.0, AvgBrandFit: 8.5, AvgOverall: 7.9}
+	fire, dim, _, gate := strongSignal(window, baseline)
+	if !fire || dim != "hook" || gate != "regression" {
+		t.Errorf("ควรยิง regression ที่ hook ได้ fire=%v dim=%s gate=%s", fire, dim, gate)
+	}
+}
+
+func TestStrongSignalFiresOnNormalizedIssueFrequency(t *testing.T) {
+	// ปัญหาเดียวรวมแล้ว 9 ใบ critique จาก 20 critique = 45% >= 40%
+	window := repository.ScorePatterns{
+		N: 20, AvgHook: 8.0, AvgClarity: 8.0, AvgBrandFit: 8.5, AvgOverall: 8.0,
+		TopIssues: []repository.FieldIssue{{Field: "scene.image_prompt", Reason: "เติมโทนสีแบรนด์", Count: 9}},
+	}
+	baseline := repository.ScorePatterns{N: 20, AvgHook: 8.0, AvgClarity: 8.0, AvgBrandFit: 8.5, AvgOverall: 8.0}
+	fire, _, _, gate := strongSignal(window, baseline)
+	if !fire || gate != "frequency" {
+		t.Errorf("ควรยิง frequency ได้ fire=%v gate=%s", fire, gate)
+	}
+}
+
+func TestOutcomeGate(t *testing.T) {
+	cases := []struct {
+		name         string
+		wFlop, bFlop float64
+		wN, bN       int
+		want         bool
+	}{
+		{"flop แย่ลงเกิน 0.10 → ยิง", 0.45, 0.30, 20, 20, true},
+		{"flop แย่ลงนิดเดียว → ไม่ยิง", 0.35, 0.30, 20, 20, false},
+		{"flop ดีขึ้น → ไม่ยิง", 0.20, 0.40, 20, 20, false},
+		{"ตัวอย่าง window น้อยเกิน → ไม่ยิง", 0.60, 0.20, 3, 20, false},
+		{"ตัวอย่าง baseline น้อยเกิน → ไม่ยิง", 0.60, 0.20, 20, 3, false},
+	}
+	for _, c := range cases {
+		if got := outcomeGate(c.wFlop, c.bFlop, c.wN, c.bN); got != c.want {
+			t.Errorf("%s: outcomeGate(%v,%v,%d,%d) = %v, want %v",
+				c.name, c.wFlop, c.bFlop, c.wN, c.bN, got, c.want)
+		}
+	}
+}
+
 func TestFormatPatterns_IncludesScoresAndIssues(t *testing.T) {
 	p := repository.ScorePatterns{
 		N: 12, AvgHook: 4.5, AvgClarity: 7, AvgBrandFit: 8, AvgOverall: 6,
@@ -131,5 +176,25 @@ func TestAgentIssueFiltering(t *testing.T) {
 		if agentForField(fi.Field) != "script" {
 			t.Errorf("script filter leaked non-script issue: %q", fi.Field)
 		}
+	}
+}
+
+func TestCooldownElapsed(t *testing.T) {
+	now := time.Date(2026, 7, 27, 3, 0, 0, 0, time.UTC)
+	recent := now.Add(-7 * 24 * time.Hour)
+	old := now.Add(-29 * 24 * time.Hour)
+	exact := now.Add(-revisionCooldown)
+
+	if !cooldownElapsed(nil, now) {
+		t.Error("ไม่เคยแก้มาก่อน ต้องผ่านระยะพัก")
+	}
+	if cooldownElapsed(&recent, now) {
+		t.Error("แก้ไป 7 วันก่อน ต้องยังติดระยะพัก")
+	}
+	if !cooldownElapsed(&old, now) {
+		t.Error("แก้ไป 29 วันก่อน ต้องพ้นระยะพักแล้ว")
+	}
+	if !cooldownElapsed(&exact, now) {
+		t.Error("ครบ 28 วันพอดี ต้องนับว่าพ้นแล้ว")
 	}
 }

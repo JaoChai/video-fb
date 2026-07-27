@@ -28,6 +28,7 @@ import (
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jaochai/video-fb/internal/router"
 	"github.com/jaochai/video-fb/internal/scheduler"
+	"github.com/jaochai/video-fb/internal/scoreboard"
 )
 
 func main() {
@@ -121,9 +122,9 @@ func main() {
 	scriptJudgeAgent := agent.NewScriptJudgeAgent(llm)
 	skillRevisionsRepo := repository.NewSkillRevisionsRepo(pool)
 	learnerAgent := agent.NewLearnerAgent(llm)
-	learnerSvc := learner.New(agentsRepo, critiquesRepo, learnerAgent, skillRevisionsRepo)
 	themesRepo := repository.NewThemesRepo(pool)
 	analyticsRepo := repository.NewAnalyticsRepo(pool)
+	learnerSvc := learner.New(agentsRepo, critiquesRepo, learnerAgent, skillRevisionsRepo, analyticsRepo)
 	settingsRepo := repository.NewSettingsRepo(pool)
 	formatsRepo := repository.NewFormatsRepo(pool)
 
@@ -163,9 +164,11 @@ func main() {
 		return
 	}
 
-	anlz := analyzer.New(pool, llm, agentsRepo)
 	schedRepo := repository.NewSchedulesRepo(pool)
-	sched := scheduler.New(pool, pub, anlz, orch, schedRepo, clipsRepo, learnerSvc)
+	formulaScoresRepo := repository.NewFormulaScoresRepo(pool)
+	anlz := analyzer.New(pool, llm, agentsRepo, formulaScoresRepo)
+	scoreboardSvc := scoreboard.NewService(formulaScoresRepo, settingsRepo, time.Now)
+	sched := scheduler.New(pool, pub, anlz, orch, schedRepo, clipsRepo, learnerSvc, scoreboardSvc)
 	if err := sched.Start(ctx); err != nil {
 		log.Printf("Warning: scheduler start failed: %v", err)
 	}

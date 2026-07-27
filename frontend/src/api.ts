@@ -92,3 +92,31 @@ export interface AutoReview {
 
 export const getClipAutoReview = (clipId: string) =>
   apiFetch<AutoReview | null>(`/api/v1/clips/${clipId}/auto-review`);
+
+export interface FormulaScore {
+  computed_at: string;
+  dimension: string;
+  value: string;
+  platform: string;
+  n: number;
+  median_pct: number;
+  median_retention: number;
+  flop_rate: number;
+  score_final: number;
+}
+
+export interface WeightRevision {
+  dimension: string;
+  value: string;
+  old_weight: number;
+  new_weight: number;
+  score_final: number;
+  n: number;
+  computed_at: string;
+  created_at: string;
+}
+
+export const getFormulaScores = () =>
+  apiFetch<{ computed_at: string; scores: FormulaScore[] }>('/api/v1/formula-scores');
+export const getWeightRevisions = () =>
+  apiFetch<WeightRevision[]>('/api/v1/weight-revisions');
