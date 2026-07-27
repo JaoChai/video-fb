@@ -32,7 +32,7 @@
 |---|---|---|---|
 | `content_format` (5 ค่า, enabled 4) | 83/83 | `content_formats.weight` | ✅ ปุ่มใหม่หลัก |
 | `category` (enabled 3 หมวด) | 83/83 | `topic_categories.weight` | ✅ |
-| `style_preset` (10 ค่า) | 79/83 | epsilon-greedy ใน Go | ✅ แก้บั๊ก ไม่สร้างใหม่ |
+| `style_preset` (10 ค่า) | 79/83 | epsilon-greedy ใน Go (ไม่ทำงาน ดูหัวข้อ 7) | ✅ วัดผลอย่างเดียว ไม่หมุน weight |
 | `title_archetype` | 42/83 | `title_archetypes.weight` | ❌ ตัดออก (fill ครึ่งเดียว) |
 | `clip_role` | 43/83 | ไม่มี | ❌ ตัดออก (fill ครึ่งเดียว) |
 | `audience_persona` | 43/83 | ไม่มี | ❌ free text ที่ LLM เขียนเอง 11 ค่าไม่ซ้ำกัน นับสถิติไม่ได้ |
@@ -126,12 +126,15 @@ weight        = round(share_new × 100)     // สเกล Σ = 100
 
 **ขอบเขตที่ไม่แตะ:** `title_archetypes.weight` คงสเกลเดิม 1-2 ไม่เข้าสโคปนี้
 
-## 7. ส่วน C — แก้ preset selection
+## 7. ส่วน C — preset selection (เลื่อนออก ไม่อยู่ในรอบนี้)
 
-- `AnalyticsRepo.PresetRetention` → เปลี่ยนจาก `AVG` เป็น median และเปลี่ยนแหล่งจาก `retention_rate` เป็น `avg_view_percentage` ให้ตรงกับกระดานคะแนน
-- ให้ `PickPresetWeighted` รับ `score_final` จาก `formula_scores` (มิติ `style_preset`) แทน `AvgRetention` ดิบ
-- คง epsilon-greedy 30% และกฎ avoid-last ไว้เหมือนเดิม
-- `minClips` เดิม (3) ยังอยู่เป็นเกณฑ์ "รู้จักพอจะ exploit" แต่เปลี่ยนตัวนับ: เดิมนับเฉพาะคลิปที่มี `retention_rate > 0` ใหม่นับ `n` จากกระดานคะแนน (คลิปที่มี analytics ใดๆ) — `case-file` ที่ retention ยังไม่มารายงานจึงแข่งได้ด้วย `median_pct` + `flop_rate`
+**ข้อเท็จจริงที่พบตอนทำแผน:** `PickPresetWeighted` เป็น dead code บน prod ตอนนี้ `orchestrator.go:355-374` ตรวจ `CaseFormatEnabled()` **ก่อน** `StylePresetsEnabled()` และ prod ตั้ง `CASE_FORMAT_ENABLED=true` → ทุกคลิปได้ `CaseFilePreset` ตายตัว ยืนยันจากข้อมูลจริง: คลิปที่ไม่ใช่ tutorial ตั้งแต่ 2026-07-24 เป็น `case-file` ล้วน 100%
+
+ดังนั้นการแก้ `PresetRetention`/`PickPresetWeighted` จะไม่มีผลกับ prod จนกว่าจะปิด `CASE_FORMAT_ENABLED` — **เลื่อนออกจากรอบนี้**
+
+สิ่งที่ยังทำในรอบนี้: **เก็บมิติ `style_preset` ไว้ในกระดานคะแนน** เพราะมันตอบคำถามที่ค้างอยู่ว่า "case-file ดีกว่าธีมเก่า 4 ตัวจริงไหม" ซึ่งเป็นเงื่อนไขที่ตั้งไว้ก่อนจะลบธีมเก่าทิ้ง (ครบกำหนดตรวจ ~31 ก.ค.)
+
+เมื่อใดที่จะกลับมาทำ: ถ้าตัดสินใจปิด `CASE_FORMAT_ENABLED` แล้วกลับไปหมุนหลายธีม ให้แก้ `PresetRetention` เป็น median + `avg_view_percentage` และป้อน `score_final` จาก `formula_scores` แทน `AvgRetention` ดิบ (บั๊ก outlier และบั๊ก retention=0 ในหัวข้อ 3 ยังรออยู่ตรงนั้น)
 
 ## 8. ส่วน D — ฝั่งข้อความ (insights + skills)
 
@@ -162,7 +165,7 @@ weight        = round(share_new × 100)     // สเกล Σ = 100
 - tuner ล้มกลางทาง → เขียน weight ทีละมิติในทรานแซกชันเดียวต่อมิติ มิติที่สำเร็จอยู่ มิติที่ล้มคงค่าเดิม
 - เขียน `weight_revisions` ล้ม → **ไม่ apply weight** (audit ต้องมาก่อนเสมอ เหมือน learner ปัจจุบัน)
 - ไม่มีคลิปพอ (`n < 8` ทุกค่าในมิติ) → log ว่าข้ามเพราะอะไร ไม่ใช่เงียบ
-- `formula_scores` ว่าง → preset selection ตกกลับไปใช้ uniform avoid-last (พฤติกรรมเดิมก่อนมี performance flag)
+- `formula_scores` ว่าง → tuner ข้ามรอบทั้งหมด ไม่เขียน weight ใดๆ (preset selection ไม่ได้อ่านกระดานในรอบนี้ ดูหัวข้อ 7)
 
 ## 11. Testing
 
