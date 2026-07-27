@@ -27,3 +27,18 @@ func TestLowestDimension_TieKeepsFirst(t *testing.T) {
 		t.Errorf("tie should keep first (hook), got %q", name)
 	}
 }
+
+func TestNormalizeField(t *testing.T) {
+	cases := map[string]string{
+		"scene[5].image_prompt":   "scene.image_prompt",
+		"scene[12].voice_text":    "scene.voice_text",
+		"metadata.youtube_title":  "metadata.youtube_title",
+		"scene[0].on_screen_text": "scene.on_screen_text",
+		"":                        "",
+	}
+	for in, want := range cases {
+		if got := NormalizeField(in); got != want {
+			t.Errorf("NormalizeField(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

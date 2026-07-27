@@ -419,6 +419,51 @@ func (r *AnalyticsRepo) TopicPerformance(ctx context.Context, windowDays, minCli
 	return out, nil
 }
 
+// FlopRate คืนสัดส่วนคลิปที่อยู่ท้ายตาราง (percentile < 0.25 ภายในแพลตฟอร์ม)
+// สำหรับคลิปที่ผลิตในช่วง [now-sinceDays, now-untilDays) พร้อมจำนวนคลิปที่นับได้
+// ใช้เป็นสัญญาณ "ผลลัพธ์จริงแย่ลง" ที่ไม่ผ่านสายตาโมเดลใดๆ
+//
+// สองจุดที่ทำให้สองการเรียกเทียบกันได้จริง:
+//   - วัดตามวันที่ผลิตคลิป (clips.created_at) ไม่ใช่ ca.fetched_at — ระบบดึงสถิติ
+//     ของคลิปทุกใบใหม่ทุกวัน จึงหน้าต่างตาม fetched_at จะมีคลิปชุดเดียวกันแทบทั้งหมด
+//   - จัดอันดับบนชุดอ้างอิงร่วม: PERCENT_RANK คำนวณครั้งเดียวบนคลิปที่ผลิตใน 90 วันล่าสุด
+//     (ค่าคงที่) แล้วค่อยกรองเอาเฉพาะช่วงที่ขอเมื่อคำนวณสัดส่วน หากแบ่งหน้าต่างก่อน
+//     จัดอันดับ "คลิปที่ต่ำกว่า P25 ของชุดตัวเอง" จะได้ ~25% เสมอโดยนิยาม
+func (r *AnalyticsRepo) FlopRate(ctx context.Context, sinceDays, untilDays int) (float64, int, error) {
+	var rate float64
+	var n int
+	err := r.pool.QueryRow(ctx, `
+WITH latest AS (
+    SELECT DISTINCT ON (ca.clip_id, ca.platform)
+        ca.clip_id, ca.platform, ca.views
+    FROM clip_analytics ca
+    WHERE ca.platform IN ('youtube','tiktok')
+      AND NOT EXISTS (
+          SELECT 1 FROM clip_publish_status ps
+          WHERE ps.clip_id = ca.clip_id AND ps.platform = ca.platform
+            AND ps.status = 'failed')
+    ORDER BY ca.clip_id, ca.platform, ca.fetched_at DESC
+), tagged AS (
+    SELECT l.platform, l.views, c.created_at
+    FROM latest l JOIN clips c ON c.id = l.clip_id
+    WHERE c.status = 'published'
+      AND c.created_at >= NOW() - make_interval(days => 90)
+), ranked AS (
+    SELECT created_at,
+           PERCENT_RANK() OVER (PARTITION BY platform ORDER BY views) AS pct
+    FROM tagged
+)
+SELECT COALESCE(COUNT(*) FILTER (WHERE pct < 0.25)::float / NULLIF(COUNT(*), 0), 0),
+       COUNT(*)
+FROM ranked
+WHERE created_at >= NOW() - make_interval(days => $1)
+  AND created_at <  NOW() - make_interval(days => $2)`, sinceDays, untilDays).Scan(&rate, &n)
+	if err != nil {
+		return 0, 0, fmt.Errorf("flop rate: %w", err)
+	}
+	return rate, n, nil
+}
+
 // PublishFailures lists posts whose last-seen Zernio status is 'failed'.
 func (r *AnalyticsRepo) PublishFailures(ctx context.Context) ([]models.PublishFailure, error) {
 	rows, err := r.pool.Query(ctx, `
