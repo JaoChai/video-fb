@@ -1,6 +1,8 @@
 package router
 
 import (
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -10,6 +12,7 @@ import (
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
+	"github.com/jaochai/video-fb/internal/scoreboard"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -92,6 +95,14 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Get("/", presets.List)
 		r.Get("/performance", presets.Performance)
 	})
+
+	formulaRepo := repository.NewFormulaScoresRepo(pool)
+	sbHandler := handler.NewScoreboardHandler(formulaRepo,
+		scoreboard.NewService(formulaRepo, repository.NewSettingsRepo(pool), time.Now))
+	r.Get("/api/v1/formula-scores", sbHandler.Latest)
+	r.Post("/api/v1/formula-scores/compute", sbHandler.Compute)
+	r.Get("/api/v1/weight-revisions", sbHandler.Revisions)
+	r.Post("/api/v1/weights/rollback", sbHandler.Rollback)
 
 	settings := handler.NewSettingsHandler(repository.NewSettingsRepo(pool))
 	r.Route("/api/v1/settings", func(r chi.Router) {
