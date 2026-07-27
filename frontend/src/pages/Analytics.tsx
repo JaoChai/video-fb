@@ -4,10 +4,10 @@ import {
   Eye, ThumbsUp, MessageSquare, Share2, Clock, TrendingUp, BarChart3, AlertTriangle,
   ChevronDown, ChevronUp,
 } from 'lucide-react'
-import { apiFetch, getPresetPerformance, type PresetScore } from '../api'
+import { apiFetch, getFormulaScores, getWeightRevisions, getPresetPerformance, type FormulaScore, type PresetScore } from '../api'
 import { PageHeader } from '../components/page-header'
 import { Button } from '../components/ui/button'
-import { Card, CardContent } from '../components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table'
@@ -104,6 +104,94 @@ function StatusLine({ lastFetchedAt, clipCount }: { lastFetchedAt: string | null
         </span>
       )}
     </div>
+  )
+}
+
+function FormulaScoreboard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['formula-scores'],
+    queryFn: getFormulaScores,
+  })
+  const { data: revisions } = useQuery({
+    queryKey: ['weight-revisions'],
+    queryFn: getWeightRevisions,
+  })
+
+  if (isLoading) return null
+  const scores = data?.scores ?? []
+  if (scores.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>กระดานคะแนนสูตร</CardTitle>
+          <CardDescription>ยังไม่มีข้อมูล — รอรอบคำนวณรอบแรก</CardDescription>
+        </CardHeader>
+      </Card>
+    )
+  }
+
+  const byDimension = scores.reduce<Record<string, FormulaScore[]>>((acc, s) => {
+    (acc[s.dimension] ??= []).push(s)
+    return acc
+  }, {})
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>กระดานคะแนนสูตร</CardTitle>
+        <CardDescription>
+          คำนวณเมื่อ {new Date(scores[0].computed_at).toLocaleString('th-TH')} · หน้าต่าง 60 วัน
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {Object.entries(byDimension).map(([dim, rows]) => (
+          <div key={dim}>
+            <h4 className="text-sm font-medium mb-2">{dim}</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-muted-foreground text-xs uppercase">
+                  <tr>
+                    <th className="text-left py-1">สูตร</th>
+                    <th className="text-left py-1">แพลตฟอร์ม</th>
+                    <th className="text-right py-1">n</th>
+                    <th className="text-right py-1">median วิว</th>
+                    <th className="text-right py-1">flop</th>
+                    <th className="text-right py-1">คะแนน</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...rows]
+                    .sort((a, b) => b.score_final - a.score_final)
+                    .map(r => (
+                      <tr key={`${r.value}-${r.platform}`} className="border-t border-border">
+                        <td className="py-1">{r.value}</td>
+                        <td className="py-1">{r.platform}</td>
+                        <td className="py-1 text-right">{r.n}</td>
+                        <td className="py-1 text-right">{(r.median_pct * 100).toFixed(0)}</td>
+                        <td className="py-1 text-right">{(r.flop_rate * 100).toFixed(0)}%</td>
+                        <td className="py-1 text-right font-medium">{r.score_final.toFixed(3)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+        {revisions && revisions.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium mb-2">การหมุนน้ำหนักล่าสุด</h4>
+            <ul className="text-sm space-y-1">
+              {revisions.slice(0, 8).map((r, i) => (
+                <li key={i} className="text-muted-foreground">
+                  {new Date(r.created_at).toLocaleDateString('th-TH')} · {r.dimension}/{r.value}:{' '}
+                  {r.old_weight} → {r.new_weight}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -293,6 +381,8 @@ export default function AnalyticsPage() {
               </Card>
             )}
           </div>
+
+          <FormulaScoreboard />
         </div>
       )}
     </div>
