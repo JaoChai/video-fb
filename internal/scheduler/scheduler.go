@@ -247,5 +247,8 @@ func (s *Scheduler) tuneWeights(ctx context.Context) error {
 	if _, err := s.scoreboard.ComputeSnapshot(ctx); err != nil {
 		return fmt.Errorf("compute scoreboard: %w", err)
 	}
-	return s.scoreboard.TuneOnce(ctx)
+	if err := s.scoreboard.TuneOnce(ctx); err != nil {
+		return fmt.Errorf("tune weights: %w", err)
+	}
+	return nil
 }
