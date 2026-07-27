@@ -15,6 +15,7 @@ import (
 	"github.com/jaochai/video-fb/internal/preflight"
 	"github.com/jaochai/video-fb/internal/publisher"
 	"github.com/jaochai/video-fb/internal/repository"
+	"github.com/jaochai/video-fb/internal/scoreboard"
 	"github.com/robfig/cron/v3"
 )
 
@@ -34,9 +35,10 @@ type Scheduler struct {
 	schedulesRepo *repository.SchedulesRepo
 	clipsRepo     *repository.ClipsRepo
 	learner       *learner.Learner
+	scoreboard    *scoreboard.Service
 }
 
-func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo, lrn *learner.Learner) *Scheduler {
+func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, orch *orchestrator.Orchestrator, schedRepo *repository.SchedulesRepo, clipsRepo *repository.ClipsRepo, lrn *learner.Learner, sb *scoreboard.Service) *Scheduler {
 	loc, err := time.LoadLocation("Asia/Bangkok")
 	if err != nil {
 		log.Printf("Scheduler: failed to load Asia/Bangkok, using UTC: %v", err)
@@ -49,6 +51,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 			schedulesRepo: schedRepo,
 			clipsRepo:     clipsRepo,
 			learner:       lrn,
+			scoreboard:    sb,
 		}
 	}
 	return &Scheduler{
@@ -60,6 +63,7 @@ func New(pool *pgxpool.Pool, pub *publisher.Publisher, anlz *analyzer.Analyzer, 
 		schedulesRepo: schedRepo,
 		clipsRepo:     clipsRepo,
 		learner:       lrn,
+		scoreboard:    sb,
 	}
 }
 
@@ -230,7 +234,18 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.retryFailed
 	case "auto_review":
 		return s.orchestrator.AutoReviewPending
+	case "tune_weights":
+		return s.tuneWeights
 	default:
 		return nil
 	}
+}
+
+// tuneWeights คำนวณกระดานคะแนนใหม่แล้วหมุนน้ำหนัก การคำนวณต้องมาก่อนเสมอ
+// เพื่อให้ weight รอบนี้อิงข้อมูลล่าสุด ไม่ใช่ snapshot ค้างจากสัปดาห์ก่อน
+func (s *Scheduler) tuneWeights(ctx context.Context) error {
+	if _, err := s.scoreboard.ComputeSnapshot(ctx); err != nil {
+		return fmt.Errorf("compute scoreboard: %w", err)
+	}
+	return s.scoreboard.TuneOnce(ctx)
 }
