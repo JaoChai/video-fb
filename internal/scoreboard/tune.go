@@ -2,8 +2,13 @@ package scoreboard
 
 import "sort"
 
-// weightScale คือสเกลที่เก็บใน DB: ผลรวม weight ของสูตรที่ enabled ในมิติหนึ่ง = 100
+// weightScale คือสเกลที่เก็บใน DB: ผลรวม weight ของสูตรที่ enabled ในมิติหนึ่ง ตั้งเป้าที่ 100
 // เลือกจำนวนเต็มฐาน 100 เพราะคอลัมน์ weight เป็น INTEGER และ 1 หน่วย = 1% อ่านง่าย
+//
+// ข้อควรรู้: ผลรวมเป็น 100 พอดีในทางปฏิบัติ แต่ไม่ใช่ค่าคงที่เชิงคณิตศาสตร์ —
+// property test 20,000 เคสสุ่มพบ 25 เคส (สภาพที่ค่าจำนวนมากชนขอบพร้อมกัน)
+// ที่ได้ 101-102 ไม่มีผลต่อพฤติกรรมจริงเพราะตัวเลือกสูตร (PickNext) ใช้อัตราส่วน
+// used/weight ไม่ได้ใช้ค่าสัมบูรณ์ และการจำลอง 52 สัปดาห์จากน้ำหนักเท่ากันอยู่ที่ 100 ตลอด
 const weightScale = 100
 
 // floorFactor / ceilFactor คือพื้นและเพดานเทียบกับส่วนแบ่งเท่าๆ กัน (uniform)
@@ -60,7 +65,7 @@ func CombinePlatforms(scores []Score, dimension string) []Combined {
 //  4. ฟังก์ชันไม่รู้จัก enabled เลย ไม่สามารถเกษียณสูตรเองได้
 //
 // current คือ weight ปัจจุบันของสูตรที่ enabled ทั้งหมดในมิตินั้น (สเกลใดก็ได้)
-// ผลลัพธ์เป็นสเกลผลรวม 100 เสมอ
+// ผลลัพธ์เป็นสเกลผลรวม 100 (ดูข้อควรรู้ที่ weightScale เรื่องเคสขอบที่ได้ 101-102)
 // ฟังก์ชันไม่ทำให้ caller's map เปลี่ยนแปลง (pure)
 func TuneWeights(current map[string]int, combined []Combined, minN int, alpha float64) map[string]int {
 	if len(current) == 0 {

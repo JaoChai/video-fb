@@ -244,8 +244,17 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 // tuneWeights คำนวณกระดานคะแนนใหม่แล้วหมุนน้ำหนัก การคำนวณต้องมาก่อนเสมอ
 // เพื่อให้ weight รอบนี้อิงข้อมูลล่าสุด ไม่ใช่ snapshot ค้างจากสัปดาห์ก่อน
 func (s *Scheduler) tuneWeights(ctx context.Context) error {
-	if _, err := s.scoreboard.ComputeSnapshot(ctx); err != nil {
+	rows, err := s.scoreboard.ComputeSnapshot(ctx)
+	if err != nil {
 		return fmt.Errorf("compute scoreboard: %w", err)
+	}
+	// ไม่มีแถวใหม่ = ไม่มีข้อมูลใหม่ ห้ามหมุนน้ำหนักต่อด้วย snapshot ของสัปดาห์ก่อน
+	// นอกจากจะเคลื่อนเข้าหาเป้าเก่าอีก 25% แล้ว ยังทำให้เกิด revision batch ที่สอง
+	// ที่ใช้ computed_at เดียวกัน ซึ่งทำให้ LastRevisionBatch (ตัวที่ rollback ใช้)
+	// ปนสอง batch เข้าด้วยกัน
+	if rows == 0 {
+		log.Printf("Scheduler: ไม่มีสถิติใหม่สำหรับกระดานคะแนน — ข้ามการหมุนน้ำหนักรอบนี้")
+		return nil
 	}
 	if err := s.scoreboard.TuneOnce(ctx); err != nil {
 		return fmt.Errorf("tune weights: %w", err)

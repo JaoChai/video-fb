@@ -159,6 +159,24 @@ func (s *Service) Rollback(ctx context.Context) (int, error) {
 		}
 		byDim[v.Dimension][v.Value] = v.OldWeight
 	}
+	// การย้อนกลับก็เป็นการเปลี่ยนน้ำหนักเหมือนกัน จึงต้องมีแถว audit ของตัวเอง
+	// (สลับ old/new) ไม่งั้นตารางประวัติจะยังยืนยันว่าน้ำหนักที่ปรับไปยังใช้อยู่
+	// ทั้งที่ DB ถือค่าเก่าแล้ว — เพี้ยนตรงจุดที่คนจะมาเปิดดูพอดี
+	// computedAt ตั้งเป็นเวลาปัจจุบันเพื่อให้ batch นี้แยกจาก batch ที่มันย้อน
+	now := s.now()
+	revs := make([]models.WeightRevision, 0, len(batch))
+	for _, v := range batch {
+		revs = append(revs, models.WeightRevision{
+			Dimension: v.Dimension, Value: v.Value,
+			OldWeight: v.NewWeight, NewWeight: v.OldWeight,
+			ScoreFinal: v.ScoreFinal, N: v.N,
+			ComputedAt: now,
+		})
+	}
+	if err := s.repo.RecordRevisions(ctx, revs); err != nil {
+		return 0, fmt.Errorf("scoreboard: บันทึก audit ของ rollback ไม่สำเร็จ — ไม่ย้อนกลับ: %w", err)
+	}
+
 	for dim, weights := range byDim {
 		if err := s.repo.ApplyWeights(ctx, dim, weights); err != nil {
 			return 0, fmt.Errorf("scoreboard: rollback %s: %w", dim, err)

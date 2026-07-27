@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
@@ -41,6 +42,10 @@ const (
 	flopRegressionMargin = 0.10
 	// minFlopSample: จำนวนคลิปขั้นต่ำในแต่ละช่วงก่อนเชื่อ flop rate
 	minFlopSample = 8
+	// revisionCooldown: ระยะพักขั้นต่ำก่อนที่ agent เดิมจะถูกเขียน skills ใหม่อีกครั้ง
+	// 28 วันคือหน้าต่างวัดผล 30 วันโดยประมาณ — ต้องรอให้ critique ชุดใหม่หลังการแก้
+	// ครั้งก่อนสะสมพอจะบอกได้ว่ามันช่วยจริงไหม ก่อนจะแก้ทับอีกรอบ
+	revisionCooldown = 28 * 24 * time.Hour
 )
 
 // allowedAgents is the FIXED allowlist of agents the learner may ever touch.
@@ -51,6 +56,20 @@ var allowedAgents = []string{"scene", "script"}
 // tiny repo; declared here so the service depends on a narrow interface.
 type SkillRevisionsWriter interface {
 	Record(ctx context.Context, agentName, oldSkills, newSkills, rationale string, critiqueWindow int) error
+	LastRevisionAt(ctx context.Context, agentName string) (*time.Time, error)
+}
+
+// cooldownElapsed บอกว่าพ้นระยะพักของ agent นี้แล้วหรือยัง Pure — ทดสอบได้โดยไม่ต้องมี DB
+//
+// ทำไมต้องมี: ประตูทั้งสามเป็น "ระดับ" ไม่ใช่ "เหตุการณ์" — เกณฑ์ frequency ดูว่า
+// ปัญหาหนึ่งโผล่ใน critique เกิน 40% ของใบหรือไม่ ซึ่งเป็นสภาพที่ค้างอยู่หลายสัปดาห์
+// (ของจริงบน prod ตอนนี้ 0.47) การเขียน skills ใหม่ไม่ทำให้ตัวเลขนั้นลดลงภายในรอบเดียว
+// ถ้าไม่มีระยะพัก loop จะเขียนทับ skills ของ agent เดิมทุกวันจันทร์ตลอดไป
+func cooldownElapsed(last *time.Time, now time.Time) bool {
+	if last == nil {
+		return true
+	}
+	return now.Sub(*last) >= revisionCooldown
 }
 
 // agentsRepoIface is the subset of *repository.AgentsRepo the Learner needs.
@@ -186,6 +205,20 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 		if !ok {
 			log.Printf("learner: [%s] skip — weak signal (%s; n=%d weakest=%s avg=%.2f baseline=%.2f)",
 				name, gate, agentPatterns.N, lowDim, lowVal, baseline.Dim(lowDim))
+			continue
+		}
+
+		// ระยะพัก: ประตูทุกบานเป็นสภาพที่ค้างอยู่หลายสัปดาห์ ไม่ใช่เหตุการณ์ชั่ววูบ
+		// ถ้าไม่กันตรงนี้ agent เดิมจะถูกเขียน skills ใหม่ทุกรอบจนกว่าตัวเลขจะขยับ
+		// ซึ่งอาจไม่ขยับเลย
+		lastRev, rerr := l.audit.LastRevisionAt(ctx, name)
+		if rerr != nil {
+			log.Printf("learner: [%s] อ่านเวลาแก้ครั้งล่าสุดไม่ได้ — ข้ามเพื่อความปลอดภัย: %v", name, rerr)
+			continue
+		}
+		if !cooldownElapsed(lastRev, time.Now()) {
+			log.Printf("learner: [%s] skip — ยังอยู่ในระยะพัก (แก้ล่าสุด %s, ต้องเว้น %s)",
+				name, lastRev.Format("2006-01-02"), revisionCooldown)
 			continue
 		}
 

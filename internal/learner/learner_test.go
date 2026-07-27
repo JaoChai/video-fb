@@ -3,6 +3,7 @@ package learner
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaochai/video-fb/internal/repository"
 )
@@ -175,5 +176,25 @@ func TestAgentIssueFiltering(t *testing.T) {
 		if agentForField(fi.Field) != "script" {
 			t.Errorf("script filter leaked non-script issue: %q", fi.Field)
 		}
+	}
+}
+
+func TestCooldownElapsed(t *testing.T) {
+	now := time.Date(2026, 7, 27, 3, 0, 0, 0, time.UTC)
+	recent := now.Add(-7 * 24 * time.Hour)
+	old := now.Add(-29 * 24 * time.Hour)
+	exact := now.Add(-revisionCooldown)
+
+	if !cooldownElapsed(nil, now) {
+		t.Error("ไม่เคยแก้มาก่อน ต้องผ่านระยะพัก")
+	}
+	if cooldownElapsed(&recent, now) {
+		t.Error("แก้ไป 7 วันก่อน ต้องยังติดระยะพัก")
+	}
+	if !cooldownElapsed(&old, now) {
+		t.Error("แก้ไป 29 วันก่อน ต้องพ้นระยะพักแล้ว")
+	}
+	if !cooldownElapsed(&exact, now) {
+		t.Error("ครบ 28 วันพอดี ต้องนับว่าพ้นแล้ว")
 	}
 }

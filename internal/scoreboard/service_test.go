@@ -221,3 +221,40 @@ func TestRollbackRestoresOldWeights(t *testing.T) {
 		t.Errorf("qa = %d, want 25", repo.applied["content_format"]["qa"])
 	}
 }
+
+// การย้อนกลับต้องทิ้งร่องรอยของตัวเองไว้ ไม่งั้นตารางประวัติจะยังบอกว่าน้ำหนักที่ปรับ
+// ไปยังใช้อยู่ ทั้งที่ DB ถือค่าเก่าแล้ว
+func TestRollbackRecordsItsOwnAudit(t *testing.T) {
+	repo := newFakeRepo()
+	repo.lastBatch = []models.WeightRevision{
+		{Dimension: "content_format", Value: "qa", OldWeight: 25, NewWeight: 31},
+	}
+	svc := NewService(repo, fakeSettings{v: "true"}, fixedNow)
+	if _, err := svc.Rollback(context.Background()); err != nil {
+		t.Fatalf("Rollback error: %v", err)
+	}
+	if len(repo.revisions) != 1 {
+		t.Fatalf("บันทึก audit %d แถว, want 1", len(repo.revisions))
+	}
+	got := repo.revisions[0]
+	// old/new ต้องสลับกับ batch ที่ย้อน: จาก 31 กลับไป 25
+	if got.OldWeight != 31 || got.NewWeight != 25 {
+		t.Errorf("audit ของ rollback = %d -> %d, want 31 -> 25", got.OldWeight, got.NewWeight)
+	}
+}
+
+// audit ต้องมาก่อน apply แม้ในเส้นทาง rollback
+func TestRollbackDoesNotApplyWhenAuditFails(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failRecord = true
+	repo.lastBatch = []models.WeightRevision{
+		{Dimension: "content_format", Value: "qa", OldWeight: 25, NewWeight: 31},
+	}
+	svc := NewService(repo, fakeSettings{v: "true"}, fixedNow)
+	if _, err := svc.Rollback(context.Background()); err == nil {
+		t.Error("audit ล้มแล้วต้องคืน error")
+	}
+	if len(repo.applied) != 0 {
+		t.Errorf("audit ล้มแล้วห้ามเขียน weight ได้ %v", repo.applied)
+	}
+}

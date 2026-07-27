@@ -80,8 +80,11 @@ INSERT INTO settings (key, value)
 VALUES ('weight_tuner_enabled', 'false')
 ON CONFLICT (key) DO NOTHING;
 
+-- schedules ไม่มี unique constraint ให้ ON CONFLICT จับ จึงต้องกันซ้ำด้วย NOT EXISTS
+-- เอง (แบบเดียวกับ migration อื่นในโปรเจกต์นี้) ถ้ามีสองแถว scheduler จะหมุนน้ำหนัก
+-- สัปดาห์ละสองครั้ง = เคลื่อน 2 × 25% ต่อสัปดาห์ ซึ่งทะลุเพดานความเร็วที่ตั้งใจไว้
 INSERT INTO schedules (name, action, cron_expression, enabled)
-VALUES ('Weekly Weight Tune', 'tune_weights', '30 3 * * 1', FALSE)
-ON CONFLICT DO NOTHING;
+SELECT 'Weekly Weight Tune', 'tune_weights', '30 3 * * 1', FALSE
+WHERE NOT EXISTS (SELECT 1 FROM schedules WHERE action = 'tune_weights');
 
 COMMIT;
