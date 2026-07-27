@@ -26,3 +26,7 @@ render-test-out/
 yarn.lock
 .superpowers/
 .glm-briefs/
+
+# Go build/module cache ที่ตั้งไว้ในโปรเจกต์ (ดู Global Constraints ในแผน retention)
+.gocache-build/
+.gocache-mod/
