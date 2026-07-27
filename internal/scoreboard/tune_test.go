@@ -1,6 +1,9 @@
 package scoreboard
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func sum(m map[string]int) int {
 	t := 0
@@ -117,5 +120,54 @@ func TestTuneWeightsNoScoresIsNoOp(t *testing.T) {
 	got := TuneWeights(current, nil, 8, 0.25)
 	if got["a"] != 60 || got["b"] != 40 {
 		t.Errorf("ไม่มีคะแนน ต้องคืนค่าเดิม ได้ %v", got)
+	}
+}
+
+func TestTuneWeightsFloorCeilingWithVariousAlpha(t *testing.T) {
+	// ทดสอบเสถียรภาพของ floor/ceiling ข้ามค่า alpha ต่าง ๆ
+	// การจัดสรรใหม่อย่างรุนแรง (alpha สูง) ต้องไม่ทะลุขอบ
+	for _, alpha := range []float64{0.25, 0.3, 0.4, 0.5} {
+		t.Run(fmt.Sprintf("alpha=%.2f", alpha), func(t *testing.T) {
+			current := map[string]int{"a": 25, "b": 25, "c": 25, "d": 25}
+			combined := []Combined{
+				{Value: "a", ScoreFinal: 1.0, N: 50},
+				{Value: "b", ScoreFinal: 0.01, N: 50},
+				{Value: "c", ScoreFinal: 0.01, N: 50},
+				{Value: "d", ScoreFinal: 0.01, N: 50},
+			}
+			w := current
+			for i := 0; i < 40; i++ {
+				w = TuneWeights(w, combined, 8, alpha)
+			}
+			if sum(w) != 100 {
+				t.Errorf("ผลรวม = %d, want 100", sum(w))
+			}
+			// พื้น = 0.5 * (1/4) = 12.5% → อย่างน้อย 12 หลังปัดเศษ
+			for _, k := range []string{"b", "c", "d"} {
+				if w[k] < 12 {
+					t.Errorf("%s = %d หลุดพื้น 12.5%% ที่ alpha=%.2f", k, w[k], alpha)
+				}
+			}
+			// เพดาน = 2 * 25% = 50%
+			if w["a"] > 50 {
+				t.Errorf("a = %d ทะลุเพดาน 50 ที่ alpha=%.2f", w["a"], alpha)
+			}
+		})
+	}
+}
+
+func TestTuneWeightsMutationBug(t *testing.T) {
+	// ตรวจว่า TuneWeights ไม่ทำให้ caller's map เปลี่ยนแปลง
+	current := map[string]int{"a": 0, "b": 0}
+	originalA := current["a"]
+	originalB := current["b"]
+	combined := []Combined{
+		{Value: "a", ScoreFinal: 0.5, N: 20},
+		{Value: "b", ScoreFinal: 0.5, N: 20},
+	}
+	TuneWeights(current, combined, 8, 0.25)
+	if current["a"] != originalA || current["b"] != originalB {
+		t.Errorf("TuneWeights ไม่ควรแตะ caller's map — เปลี่ยนจาก {%d,%d} เป็น {%d,%d}",
+			originalA, originalB, current["a"], current["b"])
 	}
 }

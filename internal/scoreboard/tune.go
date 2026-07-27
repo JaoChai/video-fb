@@ -55,15 +55,16 @@ func CombinePlatforms(scores []Score, dimension string) []Combined {
 	return out
 }
 
-// TuneWeights คำนวณ weight ชุดใหม่จากคะแนน โดยมีเบรกสามชั้นในฟังก์ชันนี้
-// (ชั้นที่สี่ — ห้ามแตะ enabled — บังคับด้วยการที่ฟังก์ชันนี้ไม่รู้จัก enabled เลย):
+// TuneWeights คำนวณ weight ชุดใหม่จากคะแนน โดยมีเบรกสี่ชั้น:
 //
 //	1. ค่าที่ N < minN ถูกตรึงไว้ที่ส่วนแบ่งเดิม
-//	2. ส่วนแบ่งถูก clamp ไว้ใน [floorFactor, ceilFactor] เท่าของ uniform
+//	2. ส่วนแบ่งถูก clamp ไว้ใน [floorFactor, ceilFactor] เท่าของ uniform (water-filling)
 //	3. ขยับได้แค่ alpha ของระยะทางไปยังเป้าหมายต่อการเรียกหนึ่งครั้ง
+//	4. ฟังก์ชันไม่รู้จัก enabled เลย ไม่สามารถเกษียณสูตรเองได้
 //
 // current คือ weight ปัจจุบันของสูตรที่ enabled ทั้งหมดในมิตินั้น (สเกลใดก็ได้)
 // ผลลัพธ์เป็นสเกลผลรวม 100 เสมอ
+// ฟังก์ชันไม่ทำให้ caller's map เปลี่ยนแปลง (pure)
 func TuneWeights(current map[string]int, combined []Combined, minN int, alpha float64) map[string]int {
 	if len(current) == 0 {
 		return map[string]int{}
@@ -77,18 +78,24 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 		return out
 	}
 
+	// สร้างสำเนาเพื่อไม่แตะ caller's map (pure)
+	currentCopy := make(map[string]int)
+	for k, v := range current {
+		currentCopy[k] = v
+	}
+
 	total := 0
-	for _, w := range current {
+	for _, w := range currentCopy {
 		total += w
 	}
 	if total == 0 {
-		total = len(current) // กันหารศูนย์: ถือว่าทุกตัวเท่ากัน
-		for k := range current {
-			current[k] = 1
+		total = len(currentCopy) // กันหารศูนย์: ถือว่าทุกตัวเท่ากัน
+		for k := range currentCopy {
+			currentCopy[k] = 1
 		}
 	}
 	shareCurrent := map[string]float64{}
-	for k, w := range current {
+	for k, w := range currentCopy {
 		shareCurrent[k] = float64(w) / float64(total)
 	}
 
@@ -97,13 +104,13 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 		scoreByValue[c.Value] = c
 	}
 
-	uniform := 1.0 / float64(len(current))
+	uniform := 1.0 / float64(len(currentCopy))
 	low, high := floorFactor*uniform, ceilFactor*uniform
 
 	// แยกตัวที่ตรึง (ข้อมูลน้อย หรือไม่มีคะแนนเลย) ออกจากตัวที่ขยับได้
 	var movable []string
 	frozenShare := 0.0
-	for k := range current {
+	for k := range currentCopy {
 		c, ok := scoreByValue[k]
 		if !ok || c.N < minN {
 			out[k] = -1 // ทำเครื่องหมายว่าตรึง เดี๋ยวเติมค่าตอนท้าย
@@ -115,7 +122,7 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 	sort.Strings(movable)
 
 	if len(movable) == 0 {
-		for k, v := range current {
+		for k, v := range currentCopy {
 			out[k] = v
 		}
 		return out
@@ -136,24 +143,61 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 		}
 	}
 
-	// สลับ clamp กับ normalize จนกว่าจะลู่เข้า: clamp ทำให้ผลรวมเพี้ยน,
-	// normalize ทำให้บางตัวหลุดขอบอีก — ไม่กี่รอบก็พอสำหรับสเกลจำนวนเต็ม
-	for pass := 0; pass < clampPasses; pass++ {
-		s := 0.0
+	// Water-filling: คำนวณส่วนแบ่งตามคะแนนจากน้อยไปมาก ตรึงค่าที่หลุดขอบ
+	// จนกว่าทั้งหมดจะอยู่ในช่วง [low, high]
+	pinned := make(map[string]bool)
+	for pass := 0; pass < len(movable); pass++ {
+		// หา unpinned ที่ยังไม่ตรึง
+		var unpinned []string
+		pinnedBudget := 0.0
 		for _, k := range movable {
-			if target[k] < low {
-				target[k] = low
+			if pinned[k] {
+				pinnedBudget += target[k]
+			} else {
+				unpinned = append(unpinned, k)
 			}
-			if target[k] > high {
-				target[k] = high
-			}
-			s += target[k]
 		}
-		if s == 0 {
+
+		// ถ้าทั้งหมดถูกตรึง ให้ออก
+		if len(unpinned) == 0 {
 			break
 		}
-		for _, k := range movable {
-			target[k] = target[k] / s * budget
+
+		// คำนวณส่วนแบ่งใหม่สำหรับ unpinned ที่เหลือ
+		remainingBudget := budget - pinnedBudget
+		if remainingBudget < 0 {
+			remainingBudget = 0
+		}
+
+		scoreSum := 0.0
+		for _, k := range unpinned {
+			scoreSum += scoreByValue[k].ScoreFinal
+		}
+
+		for _, k := range unpinned {
+			if scoreSum > 0 {
+				target[k] = scoreByValue[k].ScoreFinal / scoreSum * remainingBudget
+			} else {
+				target[k] = remainingBudget / float64(len(unpinned))
+			}
+		}
+
+		// ตรึงค่า unpinned ที่หลุดขอบ
+		hasPinned := false
+		for _, k := range unpinned {
+			if target[k] < low {
+				target[k] = low
+				pinned[k] = true
+				hasPinned = true
+			} else if target[k] > high {
+				target[k] = high
+				pinned[k] = true
+				hasPinned = true
+			}
+		}
+		// ถ้าไม่มีใครตรึง แปลว่า unpinned ทั้งหมดอยู่ในช่วง — เสร็จ
+		if !hasPinned {
+			break
 		}
 	}
 
@@ -163,15 +207,77 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 		shareNew[k] = shareCurrent[k] + alpha*(target[k]-shareCurrent[k])
 	}
 
+	// หลังจาก alpha step ต้องเช็คว่า shareNew อยู่ในขอบเขต
+	// ใช้ water-filling เช่นเดิมเพื่อให้แน่ใจว่าเสถียร
+	pinnedShare := make(map[string]bool)
+	for waterPass := 0; waterPass < len(movable); waterPass++ {
+		var unpinnedShare []string
+		pinnedBudgetShare := 0.0
+		for _, k := range movable {
+			if pinnedShare[k] {
+				pinnedBudgetShare += shareNew[k]
+			} else {
+				unpinnedShare = append(unpinnedShare, k)
+			}
+		}
+
+		if len(unpinnedShare) == 0 {
+			break
+		}
+
+		remainingBudgetShare := budget - pinnedBudgetShare
+		if remainingBudgetShare < 0 {
+			remainingBudgetShare = 0
+		}
+
+		// ตรวจสอบว่าใครเกินขอบในชุด unpinned
+		hasPinnedShare := false
+		for _, k := range unpinnedShare {
+			if shareNew[k] < low {
+				shareNew[k] = low
+				pinnedShare[k] = true
+				hasPinnedShare = true
+			} else if shareNew[k] > high {
+				shareNew[k] = high
+				pinnedShare[k] = true
+				hasPinnedShare = true
+			}
+		}
+
+		if !hasPinnedShare {
+			// ยังไม่มีใครตรึง แปลว่าทั้งหมดอยู่ในช่วง — เสร็จ
+			break
+		}
+
+		// recompute สำหรับ unpinned ที่เหลือ
+		sumUnpinned := 0.0
+		for _, k := range unpinnedShare {
+			sumUnpinned += shareNew[k]
+		}
+
+		// ขยับ unpinned สำหรับ budget ที่เหลือ
+		if len(unpinnedShare) > 0 && sumUnpinned > 0 {
+			scale := remainingBudgetShare / sumUnpinned
+			for _, k := range unpinnedShare {
+				shareNew[k] *= scale
+			}
+		} else if len(unpinnedShare) > 0 {
+			for _, k := range unpinnedShare {
+				shareNew[k] = remainingBudgetShare / float64(len(unpinnedShare))
+			}
+		}
+	}
+
 	// แปลงเป็นจำนวนเต็มสเกล 100 แล้วแจกเศษที่เหลือแบบ largest-remainder
 	// เพื่อให้ผลรวมเป็น 100 พอดีเสมอ
+	// ต้องระวัง: largest-remainder จะต้องไม่ทำให้ movable เกินเพดาน
 	type rem struct {
 		key  string
 		frac float64
 	}
 	assigned := 0
 	var rems []rem
-	for k := range current {
+	for k := range currentCopy {
 		var share float64
 		if out[k] == -1 {
 			share = shareCurrent[k]
@@ -190,8 +296,29 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 		}
 		return rems[i].key < rems[j].key
 	})
-	for i := 0; assigned < weightScale; i, assigned = i+1, assigned+1 {
-		out[rems[i%len(rems)].key]++
+
+	// เพิ่มเศษเหลือแบบ largest-remainder แต่ระวัง ceil
+	ceilInt := int(high * weightScale)
+	for i := 0; assigned < weightScale; i++ {
+		k := rems[i%len(rems)].key
+		// ตรวจว่า k เป็น movable หรือ frozen
+		isFrozen := false
+		for km := range currentCopy {
+			if km == k {
+				comb, ok := scoreByValue[k]
+				if !ok || comb.N < minN {
+					isFrozen = true
+				}
+				break
+			}
+		}
+		// ถ้าเป็น movable ต้องไม่เกิน ceiling
+		if !isFrozen && out[k] >= ceilInt {
+			continue // ข้ามค่าที่เกินเพดานแล้ว
+		}
+		out[k]++
+		assigned++
 	}
+
 	return out
 }
