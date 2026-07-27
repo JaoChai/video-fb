@@ -113,6 +113,15 @@ type ClipAnalytics struct {
 	FetchedAt         time.Time `json:"fetched_at"`
 }
 
+// RetentionSnapshot คือค่า retention สามตัวที่คำนวณมาจากการตอบกลับ daily-views
+// ครั้งเดียวกัน จึงต้องเดินทางไปด้วยกันเสมอ — ห้ามผสมข้ามรอบการดึงข้อมูล
+// เพราะจะได้ชุดค่าที่ไม่เคยมีอยู่จริง
+type RetentionSnapshot struct {
+	WatchTimeSeconds  float64
+	RetentionRate     float64
+	AvgViewPercentage float64 // fraction: 0.83 = 83%, เกิน 1 ได้ (Shorts วนซ้ำ)
+}
+
 type AnalyticsSummary struct {
 	TotalViews     int     `json:"total_views"`
 	TotalLikes     int     `json:"total_likes"`

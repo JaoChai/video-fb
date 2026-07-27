@@ -442,6 +442,22 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 			if post.platform == platformYouTube && metrics.Views > 0 {
 				detail = p.fetchYouTubeDetail(ctx, cp.ClipID, ytAccountID, resp)
 			}
+			// รอบที่ Zernio ไม่คืน daily-views จะได้ detail เป็นศูนย์ ถ้าปล่อยศูนย์ลง DB
+			// มันจะกลายเป็นแถวใหม่สุดแล้วบังค่าที่เคยวัดได้จริง — ดู mergeRetention
+			ret := models.RetentionSnapshot{
+				WatchTimeSeconds:  detail.WatchTime,
+				RetentionRate:     detail.Retention,
+				AvgViewPercentage: detail.AvgViewPct,
+			}
+			if ret.AvgViewPercentage == 0 {
+				// ยิงเพิ่มเฉพาะตอนจำเป็น ทางที่ดึงข้อมูลได้ปกติจึงไม่มี query เกิน
+				prev, perr := p.analytics.LastKnownRetention(ctx, cp.ClipID, post.platform, post.label)
+				if perr != nil {
+					log.Printf("FetchAnalytics CARRY_FAIL clip=%s platform=%s type=%s: %v",
+						cp.ClipID, post.platform, post.label, perr)
+				}
+				ret = mergeRetention(ret, prev)
+			}
 			if err := p.analytics.Create(ctx, models.ClipAnalytics{
 				ClipID:            cp.ClipID,
 				Platform:          post.platform,
@@ -450,10 +466,10 @@ func (p *Publisher) FetchAnalytics(ctx context.Context) error {
 				Likes:             metrics.Likes,
 				Comments:          metrics.Comments,
 				Shares:            metrics.Shares,
-				WatchTimeSeconds:  detail.WatchTime,
-				RetentionRate:     detail.Retention,
+				WatchTimeSeconds:  ret.WatchTimeSeconds,
+				RetentionRate:     ret.RetentionRate,
 				EngagementRate:    metrics.EngagementRate,
-				AvgViewPercentage: detail.AvgViewPct,
+				AvgViewPercentage: ret.AvgViewPercentage,
 				SubscribersGained: detail.SubsGained,
 				SubscribersLost:   detail.SubsLost,
 			}); err != nil {
