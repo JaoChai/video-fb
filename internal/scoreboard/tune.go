@@ -298,9 +298,25 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 	})
 
 	// เพิ่มเศษเหลือแบบ largest-remainder แต่ระวัง ceil
-	ceilInt := int(high * weightScale)
+	// ใช้ Round แทน Truncate เพื่อให้ ceilInt ตรงกับ high bound ที่แท้จริง
+	ceilInt := int(high*weightScale + 0.5)
+
+	// ต้องมี no-progress guard เพื่อไม่ให้ loop spin forever
+	// ถ้า movable ทั้งหมดแล้วเกิน ceil และมี remainder เหลือ ให้แจกให้ frozen
+	noProgressCount := 0
 	for i := 0; assigned < weightScale; i++ {
+		// หากผ่านมา rems เต็ม 1 รอบโดยไม่มีการให้ unit ใด ถือว่า no progress
+		if i > 0 && i%len(rems) == 0 {
+			noProgressCount++
+		}
+
+		// หากไม่มี progress เกิน 1 full pass ให้ออก และแจกเศษให้ frozen
+		if noProgressCount > 1 {
+			break
+		}
+
 		k := rems[i%len(rems)].key
+
 		// ตรวจว่า k เป็น movable หรือ frozen
 		isFrozen := false
 		for km := range currentCopy {
@@ -312,12 +328,41 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 				break
 			}
 		}
+
 		// ถ้าเป็น movable ต้องไม่เกิน ceiling
 		if !isFrozen && out[k] >= ceilInt {
 			continue // ข้ามค่าที่เกินเพดานแล้ว
 		}
 		out[k]++
 		assigned++
+		noProgressCount = 0 // reset counter เมื่อมีการเพิ่ม
+	}
+
+	// หากยังคง assigned < 100 (จาก no-progress break) ให้แจกให้ frozen values
+	// frozen values ไม่มี ceiling constraint
+	if assigned < weightScale {
+		for _, r := range rems {
+			if assigned >= weightScale {
+				break
+			}
+			k := r.key
+			// ตรวจว่า k เป็น frozen
+			isFrozen := false
+			for km := range currentCopy {
+				if km == k {
+					comb, ok := scoreByValue[k]
+					if !ok || comb.N < minN {
+						isFrozen = true
+					}
+					break
+				}
+			}
+			// ให้เศษแก่ frozen ที่มี largest fraction
+			if isFrozen {
+				out[k]++
+				assigned++
+			}
+		}
 	}
 
 	return out

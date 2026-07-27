@@ -171,3 +171,29 @@ func TestTuneWeightsMutationBug(t *testing.T) {
 			originalA, originalB, current["a"], current["b"])
 	}
 }
+
+func TestTuneWeightsSaturatedRemainderTerminates(t *testing.T) {
+	// ทดสอบ no-progress guard: 4 movable values ทั้งหมดพยายามเข้า ceiling
+	// ถ้า largest-remainder ไม่มี guard มันจะ spin forever เมื่อทั้ง 4
+	// ตัวนั้นแล้วอยู่ที่ ceiling (50 ต่อ 4 = 12.5 ceiling)
+	// ceiling = 50 ถ้า 4 values ที่เท่ากัน
+	current := map[string]int{"a": 25, "b": 25, "c": 25, "d": 25}
+	combined := []Combined{
+		{Value: "a", ScoreFinal: 0.25, N: 30},
+		{Value: "b", ScoreFinal: 0.25, N: 30},
+		{Value: "c", ScoreFinal: 0.25, N: 30},
+		{Value: "d", ScoreFinal: 0.25, N: 30},
+	}
+	// ทั้ง 4 มีคะแนนเท่ากัน ต้องเห็นว่าไม่มี spin — function terminate และ sum=100
+	got := TuneWeights(current, combined, 8, 0.25)
+	if sum(got) != 100 {
+		t.Errorf("ผลรวม = %d, want 100 (no-progress guard test)", sum(got))
+	}
+	// ต้องแน่ใจว่า function terminate เอง — ถ้า hang test จะ timeout
+	// เมื่อคะแนนเท่ากัน ทุกตัวต้องอยู่ใกล้ uniform
+	for k, v := range got {
+		if v < 20 || v > 30 {
+			t.Errorf("%s = %d, ควรอยู่ใกล้ uniform 25", k, v)
+		}
+	}
+}
