@@ -19,6 +19,13 @@ var dimensionColumn = map[string]string{
 	"style_preset":   "style_preset",
 }
 
+// maturityDays คืออายุขั้นต่ำของคลิปก่อนจะเอาผลมานับ วัดจากข้อมูลจริง (52 คลิป YouTube
+// ที่อายุเกิน 21 วัน): คลิปได้ 43% ของวิวทั้งหมดใน 7 วันแรก และ 89% ภายใน 14 วัน
+// คลิปที่ใหม่กว่านั้นยังสะสมวิวไม่จบ การเอาไปจัดอันดับเทียบกับคลิปที่นิ่งแล้วจึงกดคะแนน
+// ของสูตรที่บังเอิญมีคลิปใหม่เยอะ ของจริงก่อนแก้: qa มีคลิปใหม่ 15% ได้อันดับหนึ่ง
+// ส่วน case_story มี 41% ได้อันดับสุดท้าย — ต่างกันด้วยอายุ ไม่ใช่คุณภาพ
+const maturityDays = 14
+
 // weightTable แม็ปมิติไปยังตารางที่เก็บ weight มิติที่ไม่มีในแม็ปนี้ = วัดผลได้
 // แต่หมุนน้ำหนักไม่ได้ (style_preset อยู่ในกรณีนี้ ดู spec หัวข้อ 7)
 var weightTable = map[string]struct{ table, keyColumn string }{
@@ -71,6 +78,7 @@ WITH latest AS (
     FROM latest l
     JOIN clips c ON c.id = l.clip_id
     WHERE c.status = 'published' AND COALESCE(c.%s, '') <> ''
+      AND c.created_at <= NOW() - make_interval(days => %d)
 )
 SELECT value, platform, COUNT(*) AS n,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pct) AS median_pct,
@@ -78,7 +86,7 @@ SELECT value, platform, COUNT(*) AS n,
            ORDER BY NULLIF(avg_view_percentage, 0)), 0) AS median_retention,
        COUNT(*) FILTER (WHERE pct < 0.25)::float / COUNT(*) AS flop_rate
 FROM ranked
-GROUP BY value, platform`, col, col)
+GROUP BY value, platform`, col, col, maturityDays)
 
 		rows, err := r.pool.Query(ctx, q, windowDays)
 		if err != nil {
