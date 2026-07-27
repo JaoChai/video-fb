@@ -9,22 +9,27 @@ import (
 	"github.com/jaochai/video-fb/internal/models"
 )
 
+// notFailedPost excludes analytics rows belonging to a post whose last-seen
+// publish status is 'failed' — a failed post never went live, so its default
+// 0-view row measures nothing and would otherwise pollute totals, trends and
+// deltas as if it were live-but-unwatched content. Assumes the surrounding
+// query selects FROM clip_analytics unaliased.
+const notFailedPost = `NOT EXISTS (
+		SELECT 1 FROM clip_publish_status ps
+		WHERE ps.clip_id = clip_analytics.clip_id
+		  AND ps.platform = clip_analytics.platform
+		  AND ps.post_type = clip_analytics.post_type
+		  AND ps.status = 'failed')`
+
 // latestAnalyticsCTE takes the newest analytics row per (clip, platform,
-// post_type), excluding posts whose publish failed — a failed post never went
-// live, so its default 0-view row would otherwise pollute totals and inflate
-// the "0 views" count as if it were live-but-unwatched content.
+// post_type), excluding failed posts.
 const latestAnalyticsCTE = `WITH latest AS (
 	SELECT DISTINCT ON (clip_id, platform, post_type)
 		clip_id, platform, post_type, views, likes, comments, shares,
 		watch_time_seconds, retention_rate,
 		engagement_rate, avg_view_percentage, subscribers_gained
 	FROM clip_analytics
-	WHERE NOT EXISTS (
-		SELECT 1 FROM clip_publish_status ps
-		WHERE ps.clip_id = clip_analytics.clip_id
-		  AND ps.platform = clip_analytics.platform
-		  AND ps.post_type = clip_analytics.post_type
-		  AND ps.status = 'failed')
+	WHERE ` + notFailedPost + `
 	ORDER BY clip_id, platform, post_type, fetched_at DESC
 )`
 
@@ -200,6 +205,7 @@ func (r *AnalyticsRepo) Trend(ctx context.Context, days int) ([]models.TrendPoin
 				views, likes, comments, shares, watch_time_seconds, retention_rate
 			FROM clip_analytics
 			WHERE fetched_at >= NOW() - ($1::int || ' days')::interval
+			  AND `+notFailedPost+`
 			ORDER BY clip_id, platform, post_type, DATE_TRUNC('day', fetched_at), fetched_at DESC
 		)
 		SELECT day,
@@ -241,6 +247,7 @@ func (r *AnalyticsRepo) PreviousPeriodTotals(ctx context.Context, days int) (mod
 			FROM clip_analytics
 			WHERE fetched_at < NOW() - ($1::int || ' days')::interval
 			  AND fetched_at >= NOW() - (($1::int * 2) || ' days')::interval
+			  AND `+notFailedPost+`
 			ORDER BY clip_id, platform, post_type, fetched_at DESC
 		)
 		SELECT COALESCE(SUM(views),0), COALESCE(SUM(likes),0),
@@ -267,12 +274,7 @@ func (r *AnalyticsRepo) PresetRetention(ctx context.Context, windowDays int) ([]
 				clip_id, platform, post_type, retention_rate, fetched_at
 			FROM clip_analytics
 			WHERE fetched_at >= NOW() - make_interval(days => $1)
-			  AND NOT EXISTS (
-				SELECT 1 FROM clip_publish_status ps
-				WHERE ps.clip_id = clip_analytics.clip_id
-				  AND ps.platform = clip_analytics.platform
-				  AND ps.post_type = clip_analytics.post_type
-				  AND ps.status = 'failed')
+			  AND `+notFailedPost+`
 			ORDER BY clip_id, platform, post_type, fetched_at DESC
 		)
 		SELECT c.style_preset,
@@ -455,6 +457,7 @@ func (r *AnalyticsRepo) Sparklines(ctx context.Context, days int) (map[string][]
 			       DATE_TRUNC('day', fetched_at)::date AS day, MAX(views) AS views
 			FROM clip_analytics
 			WHERE fetched_at >= NOW() - make_interval(days => $1)
+			  AND `+notFailedPost+`
 			GROUP BY clip_id, platform, post_type, day
 		)
 		SELECT clip_id, day, SUM(views)::int
