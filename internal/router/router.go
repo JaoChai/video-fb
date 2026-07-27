@@ -124,6 +124,9 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	skillRevs := handler.NewSkillRevisionsHandler(repository.NewSkillRevisionsRepo(pool))
 	r.Get("/api/v1/agents/skill-revisions", skillRevs.List)
 
+	tutorialFeats := handler.NewTutorialFeaturesHandler(repository.NewTutorialFeaturesRepo(pool))
+	r.Post("/api/v1/tutorial-features/{featureKey}/unpark", tutorialFeats.Unpark)
+
 	status := handler.NewStatusHandler(prod)
 	r.Get("/api/v1/status/kie-credits", status.KieCredits)
 

@@ -132,7 +132,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 
 	q := agent.GeneratedQuestion{
 		Question:  feat.DisplayNameTH,
-		Category:  "grey-operator",
+		Category:  feat.Audience,
 		PainPoint: feat.PainPoint,
 	}
 
@@ -154,11 +154,13 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 
 // pickVerifiedFeature picks the least-used feature and asks research whether its
 // menu path still matches Meta's current UI. A feature research says has moved
-// gets parked (needs_verify) and the next one is tried — up to 2 skips, then the
-// last pick is produced anyway. Never returning a feature would mean 0 clips,
-// which is worse than one clip on a possibly-moved menu (the ui_vocab gate still
-// guards the labels themselves).
+// gets parked and the next one is tried — up to 2 skips, then the last pick is
+// produced anyway. Never returning a feature would mean 0 clips, which is worse
+// than one clip on a possibly-moved menu (the ui_vocab gate still guards the
+// labels themselves).
 func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.TutorialFeature, error) {
+	// maxSkips bounds latency, not catalog size: each skip costs a research call
+	// plus a verify call. The floor that keeps the catalog usable lives in Park.
 	const maxSkips = 2
 	var skipped []string
 	var last *models.TutorialFeature
@@ -179,10 +181,18 @@ func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.Tutoria
 		if !stale {
 			return feat, nil
 		}
-		log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
-		if mErr := o.tutorialFeaturesRepo.MarkNeedsVerify(ctx, feat.ID, reason); mErr != nil {
-			log.Printf("tutorial: MarkNeedsVerify failed (non-fatal): %v", mErr)
+		parked, pErr := o.tutorialFeaturesRepo.Park(ctx, feat.ID, reason)
+		if pErr != nil {
+			log.Printf("tutorial: park failed (non-fatal): %v", pErr)
 		}
+		if !parked {
+			// คลังเหลือน้อยถึงพื้น หรือ park พลาด — ผลิตตัวนี้ต่อดีกว่าไม่มีคลิป
+			// ตะแกรง ui_vocab ยังกันชื่อเมนูที่โมเดลแต่งเองอยู่
+			log.Printf("tutorial: feature %s looks stale (%s) but was not parked — producing it anyway",
+				feat.FeatureKey, reason)
+			return feat, nil
+		}
+		log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
 		skipped = append(skipped, feat.FeatureKey)
 	}
 	return last, nil
