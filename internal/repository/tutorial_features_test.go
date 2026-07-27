@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jaochai/video-fb/internal/models"
@@ -50,6 +51,21 @@ func TestPickTutorialFeatureFailsOpenWhenAllExcluded(t *testing.T) {
 	got := pickTutorialFeatureLeastUsed(usages, []string{"a", "b"})
 	if got.FeatureKey == "" {
 		t.Fatal("must fail open with a pick, never an empty feature")
+	}
+}
+
+// กันบั๊ก 2026-07-27 กลับมา: PickNext เคยกรองด้วย needs_verify ซึ่งตั้งเป็น TRUE
+// ได้อย่างเดียว ไม่มีทางปลด คลังจึงหดลงรอบละไม่เกิน 2 แถวจนเหลือแถวเดียว
+// แล้วคลิปสอนก็ซ้ำหัวข้อเดิมทุกวัน เงื่อนไข "หยิบได้ตอนนี้" ต้องหมดอายุเองตามเวลา
+func TestAvailableFilterExpiresInsteadOfLatching(t *testing.T) {
+	if strings.Contains(tutorialAvailableWhere, "needs_verify") {
+		t.Error("availability must not depend on needs_verify — nothing ever sets it back to FALSE")
+	}
+	if !strings.Contains(tutorialAvailableWhere, "parked_until") {
+		t.Error("availability must be time-based so a parked feature returns on its own")
+	}
+	if TutorialMinPool < 2 {
+		t.Errorf("TutorialMinPool = %d — the floor has to leave room for a different clip tomorrow", TutorialMinPool)
 	}
 }
 

@@ -18,13 +18,13 @@ type TutorialFeature struct {
 	FeatureKey    string         `json:"feature_key"`
 	DisplayNameTH string         `json:"display_name_th"`
 	Surface       string         `json:"surface"`
+	Audience      string         `json:"audience"` // = topic_categories.category_name
 	MenuPath      []string       `json:"menu_path"`
 	UIVocab       []string       `json:"ui_vocab"`
 	Steps         []TutorialStep `json:"steps"`
 	TrapTH        string         `json:"trap_th"`
 	PainPoint     string         `json:"pain_point"`
 	WhyMattersTH  string         `json:"why_matters_th"`
-	NeedsVerify   bool           `json:"needs_verify"`
 	Weight        int            `json:"weight"`
 	Enabled       bool           `json:"enabled"`
 }
