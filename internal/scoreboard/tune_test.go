@@ -173,27 +173,41 @@ func TestTuneWeightsMutationBug(t *testing.T) {
 }
 
 func TestTuneWeightsSaturatedRemainderTerminates(t *testing.T) {
-	// ทดสอบ no-progress guard: 4 movable values ทั้งหมดพยายามเข้า ceiling
-	// ถ้า largest-remainder ไม่มี guard มันจะ spin forever เมื่อทั้ง 4
-	// ตัวนั้นแล้วอยู่ที่ ceiling (50 ต่อ 4 = 12.5 ceiling)
-	// ceiling = 50 ถ้า 4 values ที่เท่ากัน
-	current := map[string]int{"a": 25, "b": 25, "c": 25, "d": 25}
+	// ทดสอบ no-progress guard: ออกแบบให้ truncation loop ปล่อยเศษ assigned < 100
+	// และบางค่า movable นั้นแล้วอยู่ที่ ceiling (ceilInt) ทำให้ remainder loop
+	// skip บ่อยแล้ว no progress คร่ำครวญ
+	//
+	// With 4 values: uniform = 0.25, low = 0.125, high = 0.5 (ceilInt = 50)
+	// ตั้งค่าเบื้องต้นให้ a มีคะแนนสูงมาก ผลักมันเข้า high ผ่าน water-filling
+	// หลังจาก truncation: a→50, b,c,d→12 (floor) = 86 < 100
+	// remainder loop เห็นว่า a ≥ ceilInt (50) แล้ว → skip ต่อเนื่องจนกว่า
+	// no-progress guard ตรวจจับและใช้ fallback เพื่อแจกเศษให้ frozen
+	//
+	// ทำการจัดสรรซ้ำหลาย ๆ ครั้ง (alpha=0.25) เพื่อให้ a ลู่เข้าเพดาน
+	current := map[string]int{"a": 40, "b": 20, "c": 20, "d": 20}
 	combined := []Combined{
-		{Value: "a", ScoreFinal: 0.25, N: 30},
-		{Value: "b", ScoreFinal: 0.25, N: 30},
-		{Value: "c", ScoreFinal: 0.25, N: 30},
-		{Value: "d", ScoreFinal: 0.25, N: 30},
+		{Value: "a", ScoreFinal: 0.99, N: 30}, // a ชนะขาด
+		{Value: "b", ScoreFinal: 0.01, N: 30},
+		{Value: "c", ScoreFinal: 0.01, N: 30},
+		{Value: "d", ScoreFinal: 0.01, N: 30},
 	}
-	// ทั้ง 4 มีคะแนนเท่ากัน ต้องเห็นว่าไม่มี spin — function terminate และ sum=100
-	got := TuneWeights(current, combined, 8, 0.25)
-	if sum(got) != 100 {
-		t.Errorf("ผลรวม = %d, want 100 (no-progress guard test)", sum(got))
+	w := current
+	// วิ่ง 10 รอบให้ a ลู่เข้าเพดาน 50
+	for i := 0; i < 10; i++ {
+		w = TuneWeights(w, combined, 8, 0.25)
 	}
-	// ต้องแน่ใจว่า function terminate เอง — ถ้า hang test จะ timeout
-	// เมื่อคะแนนเท่ากัน ทุกตัวต้องอยู่ใกล้ uniform
-	for k, v := range got {
-		if v < 20 || v > 30 {
-			t.Errorf("%s = %d, ควรอยู่ใกล้ uniform 25", k, v)
-		}
+	// หลังจาก 10 รอบ a ควรอยู่ใกล้เพดาน แล้ว remainder loop ต้องจัดการ
+	// ต้องแน่ใจว่า function terminate (ไม่ hang) และ sum=100, bounds ถูก
+	if sum(w) != 100 {
+		t.Errorf("ผลรวม = %d, want 100 หลังลู่เข้าเพดาน", sum(w))
+	}
+	// เพดาน = 2 * 0.25 = 0.5 = 50
+	if w["a"] > 50 {
+		t.Errorf("a = %d เกินเพดาน 50", w["a"])
+	}
+	// พื้น = 0.5 * 0.25 = 0.125 = 12.5% ≈ 12 หลังปัดเศษ
+	if w["b"] < 12 || w["c"] < 12 || w["d"] < 12 {
+		t.Errorf("b,c,d ต้องอย่างน้อย 12 (floor 12.5%%), ได้ b=%d c=%d d=%d",
+			w["b"], w["c"], w["d"])
 	}
 }

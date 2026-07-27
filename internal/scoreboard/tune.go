@@ -340,6 +340,13 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 
 	// หากยังคง assigned < 100 (จาก no-progress break) ให้แจกให้ frozen values
 	// frozen values ไม่มี ceiling constraint
+	//
+	// หมายเหตุ: ทางคณิตศาสตร์นี้ไม่ควรเกิด ต่อไปนี้คือการแสดงให้เห็น:
+	// - high = 2 × uniform ดังนั้นผลรวม ceiling = 2 × (len(current) × uniform × weightScale) = 2 × 100 = 200
+	// - แม้ทั้งหมด movable ถูก pin ที่ high ผลรวมยังไม่ถึง 100 (ปล่อย margin สำหรับ frozen)
+	// - เมื่อมี frozen value ปกติ ผ่านการกระจายที่เหลือ frozen จะได้เศษ
+	// - ดังนั้น no-progress break นี้ไม่ควรเกิด: frozen หรือ unpinned movable
+	//   จะ absorb เศษก่อนถึงจุดนี้ บรรทัดนี้คือ belt-and-braces ที่ป้องกันความผิดพลาด
 	if assigned < weightScale {
 		for _, r := range rems {
 			if assigned >= weightScale {
