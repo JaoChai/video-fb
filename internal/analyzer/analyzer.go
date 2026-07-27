@@ -41,7 +41,14 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 		return fmt.Errorf("gather analytics data: %w", err)
 	}
 
-	data, clipCount := BuildAnalysisData(stats)
+	// ประตูกลุ่มตัวอย่างเล็กวัดจากคลิป "ทั้งหน้าต่าง" ไม่ใช่จำนวนที่ส่งให้โมเดล
+	// จึงนับก่อน แล้วค่อยตัดสินว่าจะทำงานต่อไหม
+	clipCount := CountClips(stats)
+	if clipCount < 8 {
+		log.Printf("Analyzer: only %d measurable clips in window (need 8), skipping", clipCount)
+		return nil
+	}
+
 	// ป้อนกระดานคะแนนแทนตารางคลิปทั้งหมด: ตัวเลขว่าสูตรไหนชนะคำนวณมาแล้ว
 	// โมเดลมีหน้าที่อธิบายว่าทำไม ไม่ใช่เดาความสัมพันธ์เอง
 	scoreboardSection := "(ยังไม่มีกระดานคะแนน)"
@@ -50,12 +57,7 @@ func (a *Analyzer) AnalyzeAndImprove(ctx context.Context) error {
 	} else {
 		scoreboardSection = BuildScoreboardSection(scores)
 	}
-	data, _ = BuildAnalysisData(TopBottom(stats, 10))
-	// Small-sample gate: below 8 measurable clips the signal is noise.
-	if clipCount < 8 {
-		log.Printf("Analyzer: only %d measurable clips in window (need 8), skipping", clipCount)
-		return nil
-	}
+	data, _ := BuildAnalysisData(TopBottom(stats, 10))
 
 	analyticsAgent, err := a.agentsRepo.GetByName(ctx, "analytics")
 	if err != nil {

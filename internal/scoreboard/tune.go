@@ -12,9 +12,6 @@ const weightScale = 100
 const (
 	floorFactor = 0.5
 	ceilFactor  = 2.0
-	// clampPasses คือจำนวนรอบสลับ clamp/normalize การ clamp ทำให้ผลรวมเพี้ยน
-	// การ normalize ทำให้หลุด clamp — วนไม่กี่รอบก็ลู่เข้าพอสำหรับสเกลจำนวนเต็ม
-	clampPasses = 3
 )
 
 // Combined คือคะแนนของหนึ่งสูตรที่รวมทุกแพลตฟอร์มแล้ว
@@ -57,10 +54,10 @@ func CombinePlatforms(scores []Score, dimension string) []Combined {
 
 // TuneWeights คำนวณ weight ชุดใหม่จากคะแนน โดยมีเบรกสี่ชั้น:
 //
-//	1. ค่าที่ N < minN ถูกตรึงไว้ที่ส่วนแบ่งเดิม
-//	2. ส่วนแบ่งถูก clamp ไว้ใน [floorFactor, ceilFactor] เท่าของ uniform (water-filling)
-//	3. ขยับได้แค่ alpha ของระยะทางไปยังเป้าหมายต่อการเรียกหนึ่งครั้ง
-//	4. ฟังก์ชันไม่รู้จัก enabled เลย ไม่สามารถเกษียณสูตรเองได้
+//  1. ค่าที่ N < minN ถูกตรึงไว้ที่ส่วนแบ่งเดิม
+//  2. ส่วนแบ่งถูก clamp ไว้ใน [floorFactor, ceilFactor] เท่าของ uniform (water-filling)
+//  3. ขยับได้แค่ alpha ของระยะทางไปยังเป้าหมายต่อการเรียกหนึ่งครั้ง
+//  4. ฟังก์ชันไม่รู้จัก enabled เลย ไม่สามารถเกษียณสูตรเองได้
 //
 // current คือ weight ปัจจุบันของสูตรที่ enabled ทั้งหมดในมิตินั้น (สเกลใดก็ได้)
 // ผลลัพธ์เป็นสเกลผลรวม 100 เสมอ
@@ -317,17 +314,10 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 
 		k := rems[i%len(rems)].key
 
-		// ตรวจว่า k เป็น movable หรือ frozen
-		isFrozen := false
-		for km := range currentCopy {
-			if km == k {
-				comb, ok := scoreByValue[k]
-				if !ok || comb.N < minN {
-					isFrozen = true
-				}
-				break
-			}
-		}
+		// k มาจาก rems ซึ่งสร้างจาก currentCopy อยู่แล้ว จึงไม่ต้องตรวจสมาชิกซ้ำ —
+		// frozen คือค่าที่ไม่มีคะแนน หรือมีตัวอย่างน้อยกว่าเกณฑ์
+		comb, scored := scoreByValue[k]
+		isFrozen := !scored || comb.N < minN
 
 		// ถ้าเป็น movable ต้องไม่เกิน ceiling
 		if !isFrozen && out[k] >= ceilInt {
@@ -353,17 +343,8 @@ func TuneWeights(current map[string]int, combined []Combined, minN int, alpha fl
 				break
 			}
 			k := r.key
-			// ตรวจว่า k เป็น frozen
-			isFrozen := false
-			for km := range currentCopy {
-				if km == k {
-					comb, ok := scoreByValue[k]
-					if !ok || comb.N < minN {
-						isFrozen = true
-					}
-					break
-				}
-			}
+			comb, scored := scoreByValue[k]
+			isFrozen := !scored || comb.N < minN
 			// ให้เศษแก่ frozen ที่มี largest fraction
 			if isFrozen {
 				out[k]++

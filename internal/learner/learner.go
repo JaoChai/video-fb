@@ -223,8 +223,15 @@ func (l *Learner) RunOnce(ctx context.Context) error {
 			log.Printf("learner: [%s] apply failed AFTER audit (revert from skill_revisions if needed): %v", name, err)
 			continue
 		}
-		log.Printf("learner: [%s] APPLIED new skills (gate=%s weakest=%s avg=%.2f n=%d) — rationale: %s",
-			name, gate, lowDim, lowVal, agentPatterns.N, out.Rationale)
+		// เมื่อยิงด้วยประตู outcome สัญญาณมาจาก flop rate ไม่ใช่มิติคะแนนที่อ่อนสุด —
+		// พิมพ์มิตินั้นออกไปด้วยจะอ่านเหมือนว่ามันคือเหตุผลที่ยิง ทั้งที่ไม่ใช่
+		if gate == "outcome" {
+			log.Printf("learner: [%s] APPLIED new skills (gate=outcome — flop rate ถดถอย ไม่ใช่คะแนน critic; n=%d) — rationale: %s",
+				name, agentPatterns.N, out.Rationale)
+		} else {
+			log.Printf("learner: [%s] APPLIED new skills (gate=%s weakest=%s avg=%.2f n=%d) — rationale: %s",
+				name, gate, lowDim, lowVal, agentPatterns.N, out.Rationale)
+		}
 	}
 	return nil
 }

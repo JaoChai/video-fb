@@ -73,6 +73,18 @@ func FillPercentiles(stats []ClipStat) {
 	}
 }
 
+// CountClips returns how many distinct clips the stats cover. The small-sample
+// gate needs this for the FULL window even though only the top/bottom clips are
+// rendered into the prompt, so it is separate from BuildAnalysisData — counting
+// must not force the caller to format a string it will throw away.
+func CountClips(stats []ClipStat) int {
+	seen := map[string]bool{}
+	for _, s := range stats {
+		seen[s.ID] = true
+	}
+	return len(seen)
+}
+
 // BuildAnalysisData renders stats as one line per clip-platform for the LLM
 // and returns the number of distinct clips.
 func BuildAnalysisData(stats []ClipStat) (string, int) {

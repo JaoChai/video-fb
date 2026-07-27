@@ -20,12 +20,12 @@ const (
 	SettingKey = "weight_tuner_enabled"
 )
 
-// TunableDimensions คือมิติที่หมุนน้ำหนักได้จริง style_preset ไม่อยู่ในนี้โดยตั้งใจ:
-// การเลือก preset บน prod ถูก CaseFormatEnabled คร่อมไว้ก่อน จึงวัดผลอย่างเดียว
-var TunableDimensions = []string{"content_format", "category"}
-
 // Repo คือสิ่งที่ service ต้องการจากชั้นข้อมูล — แคบไว้เพื่อให้ทดสอบด้วย fake ได้
 type Repo interface {
+	// TunableDimensions คือมิติที่หมุนน้ำหนักได้จริง ชั้นข้อมูลเป็นคนตอบเพราะมันคือ
+	// ที่เดียวที่รู้ว่ามิติไหนมีตารางน้ำหนักให้เขียน style_preset จึงไม่อยู่ในชุดนี้
+	// โดยธรรมชาติ: มันวัดผลได้แต่ไม่มีตารางน้ำหนักให้หมุน
+	TunableDimensions() []string
 	RawStats(ctx context.Context, windowDays int) ([]Stat, error)
 	SaveSnapshot(ctx context.Context, computedAt time.Time, scores []Score) error
 	Latest(ctx context.Context) (time.Time, []Score, error)
@@ -93,7 +93,7 @@ func (s *Service) TuneOnce(ctx context.Context) error {
 		return nil
 	}
 
-	for _, dim := range TunableDimensions {
+	for _, dim := range s.repo.TunableDimensions() {
 		current, err := s.repo.CurrentWeights(ctx, dim)
 		if err != nil {
 			log.Printf("scoreboard: [%s] อ่าน weight ไม่ได้ (ข้าม): %v", dim, err)

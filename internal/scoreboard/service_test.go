@@ -28,6 +28,10 @@ func newFakeRepo() *fakeRepo {
 	}
 }
 
+// TunableDimensions สะท้อนของจริงใน repository: content_format กับ category เท่านั้น
+// style_preset วัดผลได้แต่ไม่มีตารางน้ำหนักให้หมุน
+func (f *fakeRepo) TunableDimensions() []string { return []string{"category", "content_format"} }
+
 func (f *fakeRepo) RawStats(ctx context.Context, windowDays int) ([]Stat, error) { return f.stats, nil }
 func (f *fakeRepo) SaveSnapshot(ctx context.Context, at time.Time, scores []Score) error {
 	f.saved = scores

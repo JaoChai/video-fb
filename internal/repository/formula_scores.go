@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,19 @@ var dimensionColumn = map[string]string{
 var weightTable = map[string]struct{ table, keyColumn string }{
 	"content_format": {"content_formats", "format_name"},
 	"category":       {"topic_categories", "category_name"},
+}
+
+// TunableDimensions คืนมิติที่หมุนน้ำหนักได้จริง เรียงชื่อเพื่อให้ลำดับคงที่
+// นี่คือแหล่งความจริงเดียวของ "มิติไหนหมุนได้" — ตัว service ถามจากที่นี่แทนที่จะ
+// ถือรายชื่อของตัวเอง ไม่งั้นการเพิ่มมิติใหม่ต้องแก้สองที่ และถ้าลืมที่ใดที่หนึ่ง
+// ระบบจะข้ามมิตินั้นเงียบๆ โดยไม่มี error ให้เห็น
+func (r *FormulaScoresRepo) TunableDimensions() []string {
+	out := make([]string, 0, len(weightTable))
+	for dim := range weightTable {
+		out = append(out, dim)
+	}
+	sort.Strings(out)
+	return out
 }
 
 type FormulaScoresRepo struct {

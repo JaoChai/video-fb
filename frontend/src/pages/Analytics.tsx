@@ -148,32 +148,32 @@ function FormulaScoreboard() {
           <div key={dim}>
             <h4 className="text-sm font-medium mb-2">{dim}</h4>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-muted-foreground text-xs uppercase">
-                  <tr>
-                    <th className="text-left py-1">สูตร</th>
-                    <th className="text-left py-1">แพลตฟอร์ม</th>
-                    <th className="text-right py-1">n</th>
-                    <th className="text-right py-1">median วิว</th>
-                    <th className="text-right py-1">flop</th>
-                    <th className="text-right py-1">คะแนน</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>สูตร</TableHead>
+                    <TableHead>แพลตฟอร์ม</TableHead>
+                    <TableHead className="text-right">n</TableHead>
+                    <TableHead className="text-right">median วิว</TableHead>
+                    <TableHead className="text-right">flop</TableHead>
+                    <TableHead className="text-right">คะแนน</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {[...rows]
                     .sort((a, b) => b.score_final - a.score_final)
                     .map(r => (
-                      <tr key={`${r.value}-${r.platform}`} className="border-t border-border">
-                        <td className="py-1">{r.value}</td>
-                        <td className="py-1">{r.platform}</td>
-                        <td className="py-1 text-right">{r.n}</td>
-                        <td className="py-1 text-right">{(r.median_pct * 100).toFixed(0)}</td>
-                        <td className="py-1 text-right">{(r.flop_rate * 100).toFixed(0)}%</td>
-                        <td className="py-1 text-right font-medium">{r.score_final.toFixed(3)}</td>
-                      </tr>
+                      <TableRow key={`${r.value}-${r.platform}`}>
+                        <TableCell>{r.value}</TableCell>
+                        <TableCell>{r.platform}</TableCell>
+                        <TableCell className="text-right">{r.n}</TableCell>
+                        <TableCell className="text-right">{(r.median_pct * 100).toFixed(0)}</TableCell>
+                        <TableCell className="text-right">{(r.flop_rate * 100).toFixed(0)}%</TableCell>
+                        <TableCell className="text-right font-medium">{r.score_final.toFixed(3)}</TableCell>
+                      </TableRow>
                     ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
         ))}
