@@ -10,14 +10,15 @@ import (
 )
 
 type fakeRepo struct {
-	stats       []Stat
-	saved       []Score
-	weights     map[string]map[string]int
-	applied     map[string]map[string]int
-	revisions   []models.WeightRevision
-	failRecord  bool
-	lastBatch   []models.WeightRevision
-	latestScore []Score
+	stats         []Stat
+	saved         []Score
+	weights       map[string]map[string]int
+	applied       map[string]map[string]int
+	revisions     []models.WeightRevision
+	failRecord    bool
+	failRecordDim string // ถ้าไม่ว่าง: RecordRevisions ล้มเฉพาะ batch ของมิตินี้ มิติอื่นผ่านปกติ
+	lastBatch     []models.WeightRevision
+	latestScore   []Score
 }
 
 func newFakeRepo() *fakeRepo {
@@ -49,6 +50,11 @@ func (f *fakeRepo) ApplyWeights(ctx context.Context, dim string, w map[string]in
 func (f *fakeRepo) RecordRevisions(ctx context.Context, revs []models.WeightRevision) error {
 	if f.failRecord {
 		return errors.New("audit ล่ม")
+	}
+	// service เรียก RecordRevisions แยกทีละมิติ (revs ทั้งชุดเป็นมิติเดียวกันเสมอ)
+	// จึงเช็ค revs[0].Dimension พอเพื่อจำลอง "audit ล่มแค่มิติเดียว"
+	if f.failRecordDim != "" && len(revs) > 0 && revs[0].Dimension == f.failRecordDim {
+		return errors.New("audit ล่มเฉพาะมิตินี้")
 	}
 	f.revisions = append(f.revisions, revs...)
 	return nil
@@ -138,17 +144,58 @@ func TestTuneOnceAppliesAndAudits(t *testing.T) {
 	}
 }
 
+// TestTuneOnceSkipsStylePreset ต้องพิสูจน์การ "กันไว้" ไม่ใช่แค่บังเอิญไม่มีอะไรให้ทำ
+// จึงต้องมี weight + คะแนนที่ต่างกันพอให้ขยับจริงทั้งสองมิติ (style_preset และ
+// content_format ที่หมุนได้) ถ้า service เผลอเอา style_preset เข้า TunableDimensions
+// test นี้ต้อง fail เพราะ repo.applied จะมี key "style_preset" โผล่มา
 func TestTuneOnceSkipsStylePreset(t *testing.T) {
 	repo := newFakeRepo()
+	repo.weights["style_preset"] = map[string]int{"case-file": 50, "detective-board": 50}
+	repo.weights["content_format"] = map[string]int{"qa": 50, "news": 50}
 	repo.latestScore = []Score{
 		{Stat: Stat{Dimension: "style_preset", Value: "case-file", Platform: "youtube", N: 30}, ScoreFinal: 0.9},
+		{Stat: Stat{Dimension: "style_preset", Value: "detective-board", Platform: "youtube", N: 30}, ScoreFinal: 0.2},
+		{Stat: Stat{Dimension: "content_format", Value: "qa", Platform: "youtube", N: 30}, ScoreFinal: 0.9},
+		{Stat: Stat{Dimension: "content_format", Value: "news", Platform: "youtube", N: 30}, ScoreFinal: 0.2},
 	}
 	svc := NewService(repo, fakeSettings{v: "true"}, fixedNow)
 	if err := svc.TuneOnce(context.Background()); err != nil {
 		t.Fatalf("TuneOnce error: %v", err)
 	}
+	// พิสูจน์ว่า loop หมุนน้ำหนักจริง (ไม่ใช่ no-op ทั้งก้อน) ก่อนเช็คการกัน style_preset
+	if applied := repo.applied["content_format"]; applied["qa"] <= 50 {
+		t.Fatalf("content_format ควรถูกหมุนน้ำหนักจริงในเทสต์นี้ (qa=%d)", applied["qa"])
+	}
 	if _, ok := repo.applied["style_preset"]; ok {
 		t.Error("style_preset ต้องไม่ถูกเขียน weight")
+	}
+}
+
+// TestTuneOnceContinuesAfterOneDimensionAuditFails ตรึงว่า error ของมิติหนึ่ง
+// (RecordRevisions ล่ม) ต้องไม่ทำให้มิติอื่นที่เหลือถูกข้ามไปด้วย — ถ้า implementation
+// ใช้ `return err` แทน `continue` ตอนเจอ error รายมิติ มิติที่มาทีหลังใน
+// TunableDimensions (category) จะไม่ถูกประมวลผลเลย และ repo.applied["category"]
+// จะว่าง ทำให้เทสต์นี้ fail
+func TestTuneOnceContinuesAfterOneDimensionAuditFails(t *testing.T) {
+	repo := newFakeRepo()
+	repo.failRecordDim = "content_format" // มิติแรกใน TunableDimensions ล้มเจตนา
+	repo.weights["content_format"] = map[string]int{"qa": 50, "news": 50}
+	repo.weights["category"] = map[string]int{"education": 50, "entertainment": 50}
+	repo.latestScore = []Score{
+		{Stat: Stat{Dimension: "content_format", Value: "qa", Platform: "youtube", N: 30}, ScoreFinal: 0.9},
+		{Stat: Stat{Dimension: "content_format", Value: "news", Platform: "youtube", N: 30}, ScoreFinal: 0.2},
+		{Stat: Stat{Dimension: "category", Value: "education", Platform: "youtube", N: 30}, ScoreFinal: 0.9},
+		{Stat: Stat{Dimension: "category", Value: "entertainment", Platform: "youtube", N: 30}, ScoreFinal: 0.2},
+	}
+	svc := NewService(repo, fakeSettings{v: "true"}, fixedNow)
+	if err := svc.TuneOnce(context.Background()); err != nil {
+		t.Fatalf("TuneOnce error: %v — มิติหนึ่งล้มต้องไม่ทำให้ทั้งฟังก์ชัน error", err)
+	}
+	if _, ok := repo.applied["content_format"]; ok {
+		t.Error("content_format audit ล้มแล้วห้าม apply")
+	}
+	if applied := repo.applied["category"]; applied["education"] <= 50 {
+		t.Errorf("category ควรถูกหมุนน้ำหนักตามปกติแม้ content_format จะล้ม, ได้ %v", applied)
 	}
 }
 
