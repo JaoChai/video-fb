@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/scoreboard"
@@ -112,16 +111,16 @@ func (r *FormulaScoresRepo) SaveSnapshot(ctx context.Context, computedAt time.Ti
 
 // Latest คืน snapshot ล่าสุดทั้งใบ ถ้ายังไม่เคยมี snapshot จะคืน slice ว่างและ error nil
 func (r *FormulaScoresRepo) Latest(ctx context.Context) (time.Time, []scoreboard.Score, error) {
-	var computedAt time.Time
+	// MAX(...) เป็น aggregate จึงคืนมาเสมอ 1 แถว (ไม่มีทาง ErrNoRows) แต่ตาราง
+	// ว่างจะได้ SQL NULL กลับมา ต้อง scan เข้า *time.Time ถึงจะรับ NULL ได้
+	// (รูปแบบเดียวกับ AnalyticsRepo.LastFetchedAt)
+	var computedAt *time.Time
 	err := r.pool.QueryRow(ctx,
 		`SELECT MAX(computed_at) FROM formula_scores`).Scan(&computedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return time.Time{}, []scoreboard.Score{}, nil
-		}
 		return time.Time{}, nil, fmt.Errorf("latest snapshot time: %w", err)
 	}
-	if computedAt.IsZero() {
+	if computedAt == nil {
 		return time.Time{}, []scoreboard.Score{}, nil
 	}
 
@@ -129,7 +128,7 @@ func (r *FormulaScoresRepo) Latest(ctx context.Context) (time.Time, []scoreboard
 		`SELECT dimension, value, platform, n, median_pct, median_retention,
 		        flop_rate, score_raw, score_final
 		 FROM formula_scores WHERE computed_at = $1
-		 ORDER BY dimension, platform, value`, computedAt)
+		 ORDER BY dimension, platform, value`, *computedAt)
 	if err != nil {
 		return time.Time{}, nil, fmt.Errorf("load snapshot: %w", err)
 	}
@@ -144,7 +143,7 @@ func (r *FormulaScoresRepo) Latest(ctx context.Context) (time.Time, []scoreboard
 		}
 		out = append(out, s)
 	}
-	return computedAt, out, rows.Err()
+	return *computedAt, out, rows.Err()
 }
 
 // CurrentWeights คืน weight ปัจจุบันของสูตรที่ enabled ในมิตินั้น
@@ -174,6 +173,10 @@ func (r *FormulaScoresRepo) CurrentWeights(ctx context.Context, dimension string
 }
 
 // ApplyWeights เขียน weight ใหม่ทั้งมิติในทรานแซกชันเดียว ห้ามแตะคอลัมน์ enabled
+// ต้องเช็ค RowsAffected ทุกแถว — ถ้าสูตรถูกปิด (enabled=FALSE) ระหว่าง snapshot
+// กับตอน apply, WHERE ... AND enabled = TRUE จะกรองแถวนั้นทิ้งเงียบๆ ทำให้ audit
+// (RecordRevisions ที่ commit ไปแล้ว) กับ weight จริงเพี้ยนกันโดยไม่มี error ใดๆ
+// เตือน จึงต้อง error ทันทีเพื่อให้ผู้เรียกรู้ว่าต้อง reconcile
 func (r *FormulaScoresRepo) ApplyWeights(ctx context.Context, dimension string, weights map[string]int) error {
 	t, ok := weightTable[dimension]
 	if !ok {
@@ -186,10 +189,14 @@ func (r *FormulaScoresRepo) ApplyWeights(ctx context.Context, dimension string, 
 	defer tx.Rollback(ctx)
 
 	for k, w := range weights {
-		if _, err := tx.Exec(ctx, fmt.Sprintf(
+		tag, err := tx.Exec(ctx, fmt.Sprintf(
 			`UPDATE %s SET weight = $1 WHERE %s = $2 AND enabled = TRUE`,
-			t.table, t.keyColumn), w, k); err != nil {
+			t.table, t.keyColumn), w, k)
+		if err != nil {
 			return fmt.Errorf("update weight %s/%s: %w", dimension, k, err)
+		}
+		if tag.RowsAffected() == 0 {
+			return fmt.Errorf("apply weight %s/%s: 0 rows updated (สูตรอาจถูกปิด enabled=FALSE ไปแล้ว)", dimension, k)
 		}
 	}
 	return tx.Commit(ctx)

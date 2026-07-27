@@ -47,15 +47,34 @@ CREATE TABLE IF NOT EXISTS weight_revisions (
 CREATE INDEX IF NOT EXISTS idx_weight_revisions_recent
     ON weight_revisions (created_at DESC);
 
--- ปรับ weight ของสูตรที่ enabled ให้เป็นสเกลผลรวม 100 แบบเท่าๆ กัน
+-- ปรับ weight ของสูตรที่ enabled ให้รวมเป็น 100 เสมอ ไม่ว่าจะมีกี่แถว enabled —
+-- คำนวณจากจำนวนแถวจริง ณ ตอนรัน ไม่ hardcode ตัวเลข เพราะ migration นี้อาจรันหลัง
+-- จำนวนแถว enabled เปลี่ยนไปจากที่ตรวจไว้วันนี้ (2026-07-27: content_formats มี 4
+-- แถว enabled คือ qa/news/tips/case_story, tutorial disabled; topic_categories มี
+-- 3 แถว enabled) ผลหาร 100/n ปัดลงเป็นฐาน แล้วเศษที่เหลือ (100 mod n) แจกให้แถว
+-- เรียงตามชื่อ (alphabetical) ตัวแรกๆ แถวละ 1 หน่วย จนหมดเศษ — ผลรวมจึง = 100 เสมอ
 -- (แถวที่ enabled = FALSE ไม่ต้องแตะ เพราะ PickNext กรองออกอยู่แล้ว)
--- ตรวจแล้วเมื่อ 2026-07-27: content_formats มี 4 แถว enabled (qa, news, tips,
--- case_story; tutorial disabled) และ topic_categories มี 3 แถว enabled — ถ้า
--- จำนวนนี้เปลี่ยนไปก่อนรัน ให้แก้ตัวเลขให้ผลรวม = 100 ก่อน
-UPDATE content_formats SET weight = 25 WHERE enabled = TRUE;
-UPDATE topic_categories SET weight = 33 WHERE enabled = TRUE;
-UPDATE topic_categories SET weight = 34
-WHERE category_name = (SELECT category_name FROM topic_categories WHERE enabled = TRUE ORDER BY category_name LIMIT 1);
+WITH cf_n AS (
+    SELECT COUNT(*) AS cnt FROM content_formats WHERE enabled = TRUE
+), cf_ranked AS (
+    SELECT format_name, ROW_NUMBER() OVER (ORDER BY format_name) AS rn
+    FROM content_formats WHERE enabled = TRUE
+)
+UPDATE content_formats cf
+SET weight = (100 / cf_n.cnt) + CASE WHEN cf_ranked.rn <= (100 % cf_n.cnt) THEN 1 ELSE 0 END
+FROM cf_ranked, cf_n
+WHERE cf.format_name = cf_ranked.format_name;
+
+WITH tc_n AS (
+    SELECT COUNT(*) AS cnt FROM topic_categories WHERE enabled = TRUE
+), tc_ranked AS (
+    SELECT category_name, ROW_NUMBER() OVER (ORDER BY category_name) AS rn
+    FROM topic_categories WHERE enabled = TRUE
+)
+UPDATE topic_categories tc
+SET weight = (100 / tc_n.cnt) + CASE WHEN tc_ranked.rn <= (100 % tc_n.cnt) THEN 1 ELSE 0 END
+FROM tc_ranked, tc_n
+WHERE tc.category_name = tc_ranked.category_name;
 
 INSERT INTO settings (key, value)
 VALUES ('weight_tuner_enabled', 'false')
