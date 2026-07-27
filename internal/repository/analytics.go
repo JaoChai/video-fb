@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 )
@@ -319,6 +321,35 @@ func (r *AnalyticsRepo) Create(ctx context.Context, a models.ClipAnalytics) erro
 		return fmt.Errorf("create analytics: %w", err)
 	}
 	return nil
+}
+
+// LastKnownRetention คืนค่า retention ครั้งล่าสุดที่ "วัดได้จริง" ของโพสต์หนึ่ง
+// (นิยาม: แถวที่ avg_view_percentage > 0) ใช้คู่กับ mergeRetention เพื่อไม่ให้รอบที่
+// Zernio ไม่คืนข้อมูลเขียนศูนย์ทับของเดิม
+//
+// ไม่เคยวัดได้เลย = คืนชุดศูนย์ + error เป็น nil ไม่ถือเป็นความผิดพลาด เพราะคลิปใหม่
+// หรือคลิป TikTok (ไม่มี daily-views ให้ดึง) จะเข้าเคสนี้เป็นปกติ
+//
+// คิวรีนี้วิ่งบน index idx_clip_analytics_lookup (clip_id, platform, post_type,
+// fetched_at DESC) ที่มีอยู่แล้ว จึงไม่ต้องเพิ่ม index ใหม่
+func (r *AnalyticsRepo) LastKnownRetention(ctx context.Context, clipID, platform, postType string) (models.RetentionSnapshot, error) {
+	var s models.RetentionSnapshot
+	err := r.pool.QueryRow(ctx,
+		`SELECT watch_time_seconds, retention_rate, avg_view_percentage
+		 FROM clip_analytics
+		 WHERE clip_id = $1 AND platform = $2 AND post_type = $3
+		   AND avg_view_percentage > 0
+		 ORDER BY fetched_at DESC
+		 LIMIT 1`,
+		clipID, platform, postType,
+	).Scan(&s.WatchTimeSeconds, &s.RetentionRate, &s.AvgViewPercentage)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.RetentionSnapshot{}, nil
+	}
+	if err != nil {
+		return models.RetentionSnapshot{}, fmt.Errorf("last known retention: %w", err)
+	}
+	return s, nil
 }
 
 // UpsertDaily records one day of YouTube analytics for a post. Re-fetches
