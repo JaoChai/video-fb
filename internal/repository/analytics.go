@@ -448,6 +448,9 @@ WITH latest AS (
     FROM latest l JOIN clips c ON c.id = l.clip_id
     WHERE c.status = 'published'
       AND c.created_at >= NOW() - make_interval(days => 90)
+      -- นับเฉพาะคลิปที่สะสมวิวจนนิ่งแล้ว (ดู maturityDays ใน formula_scores.go)
+      -- ไม่งั้นหน้าต่าง 0-30 วันจะเต็มไปด้วยคลิปที่ยังวิวไม่ครบ แล้วดูเหมือนแป้กเกินจริง
+      AND c.created_at <= NOW() - make_interval(days => 14)
 ), ranked AS (
     SELECT created_at,
            PERCENT_RANK() OVER (PARTITION BY platform ORDER BY views) AS pct
