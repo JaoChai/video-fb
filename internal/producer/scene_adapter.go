@@ -153,9 +153,18 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 			Bad bool   `json:"bad"`
 		} `json:"rows"`
 		Chips []struct {
-			N string `json:"n"`
-			T string `json:"t"`
+			N   string `json:"n"`
+			T   string `json:"t"`
+			Bad bool   `json:"bad"`
 		} `json:"chips"`
+		// chat format: ฟองข้อความ + หัวแชท + การ์ดสรุป
+		Msgs []struct {
+			From  string `json:"from"`
+			T     string `json:"t"`
+			Alert bool   `json:"alert"`
+		} `json:"msgs"`
+		Asker   string `json:"asker"`
+		Verdict string `json:"verdict"`
 		Panels []struct {
 			Time  string `json:"time"`
 			T     string `json:"t"`
@@ -200,8 +209,23 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 		}
 	}
 	for _, ch := range raw.Chips {
-		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T)})
+		c.Chips = append(c.Chips, ContentChip{N: clean(ch.N), T: clean(ch.T), Bad: ch.Bad})
 	}
+	// chat format: ฟองข้อความ · from ที่ไม่ใช่ "me" ถือเป็นฝั่งลูกค้าทั้งหมด
+	// (โมเดลเคยส่ง "them"/"customer"/"user" ปนกัน ให้ตกฝั่งซ้ายเหมือนกันหมด)
+	for _, m := range raw.Msgs {
+		t := agent.TruncateRunes(clean(m.T), 90)
+		if t == "" {
+			continue
+		}
+		from := "them"
+		if m.From == "me" {
+			from = "me"
+		}
+		c.Msgs = append(c.Msgs, ContentMessage{From: from, Text: t, Alert: m.Alert})
+	}
+	c.Asker = agent.TruncateRunes(clean(raw.Asker), 16)
+	c.Verdict = agent.TruncateRunes(clean(raw.Verdict), 60)
 	c.Stamp = agent.TruncateRunes(clean(raw.Stamp), 18)
 	// tutorial uistep: the simulated screen. Item labels are NOT truncated here —
 	// they must stay byte-comparable against the catalog's ui_vocab, which the
@@ -252,9 +276,12 @@ func buildSceneContent(s agent.GeneratedScene, b sceneBound) SceneContent {
 	}
 	// Fallback: if the model gave no structured content, render a hero title from
 	// the legacy on_screen_text + emphasis_words so the scene is never blank.
+	// ทุกช่องที่ layout ใดก็ตามใช้แสดงผลต้องอยู่ในรายการนี้ — ลืมช่องของโหมดใหม่
+	// เท่ากับซีนนั้นถูกตัดสินว่าว่างแล้วกลายเป็น hero ทั้งที่โมเดลส่งข้อมูลมาครบ
 	empty := c.Title == "" && len(c.Rows) == 0 && c.Stat == "" && c.CTA == "" &&
 		len(c.Chips) == 0 && c.Pill == "" && c.Sub == "" && c.StatLabel == "" &&
-		c.Stamp == "" && len(c.Panels) == 0 && c.Panel == nil && c.Callout == ""
+		c.Stamp == "" && len(c.Panels) == 0 && c.Panel == nil && c.Callout == "" &&
+		len(c.Msgs) == 0 && c.Asker == "" && c.Verdict == ""
 	if empty {
 		log.Printf("scene %d: no structured content (layout %q) — hero fallback from on_screen_text", s.SceneNumber, s.Layout)
 		c.Layout = "hero"
