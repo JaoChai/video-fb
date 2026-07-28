@@ -139,13 +139,12 @@ const (
 
 (ลบ `case ModeTutorial:` เดิมออก — รวมเป็นบรรทัดเดียวข้างบน)
 
-ในฟังก์ชัน `promptForScene` เพิ่ม case:
+ในฟังก์ชัน `promptForScene` เพิ่ม case เดียว (warroom เพิ่มใน Task 2 พร้อมตัวฟังก์ชัน
+— ใส่ตอนนี้จะคอมไพล์ไม่ผ่านเพราะ `buildWarRoomCoverPrompt` ยังไม่มี):
 
 ```go
 	case ModeChat:
 		return buildChatCoverPrompt(s.ImagePrompt, preset, clipToken)
-	case ModeWarRoom:
-		return buildWarRoomCoverPrompt(s.ImagePrompt, preset, clipToken)
 ```
 
 - [ ] **Step 4: สร้าง preset กับ prompt builder ของโหมดแชท**
@@ -403,6 +402,14 @@ type ContentChip struct {
 ```go
 	case WarRoomPreset.Key:
 		return WarRoomPreset
+```
+
+ใน `internal/producer/case_format.go` ฟังก์ชัน `promptForScene` เติม case ที่ Task 1
+เว้นไว้ (ตอนนี้ `buildWarRoomCoverPrompt` มีแล้วจาก Step 3):
+
+```go
+	case ModeWarRoom:
+		return buildWarRoomCoverPrompt(s.ImagePrompt, preset, clipToken)
 ```
 
 - [ ] **Step 5: รันเทสต์ให้ผ่าน**
