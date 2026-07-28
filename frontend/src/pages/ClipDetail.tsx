@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { getClipDetail } from '../api';
 import { OverviewTab } from '../components/clip-detail/OverviewTab';
 import { ScriptTab } from '../components/clip-detail/ScriptTab';
+import { ScenesTab } from '../components/clip-detail/ScenesTab';
 import { StatusBadge } from '../components/status-badge';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -101,7 +102,7 @@ export default function ClipDetailPage() {
 
           <TabsContent value="overview"><OverviewTab clip={clip} /></TabsContent>
           <TabsContent value="script"><ScriptTab clip={clip} debate={data.script_debate} /></TabsContent>
-          <TabsContent value="scenes" />
+          <TabsContent value="scenes"><ScenesTab scenes={data.scenes} /></TabsContent>
           <TabsContent value="qa" />
           <TabsContent value="stats" />
           <TabsContent value="publish" />
