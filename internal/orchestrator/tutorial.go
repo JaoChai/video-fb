@@ -10,6 +10,7 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/repository"
 )
 
 // tutorialFormatName is the content_formats row (seeded disabled so the normal
@@ -181,19 +182,27 @@ func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.Tutoria
 		if !stale {
 			return feat, nil
 		}
-		parked, pErr := o.tutorialFeaturesRepo.Park(ctx, feat.ID, reason)
+		outcome, pErr := o.tutorialFeaturesRepo.Park(ctx, feat.ID, reason)
 		if pErr != nil {
-			log.Printf("tutorial: park failed (non-fatal): %v", pErr)
-		}
-		if !parked {
-			// คลังเหลือน้อยถึงพื้น หรือ park พลาด — ผลิตตัวนี้ต่อดีกว่าไม่มีคลิป
+			// error ระหว่าง park — ทำเหมือน ParkRefusedFloor (fail-open เดิม):
 			// ตะแกรง ui_vocab ยังกันชื่อเมนูที่โมเดลแต่งเองอยู่
-			log.Printf("tutorial: feature %s looks stale (%s) but was not parked — producing it anyway",
+			log.Printf("tutorial: park failed (non-fatal): %v", pErr)
+			return feat, nil
+		}
+		switch outcome {
+		case repository.ParkFirstStrike:
+			log.Printf("tutorial: feature %s got its first stale flag (not parked yet): %s",
+				feat.FeatureKey, reason)
+			skipped = append(skipped, feat.FeatureKey)
+		case repository.ParkedForVerify:
+			log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
+			skipped = append(skipped, feat.FeatureKey)
+		case repository.ParkRefusedFloor:
+			// คลังเหลือน้อยถึงพื้น — ผลิตตัวนี้ต่อดีกว่าไม่มีคลิป
+			log.Printf("tutorial: feature %s looks stale (%s) but catalog is at the floor — producing it anyway",
 				feat.FeatureKey, reason)
 			return feat, nil
 		}
-		log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
-		skipped = append(skipped, feat.FeatureKey)
 	}
 	return last, nil
 }

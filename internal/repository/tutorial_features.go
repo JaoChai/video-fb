@@ -25,10 +25,27 @@ const tutorialFeatureCols = `id, feature_key, display_name_th, surface, audience
 // เหลือใช้ได้แถวเดียวภายใน 2 วัน แล้วคลิปสอนซ้ำหัวข้อเดิมทุกวัน
 const tutorialParkDays = 14
 
-// TutorialMinPool คือจำนวนฟีเจอร์ที่ต้องเหลือใช้ได้เป็นอย่างน้อย ต่ำกว่านี้แล้ว
-// ห้ามพักเพิ่ม ไม่งั้นคำตัดสิน "ย้ายแล้ว" ที่ผิดแค่ครั้งเดียวก็ทำให้คลังหมดเกลี้ยง
-// และ ProduceTutorial จะ error ทั้งรอบ
-const TutorialMinPool = 3
+// TutorialMinPool คือจำนวนฟีเจอร์ที่ต้องเหลือใช้ได้เป็นอย่างน้อย พื้นนี้กัน
+// "คลังยุบจนวนถี่" ไม่ใช่แค่กัน "ไม่มีคลิป" — คลังที่เหลือใช้ได้ไม่กี่แถวทำให้คลิป
+// สอนซ้ำหัวข้อเดิมทุกวันแม้ ProduceTutorial จะยังไม่ error
+const TutorialMinPool = 10
+
+// tutorialStrikeWindowDays คือหน้าต่างเวลาที่ธง "เมนูย้าย" ใบแรกยังนับ ถ้าไม่โดน
+// ธงซ้ำภายในนี้ ครั้งถัดไปจะถูกนับเป็นธงใบแรกใหม่แทนที่จะพักทันที
+const tutorialStrikeWindowDays = 30
+
+// ParkOutcome คือผลลัพธ์ของ Park หนึ่งครั้ง — สื่อว่าเกิดอะไรขึ้นจริงแทนการคืน
+// bool เฉยๆ ซึ่งแยกไม่ออกว่า "โดนธงใบแรก" กับ "ชนพื้นคลัง"
+type ParkOutcome string
+
+const (
+	// ParkFirstStrike: บันทึก flagged_at ไว้ ข้ามรอบนี้ ยังไม่พักจริง
+	ParkFirstStrike ParkOutcome = "first_strike"
+	// ParkedForVerify: โดนธงซ้ำภายในหน้าต่าง → พักจริง tutorialParkDays วัน
+	ParkedForVerify ParkOutcome = "parked"
+	// ParkRefusedFloor: คลังเหลือน้อยถึงพื้น TutorialMinPool → ห้ามพัก
+	ParkRefusedFloor ParkOutcome = "floor"
+)
 
 // tutorialAvailableWhere นิยาม "ฟีเจอร์ที่หยิบมาทำคลิปได้ตอนนี้" ที่เดียว เพื่อให้
 // ตัวเลือก (PickNext) กับตัวกันคลังหมด (Park) มองเห็นคลังชุดเดียวกันเสมอ
@@ -102,37 +119,66 @@ func (r *TutorialFeaturesRepo) MarkUsed(ctx context.Context, id string) error {
 	return nil
 }
 
+// tutorialFirstStrikeSQL records the first "menu moved" verdict without parking
+// anything. It only fires when the feature has no flag within tutorialStrikeWindowDays
+// — a stale flag from outside the window is treated as if it never happened.
+const tutorialFirstStrikeSQL = `
+	UPDATE tutorial_features
+	SET flagged_at = NOW(), verify_reason = $2
+	WHERE id = $1
+	  AND (flagged_at IS NULL OR flagged_at < NOW() - make_interval(days => $3))`
+
+// tutorialSecondStrikeSQL parks the feature for real. It only runs when the first
+// strike statement above touched zero rows, meaning the feature was already
+// flagged inside the window — this is strike two. The floor count is in the same
+// statement as the park, which is what makes the floor unbreakable: a separate
+// count then update could let two runs both see "one spare left" and park it.
+const tutorialSecondStrikeSQL = `
+	UPDATE tutorial_features
+	SET verify_reason = $2, parked_until = NOW() + make_interval(days => $3), flagged_at = NULL
+	WHERE id = $1
+	  AND (SELECT COUNT(*) FROM tutorial_features WHERE ` + tutorialAvailableWhere + `) > $4`
+
 // Park benches a feature whose menu path research says has changed, so no clip
-// teaches a stale path. Two rules are baked into the statement itself:
+// teaches a stale path. A single "moved" verdict is not accurate enough to park
+// on the spot — production data showed 7 parks from ~5 production runs — so
+// parking now takes two strikes within tutorialStrikeWindowDays:
 //
-//   - the park EXPIRES after tutorialParkDays. An LLM verdict is not certain
-//     enough to retire a feature forever, and a catalog that only ever shrinks
-//     ends up producing the same clip every day.
-//   - it refuses to park below TutorialMinPool. Counting in the same statement
-//     is what makes the floor unbreakable: a separate count then update could
-//     let two runs both see "one spare left" and park it.
-//
-// Returns false when the floor stopped the park — the caller then produces the
-// feature anyway rather than letting the catalog run dry.
-func (r *TutorialFeaturesRepo) Park(ctx context.Context, id, reason string) (bool, error) {
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE tutorial_features
-		 SET verify_reason = $2, parked_until = NOW() + make_interval(days => $3)
-		 WHERE id = $1
-		   AND (SELECT COUNT(*) FROM tutorial_features WHERE `+tutorialAvailableWhere+`) > $4`,
+//   - 1st strike: flagged_at is stamped, nothing is parked yet (ParkFirstStrike).
+//   - 2nd strike inside the window: the feature actually parks for
+//     tutorialParkDays, and flagged_at resets to NULL so the next flag after the
+//     park expires starts a fresh count (ParkedForVerify).
+//   - the 2nd strike still refuses to park below TutorialMinPool (ParkRefusedFloor)
+//     — the floor count and the park write are one statement so two concurrent
+//     runs can't both see "one spare left" and park it.
+func (r *TutorialFeaturesRepo) Park(ctx context.Context, id, reason string) (ParkOutcome, error) {
+	firstTag, err := r.pool.Exec(ctx, tutorialFirstStrikeSQL, id, reason, tutorialStrikeWindowDays)
+	if err != nil {
+		return "", fmt.Errorf("park tutorial feature (first strike): %w", err)
+	}
+	if firstTag.RowsAffected() > 0 {
+		return ParkFirstStrike, nil
+	}
+
+	secondTag, err := r.pool.Exec(ctx, tutorialSecondStrikeSQL,
 		id, reason, tutorialParkDays, TutorialMinPool)
 	if err != nil {
-		return false, fmt.Errorf("park tutorial feature: %w", err)
+		return "", fmt.Errorf("park tutorial feature (second strike): %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+	if secondTag.RowsAffected() > 0 {
+		return ParkedForVerify, nil
+	}
+	return ParkRefusedFloor, nil
 }
 
 // Unpark puts a feature back in the pool immediately — the manual counterpart of
 // waiting out the park window, for when a human has checked the menu themselves.
 // Keyed by feature_key so it can be called with the name that shows up in logs.
+// Clears flagged_at too: a human has confirmed the menu is fine, so the old flag
+// history must not survive to park the feature on a single flag next time.
 func (r *TutorialFeaturesRepo) Unpark(ctx context.Context, featureKey string) error {
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE tutorial_features SET parked_until = NULL WHERE feature_key = $1`, featureKey)
+		`UPDATE tutorial_features SET parked_until = NULL, flagged_at = NULL WHERE feature_key = $1`, featureKey)
 	if err != nil {
 		return fmt.Errorf("unpark tutorial feature: %w", err)
 	}

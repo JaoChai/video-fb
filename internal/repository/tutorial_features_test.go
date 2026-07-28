@@ -67,6 +67,56 @@ func TestAvailableFilterExpiresInsteadOfLatching(t *testing.T) {
 	if TutorialMinPool < 2 {
 		t.Errorf("TutorialMinPool = %d — the floor has to leave room for a different clip tomorrow", TutorialMinPool)
 	}
+	if TutorialMinPool < 10 {
+		t.Errorf("TutorialMinPool = %d — must be >= 10, the floor guards against a catalog that shrinks until it repeats too often", TutorialMinPool)
+	}
+}
+
+// กันบทเรียนกลับมา: verdict "เมนูย้าย" ครั้งเดียวพักฟีเจอร์ทันที ข้อมูลจริงพัก
+// 7 ครั้งจาก ~5 รอบผลิต — ParkOutcome 3 ค่าต้องแยกแยะได้และไม่มีค่าไหนว่าง
+func TestParkOutcomesAreDistinct(t *testing.T) {
+	outcomes := []ParkOutcome{ParkFirstStrike, ParkedForVerify, ParkRefusedFloor}
+	seen := map[ParkOutcome]bool{}
+	for _, o := range outcomes {
+		if o == "" {
+			t.Errorf("ParkOutcome value must not be empty, got %q", o)
+		}
+		if seen[o] {
+			t.Errorf("ParkOutcome %q is not distinct from another outcome", o)
+		}
+		seen[o] = true
+	}
+}
+
+// เทสต์ยืนยันโครงสร้าง SQL ของ Park — strike แรกต้องอ้าง flagged_at, strike ที่สอง
+// ต้องมีทั้ง parked_until และ subquery นับพื้นคลัง มิฉะนั้น "พักครั้งเดียว" หรือ
+// "พักโดยไม่นับพื้น" จะกลับมาเงียบๆ โดยไม่มีเทสต์จับ
+func TestParkStrikeSQLShape(t *testing.T) {
+	if !strings.Contains(tutorialFirstStrikeSQL, "flagged_at") {
+		t.Error("first-strike statement must reference flagged_at")
+	}
+	if strings.Contains(tutorialFirstStrikeSQL, "parked_until") {
+		t.Error("first-strike statement must not touch parked_until — it only records the flag")
+	}
+	if !strings.Contains(tutorialSecondStrikeSQL, "parked_until") {
+		t.Error("second-strike statement must set parked_until — this is the statement that actually parks")
+	}
+	if !strings.Contains(tutorialSecondStrikeSQL, "COUNT(*)") {
+		t.Error("second-strike statement must count the available floor in the same statement as the park")
+	}
+	if !strings.Contains(tutorialSecondStrikeSQL, "flagged_at = NULL") {
+		t.Error("second-strike statement must clear flagged_at so the next window starts fresh")
+	}
+}
+
+// $3 หมายถึงคนละค่ากันระหว่าง 2 statement (30 วันหน้าต่าง vs 14 วันพัก) —
+// เทสต์นี้กันไม่ให้ใครมาลดรูปเป็นค่าเดียวกันเพราะดู $3 เหมือนกันแล้วเข้าใจผิด
+func TestStrikeWindowAndParkDaysAreDifferent(t *testing.T) {
+	if tutorialStrikeWindowDays == tutorialParkDays {
+		t.Errorf("tutorialStrikeWindowDays (%d) and tutorialParkDays (%d) collapsed to the same value — "+
+			"they mean different things: the strike window vs how long a park lasts",
+			tutorialStrikeWindowDays, tutorialParkDays)
+	}
 }
 
 func TestPickTutorialFeatureEmptyPool(t *testing.T) {
