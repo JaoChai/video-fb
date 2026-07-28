@@ -58,7 +58,7 @@ func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models
 	}
 	defer rows.Close()
 
-	var results []models.ClipAnalytics
+	results := []models.ClipAnalytics{} // non-nil so an empty result marshals to [] not null
 	for rows.Next() {
 		var a models.ClipAnalytics
 		if err := rows.Scan(&a.ID, &a.ClipID, &a.Platform, &a.PostType, &a.Views, &a.Likes,
@@ -69,6 +69,37 @@ func (r *AnalyticsRepo) ListByClip(ctx context.Context, clipID string) ([]models
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate analytics: %w", err)
+	}
+	return results, nil
+}
+
+// LatestByClip คืนตัวเลขล่าสุดของคลิปหนึ่งตัว หนึ่งแถวต่อ (platform, post_type)
+// — หน้ารายละเอียดคลิปต้องการค่าปัจจุบัน ไม่ใช่ประวัติทุกรอบที่ cron รายวันเคยดึง
+// (เฉลี่ย 66 แถวต่อคลิป สูงสุด 170 บน prod)
+func (r *AnalyticsRepo) LatestByClip(ctx context.Context, clipID string) ([]models.ClipAnalytics, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT ON (platform, post_type)
+		        id, clip_id, platform, post_type, views, likes, comments, shares,
+		        watch_time_seconds, retention_rate, fetched_at
+		 FROM clip_analytics
+		 WHERE clip_id = $1 AND `+notFailedPost+`
+		 ORDER BY platform, post_type, fetched_at DESC`, clipID)
+	if err != nil {
+		return nil, fmt.Errorf("query latest analytics: %w", err)
+	}
+	defer rows.Close()
+
+	results := []models.ClipAnalytics{} // non-nil so an empty result marshals to [] not null
+	for rows.Next() {
+		var a models.ClipAnalytics
+		if err := rows.Scan(&a.ID, &a.ClipID, &a.Platform, &a.PostType, &a.Views, &a.Likes,
+			&a.Comments, &a.Shares, &a.WatchTimeSeconds, &a.RetentionRate, &a.FetchedAt); err != nil {
+			return nil, fmt.Errorf("scan latest analytics: %w", err)
+		}
+		results = append(results, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate latest analytics: %w", err)
 	}
 	return results, nil
 }

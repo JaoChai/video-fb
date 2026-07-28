@@ -28,7 +28,7 @@ func (r *ScenesRepo) ListByClip(ctx context.Context, clipID string) ([]models.Sc
 	}
 	defer rows.Close()
 
-	var scenes []models.Scene
+	scenes := []models.Scene{} // non-nil so an empty result marshals to [] not null
 	for rows.Next() {
 		var s models.Scene
 		if err := rows.Scan(&s.ID, &s.ClipID, &s.SceneNumber, &s.SceneType,

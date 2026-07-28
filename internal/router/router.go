@@ -41,6 +41,17 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 		r.Post("/{id}/unhold", clips.Unhold)
 	})
 
+	clipDetail := handler.NewClipDetailHandler(
+		repository.NewClipsRepo(pool),
+		repository.NewScenesRepo(pool),
+		repository.NewVisualQARepo(pool),
+		repository.NewCritiquesRepo(pool),
+		repository.NewAutoReviewsRepo(pool),
+		repository.NewAnalyticsRepo(pool),
+		repository.NewScriptDebatesRepo(pool),
+	)
+	r.Get("/api/v1/clips/{clipId}/detail", clipDetail.Get)
+
 	visualQA := handler.NewVisualQAHandler(repository.NewVisualQARepo(pool))
 	r.Get("/api/v1/clips/{clipId}/visual-qa", visualQA.GetByClip)
 	r.Get("/api/v1/visual-qa/stats", visualQA.Stats)
