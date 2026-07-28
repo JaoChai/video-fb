@@ -119,6 +119,34 @@ func TestStrikeWindowAndParkDaysAreDifferent(t *testing.T) {
 	}
 }
 
+// คลัง basic กับ advanced อยู่ตารางเดียวกันแต่เป็นคนละคิว ถ้าพื้นนับรวมกัน
+// การพักแถว basic จะผ่านตลอดเพราะไปนับแถว advanced ที่ยังว่าง แล้วคลัง basic
+// ก็ยุบจนคลิป 15:00 วนซ้ำทุกไม่กี่วัน — อาการเดียวกับบั๊กเดิมแต่คนละคลัง
+func TestParkFloorCountsOnlyTheSameLevel(t *testing.T) {
+	if !strings.Contains(tutorialSecondStrikeSQL, "t2.level = tutorial_features.level") {
+		t.Error("park floor subquery must be scoped to the row's own level")
+	}
+	if !strings.Contains(tutorialPickSQL, "level = $1") {
+		t.Error("PickNext must filter by level — one table, two independent queues")
+	}
+	// พื้นต้องนับพูลเดียวกับที่ PickNext หยิบ ถ้ามีคนพิมพ์เงื่อนไขซ้ำเองแล้วแก้ไม่ครบ
+	// ที่ พื้นจะกันคนละคลังกับที่ผลิตจริง
+	if !strings.Contains(tutorialSecondStrikeSQL, tutorialAvailableWhere) {
+		t.Error("park floor must reuse tutorialAvailableWhere, not re-type the predicate")
+	}
+}
+
+func TestTutorialLevelsAreDistinct(t *testing.T) {
+	if TutorialLevelAdvanced == TutorialLevelBasic {
+		t.Fatal("levels must differ")
+	}
+	for _, l := range []string{TutorialLevelAdvanced, TutorialLevelBasic} {
+		if strings.TrimSpace(l) == "" {
+			t.Error("level constants must not be empty — an empty level would match no rows")
+		}
+	}
+}
+
 func TestPickTutorialFeatureEmptyPool(t *testing.T) {
 	if got := pickTutorialFeatureLeastUsed(nil, nil); got.FeatureKey != "" {
 		t.Errorf("empty pool must return the zero feature, got %q", got.FeatureKey)

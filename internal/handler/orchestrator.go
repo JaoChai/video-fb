@@ -82,6 +82,29 @@ func (h *OrchestratorHandler) TriggerTutorial(w http.ResponseWriter, r *http.Req
 	}()
 }
 
+// TriggerBasic produces ONE basic (beginner) clip from the catalog on demand.
+// Mirrors TriggerTutorial: the topic is a catalog row, so one clip per run is the
+// shape the basic path is built around — no count.
+func (h *OrchestratorHandler) TriggerBasic(w http.ResponseWriter, r *http.Request) {
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, models.APIResponse{
+		Message: "Basic production started in background",
+	})
+
+	go func() {
+		// ProduceBasic owns the production gate AND its cancellation
+		// registration, so the handler just kicks it off with a base context.
+		if err := h.orch.ProduceBasic(context.Background()); err != nil {
+			log.Printf("Basic production failed: %v", err)
+			h.tracker.AddErrorLog(err.Error())
+		}
+	}()
+}
+
 func (h *OrchestratorHandler) StopProduction(w http.ResponseWriter, r *http.Request) {
 	h.tracker.Cancel()
 	h.tracker.AddErrorLog("Production stopped by user")

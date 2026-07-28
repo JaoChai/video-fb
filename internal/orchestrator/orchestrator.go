@@ -315,7 +315,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(format.FormatName))
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", agentModeFor(format.FormatName))
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -353,10 +353,8 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
 	preset := producer.PresetByKey("editorial-bold")
-	if format.FormatName == tutorialFormatName {
-		preset = producer.TutorialPreset // tutorial: fixed identity, skip random/weighted pickers
-	} else if producer.CaseFormatEnabled() {
-		preset = producer.CaseFilePreset // case format: fixed identity, skip random/weighted pickers
+	if fixed, ok := fixedPreset(format.FormatName); ok {
+		preset = fixed // fixed identity, skip random/weighted pickers
 	} else if producer.StylePresetsEnabled() {
 		last, _ := o.clipsRepo.LastStylePreset(ctx)
 		preset = producer.PickPreset(last)
@@ -491,7 +489,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
 	o.tracker.StartStep("scene")
-	sceneCfg, err := o.modeAgentConfig(ctx, "scene", clipMode(format.FormatName))
+	sceneCfg, err := o.modeAgentConfig(ctx, "scene", agentModeFor(format.FormatName))
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
@@ -510,7 +508,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Content Critic: review + revise content before render. Optional gate;
 	//    on disable/error/anomaly it returns the original content unchanged. ──
-	if criticCfg, cErr := o.modeAgentConfig(ctx, "critic", clipMode(format.FormatName)); cErr == nil && criticCfg.Enabled {
+	if criticCfg, cErr := o.modeAgentConfig(ctx, "critic", agentModeFor(format.FormatName)); cErr == nil && criticCfg.Enabled {
 		o.tracker.StartStep("critic")
 		res := o.criticAgent.Review(ctx, agent.CriticInput{
 			Question:  q.Question,
@@ -872,7 +870,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(clip.ContentFormat))
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", agentModeFor(clip.ContentFormat))
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}
@@ -896,7 +894,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	// A tutorial retry must re-fetch its catalog row: without it the ui_vocab gate
 	// has nothing to check against and the scene agent has no menu names to use.
 	var feat *models.TutorialFeature
-	if clip.ContentFormat == tutorialFormatName {
+	if needsCatalogFeature(clip.ContentFormat) {
 		if clip.TutorialFeature == "" {
 			return o.failClip(ctx, clip.ID, fmt.Errorf("tutorial clip has no tutorial_feature recorded — cannot rebuild safely"))
 		}
@@ -966,6 +964,22 @@ func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (
 	return o.agentsRepo.GetByName(ctx, name)
 }
 
+// fixedPreset returns the preset a clip is pinned to regardless of the random
+// and performance-weighted pickers, and whether it is pinned at all.
+//
+// preset เป็นตัวตัดสินหน้าตาคลิปจริง (resolveFormatInfo แปลง preset เป็น
+// FormatInfo.Mode ที่ไปเป็น data-format ของ template และนโยบายภาพ) การถามผ่าน
+// clipMode ที่เดียวจึงกัน tutorial กับ basic แยกหน้าตากันโดยไม่มีใครรู้ตัว
+func fixedPreset(contentFormat string) (producer.StylePreset, bool) {
+	if clipMode(contentFormat) == producer.ModeTutorial {
+		return producer.TutorialPreset, true
+	}
+	if producer.CaseFormatEnabled() {
+		return producer.CaseFilePreset, true
+	}
+	return producer.StylePreset{}, false
+}
+
 // retryPresetForCurrentMode picks the preset for a FULL-rebuild retry, which
 // regenerates every asset with the current mode's prompts. The clip's own
 // content_format decides first (a tutorial clip stays a tutorial even while the
@@ -973,11 +987,8 @@ func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (
 // case/tutorial key on a clip that is neither falling back to the classic
 // default so prompts and visuals never mix modes.
 func retryPresetForCurrentMode(stored, contentFormat string) producer.StylePreset {
-	if contentFormat == tutorialFormatName {
-		return producer.TutorialPreset
-	}
-	if producer.CaseFormatEnabled() {
-		return producer.CaseFilePreset
+	if fixed, ok := fixedPreset(contentFormat); ok {
+		return fixed
 	}
 	p := producer.PresetByKey(stored)
 	if p.Key == producer.CaseFilePreset.Key || p.Key == producer.TutorialPreset.Key {

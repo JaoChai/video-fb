@@ -136,6 +136,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 func SetOrchestrator(r *chi.Mux, h *handler.OrchestratorHandler) {
 	r.Post("/api/v1/orchestrator/produce", h.TriggerWeekly)
 	r.Post("/api/v1/orchestrator/produce-tutorial", h.TriggerTutorial)
+	r.Post("/api/v1/orchestrator/produce-basic", h.TriggerBasic)
 	r.Post("/api/v1/orchestrator/stop", h.StopProduction)
 	r.Post("/api/v1/orchestrator/publish", h.TriggerPublish)
 	r.Post("/api/v1/orchestrator/publish-tiktok", h.TriggerPublishTikTok)

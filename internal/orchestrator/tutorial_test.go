@@ -123,6 +123,64 @@ func TestRetryPresetFollowsClipFormat(t *testing.T) {
 	}
 }
 
+// preset เป็นตัวตัดสินหน้าตาคลิปจริง คลิป basic ที่หลุดไปเข้าสาขา CaseFormatEnabled
+// จะ render เป็นแฟ้มคดี (data-format="case") กิน case number ของ 21:00 และไม่ได้ภาพ AI
+// เลย ทั้งที่ prompt เป็นคู่มือ — ต้องผูกกับ clipMode ที่เดียวเสมอ
+func TestFixedPresetCoversBasicAndTutorial(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	for _, format := range []string{tutorialFormatName, basicFormatName} {
+		got, ok := fixedPreset(format)
+		if !ok || got.Key != producer.TutorialPreset.Key {
+			t.Errorf("fixedPreset(%q) = (%q, %v), want the tutorial preset even with the case flag on",
+				format, got.Key, ok)
+		}
+	}
+	// the 3 pre-existing slots must be byte-identical to before basic existed
+	for _, format := range []string{"qa", "tips", "news", "case_story"} {
+		got, ok := fixedPreset(format)
+		if !ok || got.Key != producer.CaseFilePreset.Key {
+			t.Errorf("fixedPreset(%q) = (%q, %v), want case-file while the case flag is on", format, got.Key, ok)
+		}
+	}
+	t.Setenv("CASE_FORMAT_ENABLED", "")
+	if _, ok := fixedPreset("qa"); ok {
+		t.Error("with the case flag off a qa clip must fall through to the random/weighted pickers")
+	}
+	if got, ok := fixedPreset(basicFormatName); !ok || got.Key != producer.TutorialPreset.Key {
+		t.Errorf("basic with the case flag off = (%q, %v), want the tutorial preset", got.Key, ok)
+	}
+}
+
+// retry ของคลิป basic ต้องได้ preset เดียวกับรอบแรก ไม่งั้นคลิปเดิมจะเปลี่ยนหน้าตา
+// กลางคันตอน tick retry */15 หยิบไป rebuild
+func TestRetryPresetCoversBasic(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	if got := retryPresetForCurrentMode("case-file", basicFormatName); got.Key != producer.TutorialPreset.Key {
+		t.Errorf("basic clip retry preset = %q, want tutorial", got.Key)
+	}
+	t.Setenv("CASE_FORMAT_ENABLED", "")
+	if got := retryPresetForCurrentMode("", basicFormatName); got.Key != producer.TutorialPreset.Key {
+		t.Errorf("basic clip retry preset with the case flag off = %q, want tutorial", got.Key)
+	}
+}
+
+// ตะแกรง ui_vocab ทำงานได้ก็ต่อเมื่อ retry โหลดแถวคลังกลับมา — ถ้า feat เป็น nil
+// tutorialGateFailure คืน "" (ประตูเปิดค้าง) และ TutorialBrief ก็คืน "" แปลว่า agent
+// เขียนขั้นตอนเมนูจากชื่อคลิปล้วนๆ แล้วคลิปนั้น auto-publish ขึ้น YouTube
+func TestNeedsCatalogFeatureCoversBasic(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	for _, format := range []string{tutorialFormatName, basicFormatName} {
+		if !needsCatalogFeature(format) {
+			t.Errorf("needsCatalogFeature(%q) = false, want true — the ui_vocab gate must never be skipped", format)
+		}
+	}
+	for _, format := range []string{"qa", "tips", "news", "case_story"} {
+		if needsCatalogFeature(format) {
+			t.Errorf("needsCatalogFeature(%q) = true, want false — non-catalog slots must be unchanged", format)
+		}
+	}
+}
+
 // การเช็คความสดเป็นตาข่ายกันพลาด ไม่ใช่ประตู — พังทางไหนก็ต้องแปลว่า "ไม่เก่า"
 // ไม่งั้น LLM ล่มครั้งเดียวจะ park ฟีเจอร์ไปเรื่อยๆ จน catalog หมดแล้วผลิตไม่ได้
 func TestFreshnessDecisionFailsOpen(t *testing.T) {
@@ -147,5 +205,33 @@ func TestFreshnessDecisionAlwaysHasAReason(t *testing.T) {
 	stale, reason := freshnessDecision(agent.FreshnessVerdict{Moved: true}, nil)
 	if !stale || strings.TrimSpace(reason) == "" {
 		t.Errorf("a parked feature must carry a reason for the human who fixes it, got %q", reason)
+	}
+}
+
+// คลิป basic ต้องหน้าตาเหมือนคลิป tutorial เป๊ะ (โหมดภาพเดียวกัน) แต่ใช้พรอมป์
+// คนละชุด ถ้าสองอย่างนี้ผูกติดกันเมื่อไหร่ ต้องเลือกอย่างใดอย่างหนึ่งเสียเสมอ
+func TestBasicClipLooksLikeTutorialButUsesItsOwnPrompts(t *testing.T) {
+	if got := clipMode(basicFormatName); got != producer.ModeTutorial {
+		t.Errorf("clipMode(basic) = %q, want tutorial — visuals must be identical", got)
+	}
+	if got := agentModeFor(basicFormatName); got != basicAgentMode {
+		t.Errorf("agentModeFor(basic) = %q, want %q — basic needs its own voice", got, basicAgentMode)
+	}
+	if got := agentModeFor(tutorialFormatName); got != producer.ModeTutorial {
+		t.Errorf("agentModeFor(tutorial) = %q, want tutorial — must not change", got)
+	}
+	if got := agentModeFor("qa"); got != clipMode("qa") {
+		t.Errorf("agentModeFor(qa) = %q, want the same as clipMode — other formats unchanged", got)
+	}
+}
+
+// โหมด tutorial ยังต้องได้ผลเดิมทุกอย่างหลังเพิ่ม basic เข้ามา
+func TestTutorialModeUnchangedByBasic(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	if got := clipMode(tutorialFormatName); got != producer.ModeTutorial {
+		t.Errorf("tutorial = %q, want tutorial even with the case flag on", got)
+	}
+	if got := clipMode(basicFormatName); got != producer.ModeTutorial {
+		t.Errorf("basic = %q, want tutorial even with the case flag on", got)
 	}
 }

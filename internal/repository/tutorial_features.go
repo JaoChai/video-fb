@@ -51,6 +51,21 @@ const (
 // ตัวเลือก (PickNext) กับตัวกันคลังหมด (Park) มองเห็นคลังชุดเดียวกันเสมอ
 const tutorialAvailableWhere = `enabled = TRUE AND (parked_until IS NULL OR parked_until <= NOW())`
 
+// ระดับของหัวข้อ = ช่วงเวลาที่หยิบไปใช้ ไม่ใช่แค่ป้ายกำกับ
+// advanced = คลิป 21:00 สำหรับคนยิงแอดอยู่แล้ว · basic = คลิป 15:00 สำหรับคนเพิ่งเริ่ม
+const (
+	TutorialLevelAdvanced = "advanced"
+	TutorialLevelBasic    = "basic"
+)
+
+// tutorialPickSQL แยกออกมาเป็น const เพื่อให้เทสต์อ่านรูปร่างของเงื่อนไขได้โดยไม่
+// ต้องมีฐานข้อมูล — คลังสองระดับใช้ตารางเดียวกัน การลืม level ตรงนี้แปลว่าคลิป
+// 21:00 จะสุ่มได้หัวข้อพื้นฐาน
+const tutorialPickSQL = `SELECT ` + tutorialFeatureCols + `, used_count
+	 FROM tutorial_features
+	 WHERE ` + tutorialAvailableWhere + ` AND level = $1
+	 ORDER BY feature_key`
+
 // GetByKey resolves a feature by its stable key (used by the retry path, which
 // only has clips.tutorial_feature to go on).
 func (r *TutorialFeaturesRepo) GetByKey(ctx context.Context, key string) (*models.TutorialFeature, error) {
@@ -73,12 +88,8 @@ func (r *TutorialFeaturesRepo) GetByKey(ctx context.Context, key string) (*model
 // skipping any key in exclude. Returns nil when the catalog is empty. It never
 // errors on "everything excluded" — see pickTutorialFeatureLeastUsed, which fails
 // open by design.
-func (r *TutorialFeaturesRepo) PickNext(ctx context.Context, exclude []string) (*models.TutorialFeature, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+tutorialFeatureCols+`, used_count
-		 FROM tutorial_features
-		 WHERE `+tutorialAvailableWhere+`
-		 ORDER BY feature_key`)
+func (r *TutorialFeaturesRepo) PickNext(ctx context.Context, level string, exclude []string) (*models.TutorialFeature, error) {
+	rows, err := r.pool.Query(ctx, tutorialPickSQL, level)
 	if err != nil {
 		return nil, fmt.Errorf("query tutorial features: %w", err)
 	}
@@ -133,11 +144,20 @@ const tutorialFirstStrikeSQL = `
 // flagged inside the window — this is strike two. The floor count is in the same
 // statement as the park, which is what makes the floor unbreakable: a separate
 // count then update could let two runs both see "one spare left" and park it.
+//
+// พื้นนับเฉพาะหัวข้อระดับเดียวกับแถวที่กำลังพัก (correlated subquery) — คลัง basic
+// กับ advanced เป็นคนละคิว ถ้านับรวมกัน การพักแถว basic จะผ่านตลอดเพราะไปนับ
+// แถว advanced ที่ยังว่างอยู่ แล้วคลัง basic ก็ยุบจนวนซ้ำทุกไม่กี่วัน
+//
+// ใช้ tutorialAvailableWhere ตัวเดียวกับ PickNext (ชื่อคอลัมน์ที่ไม่ระบุตารางใน
+// subquery ผูกกับ t2) เพื่อไม่ให้พื้นนับคนละพูลกับตัวเลือกเมื่อมีใครแก้เงื่อนไข
 const tutorialSecondStrikeSQL = `
 	UPDATE tutorial_features
 	SET verify_reason = $2, parked_until = NOW() + make_interval(days => $3), flagged_at = NULL
 	WHERE id = $1
-	  AND (SELECT COUNT(*) FROM tutorial_features WHERE ` + tutorialAvailableWhere + `) > $4`
+	  AND (SELECT COUNT(*) FROM tutorial_features t2
+	       WHERE ` + tutorialAvailableWhere + `
+	         AND t2.level = tutorial_features.level) > $4`
 
 // Park benches a feature whose menu path research says has changed, so no clip
 // teaches a stale path. A single "moved" verdict is not accurate enough to park
