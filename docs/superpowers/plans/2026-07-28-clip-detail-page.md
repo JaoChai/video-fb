@@ -598,7 +598,11 @@ export default function ClipDetailPage() {
   }
 
   const { clip } = data;
-  const held = clip.status === 'ready' && clip.auto_review_held;
+  // แก้หลังรีวิว: คลิปที่ auto-review เพิ่งกักยังเป็น needs_review (SetAutoReviewHeld
+  // พลิกแค่ธง) ถ้าเช็คแค่ ready จะได้ปุ่ม "อนุมัติ" ที่ตั้ง status='ready' ทั้งที่ธง
+  // ยังค้าง แล้ว publisher ข้ามคลิปนั้นตลอดไป — ต้องตรงกับ guard ของ ClearAutoReviewHeld
+  const held = clip.auto_review_held
+    && (clip.status === 'needs_review' || clip.status === 'ready');
 
   return (
     <div>
