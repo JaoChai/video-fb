@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, stopProduction, publishTikTok } from '../api';
 import { Badge } from '../components/ui/badge';
@@ -14,7 +15,6 @@ import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCir
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
-import { ReviewDialog } from '../components/ReviewDialog';
 import { QAStatsCard } from '../components/QAStatsCard';
 import { cn } from '../lib/utils';
 
@@ -69,6 +69,7 @@ function relativeTime(dateStr: string): string {
 
 export default function ContentPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { success, error: showError } = useToast();
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
@@ -79,7 +80,6 @@ export default function ContentPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [reviewClip, setReviewClip] = useState<Clip | null>(null);
 
   const { data: prodStatus } = useQuery({
     queryKey: ['production-status'],
@@ -405,15 +405,16 @@ export default function ContentPage() {
             <TableBody>
               {paged.map(clip => {
                 const reviewable = clip.status === 'needs_review';
-                // A held clip is 'ready' but the publisher skips it (Visual QA gate).
-                // Make it clickable too so the reasons dialog explains why it won't publish.
-                const held = clip.status === 'ready' && !!clip.auto_review_held;
-                const clickable = reviewable || held;
+                // A held clip is skipped by the publisher (Visual QA gate). A fresh
+                // auto-review hold leaves the clip at 'needs_review' — only stale
+                // holds sit at 'ready' — so both statuses must show the badge.
+                const held = !!clip.auto_review_held
+                  && (clip.status === 'needs_review' || clip.status === 'ready');
                 return (
                 <TableRow
                   key={clip.id}
-                  onClick={clickable ? () => setReviewClip(clip) : undefined}
-                  className={cn(clickable && 'cursor-pointer hover:bg-muted/50')}
+                  onClick={() => navigate(`/clips/${clip.id}`)}
+                  className="cursor-pointer hover:bg-muted/50"
                 >
                   <TableCell className="pl-4 py-3">
                     <div className="text-sm font-medium leading-snug line-clamp-1">{clip.title}</div>
@@ -537,10 +538,6 @@ export default function ContentPage() {
             </div>
           )}
         </>
-      )}
-
-      {reviewClip && (
-        <ReviewDialog clip={reviewClip} onClose={() => setReviewClip(null)} />
       )}
     </div>
   );

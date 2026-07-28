@@ -84,15 +84,17 @@ type VisualQAStats struct {
 }
 
 type ClipMetadata struct {
-	ClipID         string   `json:"clip_id"`
-	YoutubeTitle   *string  `json:"youtube_title"`
-	YoutubeDesc    *string  `json:"youtube_description"`
-	YoutubeTags    []string `json:"youtube_tags"`
-	ZernioPostID   *string  `json:"zernio_post_id"`
-	YoutubeVideoID *string  `json:"youtube_video_id"`
-	TiktokPostID   *string  `json:"tiktok_post_id"`
-	IGPostID       *string  `json:"ig_post_id"`
-	FBPostID       *string  `json:"fb_post_id"`
+	ClipID             string   `json:"clip_id"`
+	YoutubeTitle       *string  `json:"youtube_title"`
+	YoutubeDesc        *string  `json:"youtube_description"`
+	YoutubeTags        []string `json:"youtube_tags"`
+	ZernioPostID       *string  `json:"zernio_post_id"`
+	YoutubeVideoID     *string  `json:"youtube_video_id"`
+	TiktokPostID       *string  `json:"tiktok_post_id"`
+	IGPostID           *string  `json:"ig_post_id"`
+	FBPostID           *string  `json:"fb_post_id"`
+	ZernioShortsPostID *string  `json:"zernio_shorts_post_id"`
+	ZernioTiktokPostID *string  `json:"zernio_tiktok_post_id"`
 }
 
 type ClipAnalytics struct {
@@ -266,4 +268,30 @@ type WeightRevision struct {
 	N          int       `json:"n"`
 	ComputedAt time.Time `json:"computed_at"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ScriptDebate คือผลการดีเบตสคริปต์หนึ่งครั้ง (3 มุมมองเขียนแข่งกัน + judge ตัดสิน)
+// Verdict เป็น NULL เมื่อข้าม judge หรือ judge พัง — json.RawMessage ที่เป็น nil
+// marshal ออกมาเป็น null ตามที่ frontend คาดไว้
+type ScriptDebate struct {
+	ID         string          `json:"id"`
+	ClipID     string          `json:"clip_id"`
+	Candidates json.RawMessage `json:"candidates"`
+	Verdict    json.RawMessage `json:"verdict"`
+	Source     string          `json:"source"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+// ClipDetail คือทุกอย่างที่ระบบรู้เกี่ยวกับคลิปหนึ่งตัว รวมร่างไว้ให้หน้า
+// /clips/:id ดึงครั้งเดียวจบ ฟิลด์ที่เป็น pointer จะเป็น null เมื่อคลิปนั้น
+// ไม่มีข้อมูลส่วนนั้น (คลิปเก่าจำนวนมากไม่มี critique/debate/analytics)
+type ClipDetail struct {
+	Clip         *Clip           `json:"clip"`
+	Metadata     *ClipMetadata   `json:"metadata"`
+	Scenes       []Scene         `json:"scenes"`
+	VisualQA     *VisualQA       `json:"visual_qa"`
+	Critique     *ClipCritique   `json:"critique"`
+	AutoReview   *AutoReview     `json:"auto_review"`
+	Analytics    []ClipAnalytics `json:"analytics"`
+	ScriptDebate *ScriptDebate   `json:"script_debate"`
 }
