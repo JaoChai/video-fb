@@ -35,8 +35,14 @@ export function StatsTab({ rows }: { rows: ClipAnalyticsRow[] }) {
             <Metric label="ไลก์" value={formatNum(r.likes)} />
             <Metric label="คอมเมนต์" value={formatNum(r.comments)} />
             <Metric label="แชร์" value={formatNum(r.shares)} />
-            <Metric label="เวลาดูรวม" value={formatWatch(r.watch_time_seconds)} />
-            <Metric label="retention" value={`${(r.retention_rate * 100).toFixed(1)}%`} />
+            {/* TikTok ไม่ส่ง watch time / retention มาให้เลย (ทุกแถวเป็น 0) การแสดง
+                "0 นาที · 0.0%" จะอ่านเหมือนวัดแล้วไม่มีคนดู ทั้งที่ไม่มีข้อมูลตั้งแต่ต้นทาง */}
+            {r.platform !== 'tiktok' && (
+              <>
+                <Metric label="เวลาดูรวม" value={formatWatch(r.watch_time_seconds)} />
+                <Metric label="retention" value={`${(r.retention_rate * 100).toFixed(1)}%`} />
+              </>
+            )}
           </div>
         </div>
       ))}

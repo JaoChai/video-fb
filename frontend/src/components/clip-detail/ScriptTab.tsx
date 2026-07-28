@@ -9,7 +9,7 @@ function asCandidates(raw: unknown): Candidate[] {
 }
 
 function asVerdict(raw: unknown): Verdict | null {
-  return raw !== null && typeof raw === 'object' ? (raw as Verdict) : null;
+  return raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Verdict) : null;
 }
 
 function Block({ title, text }: { title: string; text: string }) {

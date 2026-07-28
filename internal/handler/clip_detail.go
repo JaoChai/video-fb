@@ -2,10 +2,12 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/repository"
 )
@@ -49,8 +51,15 @@ func (h *ClipDetailHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "clipId")
 
 	clip, err := h.clips.GetByID(ctx, id)
-	if err != nil || clip == nil {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows) || (err == nil && clip == nil):
 		writeJSON(w, http.StatusNotFound, models.APIResponse{Error: "clip not found"})
+		return
+	case err != nil:
+		// DB ล่มไม่ใช่ "คลิปถูกลบ" — หน้าเว็บแยกสองข้อความนี้อยู่ ถ้ายุบเป็น 404
+		// ผู้ใช้จะอ่านว่าคลิปหายไปแล้วทั้งที่แค่ backend มีปัญหาชั่วคราว
+		log.Printf("clip detail %s: %v", id, err)
+		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: "โหลดคลิปไม่สำเร็จ"})
 		return
 	}
 

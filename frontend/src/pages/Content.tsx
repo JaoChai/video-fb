@@ -405,8 +405,11 @@ export default function ContentPage() {
             <TableBody>
               {paged.map(clip => {
                 const reviewable = clip.status === 'needs_review';
-                // A held clip is 'ready' but the publisher skips it (Visual QA gate).
-                const held = clip.status === 'ready' && !!clip.auto_review_held;
+                // A held clip is skipped by the publisher (Visual QA gate). A fresh
+                // auto-review hold leaves the clip at 'needs_review' — only stale
+                // holds sit at 'ready' — so both statuses must show the badge.
+                const held = !!clip.auto_review_held
+                  && (clip.status === 'needs_review' || clip.status === 'ready');
                 return (
                 <TableRow
                   key={clip.id}

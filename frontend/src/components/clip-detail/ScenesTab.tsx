@@ -28,7 +28,7 @@ function SceneImage({ url }: { url: string | null }) {
 
 export function ScenesTab({ scenes }: { scenes: Scene[] }) {
   if (scenes.length === 0) {
-    return <p className="text-sm text-muted-foreground">คลิปนี้ยังไม่มีฉาก (ผลิตไม่ถึงขั้นแตกฉาก)</p>;
+    return <p className="text-sm text-muted-foreground">ไม่มีข้อมูลฉากของคลิปนี้</p>;
   }
 
   return (

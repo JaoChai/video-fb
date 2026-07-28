@@ -28,6 +28,9 @@ export default function ClipDetailPage() {
     queryKey: ['clip-detail', id],
     queryFn: () => getClipDetail(id),
     enabled: id !== '',
+    // คลิปที่ถูกลบไปแล้วไม่มีทางกลับมา การ retry 3 ครั้งตาม default ทำให้ค้าง
+    // skeleton หลายวินาทีก่อนจะบอกผู้ใช้ว่าไม่เจอ
+    retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 3,
   });
 
   if (isLoading) {
@@ -58,7 +61,13 @@ export default function ClipDetailPage() {
   }
 
   const { clip } = data;
-  const held = clip.status === 'ready' && clip.auto_review_held;
+  // คลิปที่ auto-review เพิ่งกักยังเป็น needs_review (SetAutoReviewHeld พลิกแค่ธง
+  // ไม่แตะสถานะ) ส่วน ready+held คือแถวเก่าที่ค้างมา — ทั้งสองกรณีต้องปลดด้วย
+  // unhold ที่เคลียร์ธง+ดันเป็น ready ให้ครบ ถ้าเช็คแค่ ready จะได้ปุ่ม "อนุมัติ"
+  // ที่ตั้ง status='ready' โดยธงยังค้าง แล้ว publisher ข้ามคลิปนั้นตลอดไปแบบเงียบๆ
+  // (สองสถานะนี้ตรงกับ guard ของ ClearAutoReviewHeld)
+  const held = clip.auto_review_held
+    && (clip.status === 'needs_review' || clip.status === 'ready');
   const reviewable = clip.status === 'needs_review';
 
   // แอ็กชันทั้งสามหมุนรอบเดียวกัน: ล็อกปุ่ม → ยิง API → รีเฟรชรายการคลิป →

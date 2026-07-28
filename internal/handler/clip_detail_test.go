@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jaochai/video-fb/internal/models"
 )
 
@@ -27,17 +29,46 @@ func (f fakeClipSource) GetMetadata(ctx context.Context, clipID string) (*models
 	return nil, nil
 }
 
-// คลิปที่ไม่มีในระบบต้องได้ 404 ไม่ใช่ 500 — และต้องคืนก่อนแตะ repo ตัวอื่น
-// (ตัวอื่นเป็น nil ในเทสต์นี้ ถ้าโค้ดเผลอเรียกจะ panic ให้เห็นทันที)
-func TestClipDetailNotFound(t *testing.T) {
+// คลิปที่ไม่มีจริงต้องได้ 404 ส่วน DB ล่มต้องได้ 500 — หน้าเว็บใช้ status นี้
+// เลือกข้อความ ถ้ายุบเป็น 404 หมดผู้ใช้จะอ่านว่า "คลิปถูกลบไปแล้ว" ทุกครั้งที่
+// backend มีปัญหา ทั้งสองเส้นต้องคืนก่อนแตะ repo ตัวอื่น (ตัวอื่นเป็น nil ในเทสต์นี้
+// ถ้าโค้ดเผลอเรียกจะ panic ให้เห็นทันที)
+func TestClipDetailErrorStatuses(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"ไม่มีคลิปนี้", pgx.ErrNoRows, http.StatusNotFound},
+		{"DB ล่ม", errors.New("connection refused"), http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := NewClipDetailHandler(fakeClipSource{nil, tc.err}, nil, nil, nil, nil, nil, nil)
+			r := chi.NewRouter()
+			r.Get("/clips/{clipId}/detail", h.Get)
+
+			req := httptest.NewRequest(http.MethodGet, "/clips/abc/detail", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != tc.want {
+				t.Errorf("got %d, want %d", w.Code, tc.want)
+			}
+		})
+	}
+}
+
+// repo จริง wrap error ด้วย %w — errors.Is ต้องยังเห็น ErrNoRows ผ่านชั้น wrap
+// ไม่งั้นคลิปที่ไม่มีจริงจะกลายเป็น 500
+func TestClipDetailWrappedNoRowsIs404(t *testing.T) {
 	h := NewClipDetailHandler(
-		fakeClipSource{nil, errors.New("no rows")},
+		fakeClipSource{nil, fmt.Errorf("get clip abc: %w", pgx.ErrNoRows)},
 		nil, nil, nil, nil, nil, nil,
 	)
 	r := chi.NewRouter()
 	r.Get("/clips/{clipId}/detail", h.Get)
 
-	req := httptest.NewRequest(http.MethodGet, "/clips/ไม่มีจริง/detail", nil)
+	req := httptest.NewRequest(http.MethodGet, "/clips/abc/detail", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

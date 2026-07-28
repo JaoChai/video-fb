@@ -39,3 +39,32 @@ func TestOrchestratorRoutesRegistered(t *testing.T) {
 		}
 	}
 }
+
+// TestClipRoutesRegistered กัน route ของคลิปหายเงียบๆ — /detail ประกาศอยู่นอก
+// บล็อก r.Route("/api/v1/clips") จึงต้องยืนยันว่า subrouter ไม่ได้กลืนมันไป
+// (ถ้าโดนกลืน หน้า /clips/:id จะได้ 404 ทั้งที่ handler มีอยู่)
+func TestClipRoutesRegistered(t *testing.T) {
+	r := New(nil, "", nil, nil, nil, func() {}, nil)
+
+	got := map[string]bool{}
+	if err := chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if method == http.MethodGet {
+			got[route] = true
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk routes: %v", err)
+	}
+
+	for _, want := range []string{
+		"/api/v1/clips/{clipId}/detail",
+		"/api/v1/clips/{id}",
+		"/api/v1/clips/{clipId}/scenes/",
+		"/api/v1/clips/{clipId}/visual-qa",
+		"/api/v1/clips/{clipId}/analytics",
+	} {
+		if !got[want] {
+			t.Errorf("GET %s not registered (มีอยู่: %v)", want, got)
+		}
+	}
+}
