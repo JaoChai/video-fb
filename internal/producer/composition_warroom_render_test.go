@@ -1,6 +1,8 @@
 package producer
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -79,4 +81,20 @@ func TestWarRoomKPICarriesBadFlag(t *testing.T) {
 	if !strings.Contains(string(out), `"bad":true`) {
 		t.Error("SCENES JSON must carry the bad flag for a failing KPI")
 	}
+}
+
+// TestDumpWarRoomHTML — ด่านสายตาเดียวกับฝั่งแชท ดูว่ากรอบจอมอนิเตอร์ไม่ทับ uistep
+func TestDumpWarRoomHTML(t *testing.T) {
+	dir := os.Getenv("HF_KEEP_DIR")
+	if dir == "" {
+		t.Skip("set HF_KEEP_DIR=<dir> to dump the war-room HTML for eyeballing")
+	}
+	out, err := RenderCompositionScenes(warroomParams())
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "warroom.html"), out, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Logf("wrote %s/warroom.html", dir)
 }

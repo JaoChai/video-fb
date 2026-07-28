@@ -257,7 +257,11 @@
         top:160px;bottom:410px;justify-content:center}
       [data-format='warroom'] .scene[data-layout="alarm"] .scene-bg,
       [data-format='warroom'] .scene[data-layout="cta"] .scene-bg{opacity:.30;filter:saturate(.6)}
-      [data-format='warroom'] .ui-panel{background:#050d22;border-color:rgba(88,146,255,.42)}
+      /* แผงยังเป็นหน้าจอ Ads Manager สว่างเหมือนเดิม — มันคือสิ่งที่คนดูต้องทำตาม
+         ทาพื้นให้ดำเมื่อไรคือทำลายความเป็นหน้าจอจริง และ breadcrumb ที่พื้นโปร่งใส
+         จะเหลือ contrast 3.85 ทันที · ห้องควบคุมจึงแต่งที่ "กรอบ" ให้เป็นจอมอนิเตอร์แทน */
+      [data-format='warroom'] .ui-panel{border:6px solid #0a1a3d;
+        box-shadow:0 0 0 3px rgba(88,146,255,.5),0 0 70px rgba(46,139,255,.28),0 30px 76px rgba(0,0,0,.62)}
       .wr-live{display:flex;align-items:center;gap:14px;font-weight:800;font-size:28px;
         letter-spacing:.10em;color:var(--muted);margin-bottom:20px}
       .wr-live i{width:18px;height:18px;border-radius:50%;background:var(--red);

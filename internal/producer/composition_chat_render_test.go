@@ -1,6 +1,8 @@
 package producer
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -81,4 +83,21 @@ func TestChatFlagOffForOtherModes(t *testing.T) {
 	if !strings.Contains(string(out), "const FORMAT_CHAT = false") {
 		t.Error("FORMAT_CHAT must be false when the clip is not a chat clip")
 	}
+}
+
+// TestDumpChatHTML เขียนผลเรนเดอร์ลงไฟล์ให้เปิดดูด้วยตา ปกติข้าม — ตั้ง
+// HF_KEEP_DIR=<dir> เพื่อสั่งให้ทิ้งไฟล์ (ตั้งใจไม่ assert อะไร มันคือด่านสายตา)
+func TestDumpChatHTML(t *testing.T) {
+	dir := os.Getenv("HF_KEEP_DIR")
+	if dir == "" {
+		t.Skip("set HF_KEEP_DIR=<dir> to dump the chat HTML for eyeballing")
+	}
+	out, err := RenderCompositionScenes(chatParams())
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "chat.html"), out, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Logf("wrote %s/chat.html", dir)
 }
