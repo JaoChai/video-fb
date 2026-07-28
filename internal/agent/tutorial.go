@@ -162,3 +162,25 @@ func TutorialBrief(f *models.TutorialFeature) string {
 	b.WriteString("\n")
 	return b.String()
 }
+
+// TutorialAvoidRepeatBlock renders a Thai prompt block that lists the hooks/
+// angles previous clips on this same catalog feature already used, so the
+// script agent picks a different opening instead of repeating one almost
+// word-for-word. Returns "" for an empty list — no prior clips, nothing to
+// avoid. It never names menu items or steps (those come only from
+// TutorialBrief) and it explicitly forbids changing the steps/menu names to
+// manufacture novelty — only the angle/hook may vary.
+func TutorialAvoidRepeatBlock(previousAngles []string) string {
+	if len(previousAngles) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n## มุมที่เคยใช้กับฟีเจอร์นี้แล้ว (ห้ามซ้ำ)\n")
+	b.WriteString("คลิปก่อนหน้าที่สอนฟีเจอร์นี้ใช้มุมเปิด/hook เหล่านี้ไปแล้ว:\n")
+	for _, a := range previousAngles {
+		b.WriteString("- " + a + "\n")
+	}
+	b.WriteString("เลือกมุมเปิดและสถานการณ์ตัวอย่างคนละแบบจากลิสต์ข้างบน ")
+	b.WriteString("แต่ขั้นตอนกับชื่อเมนูต้องเหมือนเดิมเป๊ะ ห้ามเปลี่ยนเพื่อให้ดูใหม่\n")
+	return b.String()
+}

@@ -188,6 +188,39 @@ func (r *TutorialFeaturesRepo) Unpark(ctx context.Context, featureKey string) er
 	return nil
 }
 
+// RecentAngles returns the youtube_title of previous clips that taught the
+// same catalog feature, most recent first. It lives here (not on ClipsRepo)
+// because the feature key is what the caller has, even though the query joins
+// through clips/clip_metadata to get the title. Used to tell the script agent
+// which hooks/angles are already spent so it doesn't repeat one nearly
+// verbatim. Returns []string{} (never nil) when there are no prior clips.
+func (r *TutorialFeaturesRepo) RecentAngles(ctx context.Context, featureKey string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT m.youtube_title
+		 FROM clips c
+		 JOIN clip_metadata m ON m.clip_id = c.id
+		 WHERE c.tutorial_feature = $1 AND m.youtube_title <> ''
+		 ORDER BY c.created_at DESC
+		 LIMIT $2`, featureKey, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent angles for %s: %w", featureKey, err)
+	}
+	defer rows.Close()
+
+	angles := []string{}
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, fmt.Errorf("scan recent angle: %w", err)
+		}
+		angles = append(angles, title)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return angles, nil
+}
+
 // unmarshalSteps decodes the steps JSONB column. A malformed value is an error,
 // not a silent empty list: a feature with no steps would produce a tutorial that
 // teaches nothing and still pass the step-count gate at zero.

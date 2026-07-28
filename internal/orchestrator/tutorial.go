@@ -2,8 +2,10 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -129,7 +131,23 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get tutorial content format: %w", err)
 	}
-	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var archetype models.TitleArchetype
+	if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
+		log.Printf("tutorial: archetype pick failed, using empty: %v", aerr)
+	} else {
+		archetype = *a
+	}
+
+	var persona string
+	personasJSON, _ := o.settingsRepo.Get(ctx, "audience_personas")
+	var personas []string
+	if json.Unmarshal([]byte(personasJSON), &personas) == nil && len(personas) > 0 {
+		persona = PickPersona(personas, rng)
+	} else {
+		persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+	}
 
 	q := agent.GeneratedQuestion{
 		Question:  feat.DisplayNameTH,
@@ -140,7 +158,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	o.tracker.SetTotalClips(1)
 	o.tracker.StartClip(1, feat.DisplayNameTH)
 	if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format,
-		persona, models.TitleArchetype{}, "reach", feat); err != nil {
+		persona, archetype, "reach", feat); err != nil {
 		o.tracker.AddErrorLog(fmt.Sprintf("tutorial clip failed: %v", err))
 		o.nudgeRetry()
 		return err
@@ -151,6 +169,22 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	o.tracker.CompleteStep("complete")
 	log.Println("Tutorial production complete")
 	return nil
+}
+
+// tutorialAvoidRepeat looks up prior angles used on this catalog feature and
+// renders the avoid-repeat prompt block for the script agent. Fails open on
+// any lookup error (non-fatal log + "") — a flaky DB read must never block a
+// clip, same contract as every other tutorial fallback in this file.
+func (o *Orchestrator) tutorialAvoidRepeat(ctx context.Context, feat *models.TutorialFeature) string {
+	if feat == nil {
+		return ""
+	}
+	angles, err := o.tutorialFeaturesRepo.RecentAngles(ctx, feat.FeatureKey, 5)
+	if err != nil {
+		log.Printf("tutorial: RecentAngles failed (non-fatal): %v", err)
+		return ""
+	}
+	return agent.TutorialAvoidRepeatBlock(angles)
 }
 
 // pickVerifiedFeature picks the least-used feature and asks research whether its

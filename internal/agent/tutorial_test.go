@@ -136,3 +136,49 @@ func TestSceneTemplateDataEmptyBriefLeavesNoPlaceholder(t *testing.T) {
 		t.Errorf("got %q, want %q", out, "AB")
 	}
 }
+
+func TestTutorialAvoidRepeatBlockEmpty(t *testing.T) {
+	if got := TutorialAvoidRepeatBlock(nil); got != "" {
+		t.Errorf("nil list must render empty block, got %q", got)
+	}
+	if got := TutorialAvoidRepeatBlock([]string{}); got != "" {
+		t.Errorf("empty list must render empty block, got %q", got)
+	}
+}
+
+func TestTutorialAvoidRepeatBlockListsAngles(t *testing.T) {
+	angles := []string{
+		"บัญชีโดนแบนเพราะไม่ตั้ง Automated Rules",
+		"เจ้าของร้านคนนี้เกือบเสียเงินฟรีเพราะไม่รู้ทริคนี้",
+	}
+	b := TutorialAvoidRepeatBlock(angles)
+	for _, want := range angles {
+		if !strings.Contains(b, want) {
+			t.Errorf("block missing previous angle %q, got %q", want, b)
+		}
+	}
+	if !strings.Contains(b, "ขั้นตอน") || !strings.Contains(b, "ชื่อเมนู") {
+		t.Errorf("block must warn against changing steps/menu names, got %q", b)
+	}
+}
+
+func TestTutorialAvoidRepeatBlockNotMixedIntoTutorialBrief(t *testing.T) {
+	f := &models.TutorialFeature{
+		DisplayNameTH: "ตั้ง Automated Rules",
+		MenuPath:      []string{"Ads Manager", "Rules"},
+		UIVocab:       []string{"Ads Manager", "Rules"},
+		Steps: []models.TutorialStep{
+			{N: 1, TitleTH: "เปิดหน้าสร้างกฎ", ActionTH: "กด Rules", UITarget: "Rules"},
+		},
+		TrapTH:       "อย่าตั้ง Lifetime",
+		WhyMattersTH: "งบวิ่งตอนบัญชีพัง",
+	}
+	priorAngle := "บัญชีโดนแบนเพราะไม่ตั้ง Automated Rules มุมเดิม"
+	brief := TutorialBrief(f)
+	if strings.Contains(brief, priorAngle) {
+		t.Errorf("TutorialBrief must never contain avoid-repeat content, got %q", brief)
+	}
+	if strings.Contains(brief, "มุมที่เคยใช้กับฟีเจอร์นี้แล้ว") {
+		t.Errorf("TutorialBrief must not include the avoid-repeat block on its own, got %q", brief)
+	}
+}
