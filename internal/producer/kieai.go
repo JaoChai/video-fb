@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -485,10 +486,30 @@ func (k *KieClient) GetDownloadURL(ctx context.Context, fileURL string) (string,
 	return result.Data, nil
 }
 
+// Data เป็น float64 เพราะ kie ส่งยอดเครดิตเป็นทศนิยม (เช่น 14070.59) การรับเป็น
+// int ทำให้ json.Unmarshal ล้มทุกครั้ง แล้ว GetCredits คืน error → ผู้เรียกซึ่ง
+// fail-open โดยตั้งใจจะ "ข้าม" ด่านเช็คเครดิตไปเงียบๆ ทุกรอบ
 type kieCreditResponse struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-	Data int    `json:"data"`
+	Code int     `json:"code"`
+	Msg  string  `json:"msg"`
+	Data float64 `json:"data"`
+}
+
+// parseCreditResponse turns the credit endpoint's body into a whole-credit
+// balance. Split out from GetCredits so the wire format is testable without an
+// HTTP round-trip — the format drifting under us is exactly how this broke.
+//
+// ปัดลงเสมอ: เศษเครดิตผลิตคลิปไม่ได้ ยอด 0.6 จึงต้องอ่านเป็น 0 ให้ผู้เรียกบล็อก
+// การผลิตด้วยเหตุผลที่ถูก แทนที่จะปล่อยผ่านเพราะคิดว่าตัวเช็คพัง
+func parseCreditResponse(body []byte) (int, error) {
+	var result kieCreditResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, fmt.Errorf("parse credit response: %w (body: %s)", err, string(body[:min(len(body), 200)]))
+	}
+	if result.Code != 200 {
+		return 0, fmt.Errorf("kie credit check failed: %s (code: %d)", result.Msg, result.Code)
+	}
+	return int(math.Floor(result.Data)), nil
 }
 
 // GetCredits returns the kie.ai account's remaining credit balance via
@@ -512,12 +533,5 @@ func (k *KieClient) GetCredits(ctx context.Context) (int, error) {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	var result kieCreditResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return 0, fmt.Errorf("parse credit response: %w (body: %s)", err, string(respBody[:min(len(respBody), 200)]))
-	}
-	if result.Code != 200 {
-		return 0, fmt.Errorf("kie credit check failed: %s (code: %d)", result.Msg, result.Code)
-	}
-	return result.Data, nil
+	return parseCreditResponse(respBody)
 }
