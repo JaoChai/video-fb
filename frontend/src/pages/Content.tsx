@@ -15,7 +15,6 @@ import { Plus, RotateCcw, Send, Trash2, Loader2, Film, LayoutDashboard, CheckCir
 import { useToast } from '../components/ui/toaster';
 import { EmptyState } from '../components/empty-state';
 import { Skeleton } from '../components/ui/skeleton';
-import { ReviewDialog } from '../components/ReviewDialog';
 import { QAStatsCard } from '../components/QAStatsCard';
 import { cn } from '../lib/utils';
 
@@ -81,7 +80,6 @@ export default function ContentPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [reviewClip, setReviewClip] = useState<Clip | null>(null);
 
   const { data: prodStatus } = useQuery({
     queryKey: ['production-status'],
@@ -537,10 +535,6 @@ export default function ContentPage() {
             </div>
           )}
         </>
-      )}
-
-      {reviewClip && (
-        <ReviewDialog clip={reviewClip} onClose={() => setReviewClip(null)} />
       )}
     </div>
   );

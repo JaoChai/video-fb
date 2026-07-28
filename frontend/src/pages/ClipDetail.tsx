@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getClipDetail } from '../api';
+import { ApiError, apiFetch, getClipDetail } from '../api';
 import { OverviewTab } from '../components/clip-detail/OverviewTab';
 import { ScriptTab } from '../components/clip-detail/ScriptTab';
 import { ScenesTab } from '../components/clip-detail/ScenesTab';
@@ -13,12 +13,16 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
-import { ArrowLeft, Lock, VideoOff } from 'lucide-react';
+import { useToast } from '../components/ui/toaster';
+import { ArrowLeft, CheckCircle2, Loader2, Lock, Trash2, VideoOff, X } from 'lucide-react';
 
 export default function ClipDetailPage() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
   const [videoError, setVideoError] = useState(false);
+  const queryClient = useQueryClient();
+  const { success, error: showError } = useToast();
+  const [acting, setActing] = useState<'approve' | 'reject' | 'delete' | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['clip-detail', id],
@@ -37,9 +41,15 @@ export default function ClipDetailPage() {
   }
 
   if (error || !data) {
+    // แยก "ไม่มีคลิปนี้แล้ว" ออกจาก "ต่อ backend ไม่ได้" — ในระบบนี้การตีกลับ
+    // คือการลบจริง ถ้าขึ้นว่าถูกลบทั้งที่แค่ backend กำลัง deploy ผู้ใช้จะเชื่อ
+    // แล้วสั่งผลิตซ้ำโดยไม่จำเป็น
+    const gone = error instanceof ApiError && error.status === 404;
     return (
       <div className="text-center py-12">
-        <p className="text-sm text-muted-foreground">ไม่พบคลิปนี้ (อาจถูกลบไปแล้ว)</p>
+        <p className="text-sm text-muted-foreground">
+          {gone ? 'ไม่พบคลิปนี้ (อาจถูกลบไปแล้ว)' : 'โหลดคลิปไม่สำเร็จ — ลองใหม่อีกครั้ง'}
+        </p>
         <Button variant="ghost" className="mt-2" onClick={() => navigate('/')}>
           <ArrowLeft className="size-4" /> กลับไปหน้ารายการ
         </Button>
@@ -49,6 +59,62 @@ export default function ClipDetailPage() {
 
   const { clip } = data;
   const held = clip.status === 'ready' && clip.auto_review_held;
+  const reviewable = clip.status === 'needs_review';
+
+  // แอ็กชันทั้งสามหมุนรอบเดียวกัน: ล็อกปุ่ม → ยิง API → รีเฟรชรายการคลิป →
+  // toast → กลับหน้าตารางถ้าคลิปถูกลบไปแล้ว
+  async function runAction(
+    kind: 'approve' | 'reject' | 'delete',
+    fn: () => Promise<unknown>,
+    successMsg: string,
+    leavePage: boolean,
+  ): Promise<void> {
+    setActing(kind);
+    try {
+      await fn();
+      queryClient.invalidateQueries({ queryKey: ['clips'] });
+      // คลิปที่ถูกลบไปแล้ว invalidate ไม่ได้ — query ยัง active อยู่ตอนนี้ มันจะ
+      // refetch ทันทีแล้วได้ 404 แน่ๆ ก่อนจะเปลี่ยนหน้า จึงทิ้ง cache ไปเลย
+      if (leavePage) {
+        queryClient.removeQueries({ queryKey: ['clip-detail', id] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['clip-detail', id] });
+      }
+      success(successMsg);
+      if (leavePage) navigate('/');
+    } catch (e) {
+      showError(`ไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActing(null);
+    }
+  }
+
+  function handleApprove(): void {
+    // คลิปที่ถูกกักเป็น 'ready' อยู่แล้ว — อนุมัติคือปลดล็อกให้ publisher หยิบไปได้
+    // ส่วนคลิป needs_review ต้องเลื่อนสถานะเป็น ready
+    runAction(
+      'approve',
+      () => held
+        ? apiFetch(`/api/v1/clips/${clip.id}/unhold`, { method: 'POST' })
+        : apiFetch(`/api/v1/clips/${clip.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'ready' }),
+          }),
+      held ? 'Override แล้ว — คลิปพร้อม publish รอบถัดไป' : 'อนุมัติแล้ว — คลิปพร้อม publish',
+      false,
+    );
+  }
+
+  function handleDelete(kind: 'reject' | 'delete'): void {
+    const label = kind === 'reject' ? 'ตีกลับและลบคลิปนี้?' : 'ลบคลิปนี้?';
+    if (!window.confirm(`${label}\n\n"${clip.title}"`)) return;
+    runAction(
+      kind,
+      () => apiFetch(`/api/v1/clips/${clip.id}`, { method: 'DELETE' }),
+      kind === 'reject' ? 'ตีกลับและลบคลิปแล้ว' : 'ลบคลิปแล้ว',
+      true,
+    );
+  }
 
   return (
     <div>
@@ -64,6 +130,16 @@ export default function ClipDetailPage() {
               <Lock className="size-2.5" /> ถูกกัก QA
             </Badge>
           )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            onClick={() => handleDelete('delete')}
+            disabled={acting !== null}
+            title="ลบคลิป"
+          >
+            {acting === 'delete' ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
           {clip.category}
@@ -78,6 +154,9 @@ export default function ClipDetailPage() {
             <video
               src={clip.video_9_16_url}
               controls
+              // ทุกแถวในตารางกดเข้ามาหน้านี้ได้แล้ว และคลิปหนึ่งตัวหนักราว 9 MB
+              // — ถ้าไม่กำหนด Chrome จะดึงทั้งไฟล์ทันทีแม้ผู้ใช้เปิดมาอ่านสคริปต์เฉยๆ
+              preload="metadata"
               onError={() => setVideoError(true)}
               className="w-full rounded-lg bg-black aspect-[9/16]"
             />
@@ -89,6 +168,18 @@ export default function ClipDetailPage() {
               ) : (
                 <span>ยังไม่มีไฟล์วิดีโอ</span>
               )}
+            </div>
+          )}
+          {(reviewable || held) && (
+            <div className="flex flex-col gap-2 mt-3">
+              <Button onClick={handleApprove} disabled={acting !== null} size="sm">
+                {acting === 'approve' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                {held ? 'Override — publish ทั้งที่มีตำหนิ' : 'อนุมัติ — พร้อม publish'}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => handleDelete('reject')} disabled={acting !== null}>
+                {acting === 'reject' ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+                ตีกลับ (ลบ)
+              </Button>
             </div>
           )}
         </div>

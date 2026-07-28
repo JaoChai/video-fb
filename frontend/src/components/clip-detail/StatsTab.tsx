@@ -1,4 +1,5 @@
 import type { ClipAnalyticsRow } from '../../api';
+import { formatNum, formatWatch } from '../../lib/format';
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
@@ -30,11 +31,11 @@ export function StatsTab({ rows }: { rows: ClipAnalyticsRow[] }) {
             </span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            <Metric label="วิว" value={r.views.toLocaleString()} />
-            <Metric label="ไลก์" value={r.likes.toLocaleString()} />
-            <Metric label="คอมเมนต์" value={r.comments.toLocaleString()} />
-            <Metric label="แชร์" value={r.shares.toLocaleString()} />
-            <Metric label="เวลาดูรวม" value={`${Math.round(r.watch_time_seconds).toLocaleString()} วิ`} />
+            <Metric label="วิว" value={formatNum(r.views)} />
+            <Metric label="ไลก์" value={formatNum(r.likes)} />
+            <Metric label="คอมเมนต์" value={formatNum(r.comments)} />
+            <Metric label="แชร์" value={formatNum(r.shares)} />
+            <Metric label="เวลาดูรวม" value={formatWatch(r.watch_time_seconds)} />
             <Metric label="retention" value={`${(r.retention_rate * 100).toFixed(1)}%`} />
           </div>
         </div>

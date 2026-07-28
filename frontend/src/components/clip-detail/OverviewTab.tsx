@@ -1,14 +1,5 @@
 import type { ClipFull } from '../../api';
-
-function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
-  if (value === null || value === undefined || value === '') return null;
-  return (
-    <div className="flex gap-3 py-2 border-b last:border-0 text-sm">
-      <span className="text-muted-foreground w-32 shrink-0">{label}</span>
-      <span className="min-w-0 break-words">{value}</span>
-    </div>
-  );
-}
+import { Row } from './Row';
 
 function thaiDateTime(s: string | null): string | null {
   if (!s) return null;
@@ -30,7 +21,7 @@ export function OverviewTab({ clip }: { clip: ClipFull }) {
       <Row label="หัวข้อสอน" value={clip.tutorial_feature} />
       <Row label="retry" value={clip.retry_count > 0 ? `${clip.retry_count}/2` : null} />
       <Row label="รีวิวซ้ำ" value={clip.review_retry_count > 0 ? clip.review_retry_count : null} />
-      <Row label="สาเหตุที่ล้มเหลว" value={clip.fail_reason} />
+      <Row label="สาเหตุที่ล้มเหลว" value={clip.fail_reason} pre />
       <Row label="สร้างเมื่อ" value={thaiDateTime(clip.created_at)} />
       <Row label="แก้ไขล่าสุด" value={thaiDateTime(clip.updated_at)} />
       <Row label="กำหนดเผยแพร่" value={clip.publish_date} />

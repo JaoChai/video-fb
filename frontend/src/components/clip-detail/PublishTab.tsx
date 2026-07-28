@@ -1,15 +1,6 @@
 import type { ClipFull, ClipMetadata } from '../../api';
+import { Row } from './Row';
 import { ExternalLink } from 'lucide-react';
-
-function Row({ label, value }: { label: string; value: string | null | undefined }) {
-  if (!value) return null;
-  return (
-    <div className="flex gap-3 py-2 border-b last:border-0 text-sm">
-      <span className="text-muted-foreground w-32 shrink-0">{label}</span>
-      <span className="min-w-0 break-words whitespace-pre-wrap">{value}</span>
-    </div>
-  );
-}
 
 export function PublishTab({ clip, metadata }: { clip: ClipFull; metadata: ClipMetadata | null }) {
   if (!metadata) {
@@ -36,7 +27,7 @@ export function PublishTab({ clip, metadata }: { clip: ClipFull; metadata: ClipM
       )}
 
       <Row label="ชื่อบน YouTube" value={metadata.youtube_title} />
-      <Row label="คำบรรยาย" value={metadata.youtube_description} />
+      <Row label="คำบรรยาย" value={metadata.youtube_description} pre />
       {tags.length > 0 && (
         <div className="flex gap-3 py-2 border-b text-sm">
           <span className="text-muted-foreground w-32 shrink-0">แท็ก</span>
