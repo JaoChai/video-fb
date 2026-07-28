@@ -1,0 +1,44 @@
+import type { ClipAnalyticsRow } from '../../api';
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg bg-muted/40 px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+export function StatsTab({ rows }: { rows: ClipAnalyticsRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        ยังไม่มีตัวเลข — คลิปที่ยังไม่เผยแพร่ หรือเพิ่งเผยแพร่แล้วยังไม่ถึงรอบดึงข้อมูล
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {rows.map(r => (
+        <div key={r.id} className="rounded-lg border p-3">
+          <div className="flex items-center gap-2 mb-2 text-sm">
+            <span className="font-medium">{r.platform}</span>
+            {r.post_type && <span className="text-xs text-muted-foreground">{r.post_type}</span>}
+            <span className="text-xs text-muted-foreground ml-auto">
+              ดึงเมื่อ {new Date(r.fetched_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            <Metric label="วิว" value={r.views.toLocaleString()} />
+            <Metric label="ไลก์" value={r.likes.toLocaleString()} />
+            <Metric label="คอมเมนต์" value={r.comments.toLocaleString()} />
+            <Metric label="แชร์" value={r.shares.toLocaleString()} />
+            <Metric label="เวลาดูรวม" value={`${Math.round(r.watch_time_seconds).toLocaleString()} วิ`} />
+            <Metric label="retention" value={`${(r.retention_rate * 100).toFixed(1)}%`} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

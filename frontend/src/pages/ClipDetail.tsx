@@ -5,6 +5,9 @@ import { getClipDetail } from '../api';
 import { OverviewTab } from '../components/clip-detail/OverviewTab';
 import { ScriptTab } from '../components/clip-detail/ScriptTab';
 import { ScenesTab } from '../components/clip-detail/ScenesTab';
+import { QaTab } from '../components/clip-detail/QaTab';
+import { StatsTab } from '../components/clip-detail/StatsTab';
+import { PublishTab } from '../components/clip-detail/PublishTab';
 import { StatusBadge } from '../components/status-badge';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -103,9 +106,11 @@ export default function ClipDetailPage() {
           <TabsContent value="overview"><OverviewTab clip={clip} /></TabsContent>
           <TabsContent value="script"><ScriptTab clip={clip} debate={data.script_debate} /></TabsContent>
           <TabsContent value="scenes"><ScenesTab scenes={data.scenes} /></TabsContent>
-          <TabsContent value="qa" />
-          <TabsContent value="stats" />
-          <TabsContent value="publish" />
+          <TabsContent value="qa">
+            <QaTab qa={data.visual_qa} critique={data.critique} autoReview={data.auto_review} />
+          </TabsContent>
+          <TabsContent value="stats"><StatsTab rows={data.analytics} /></TabsContent>
+          <TabsContent value="publish"><PublishTab clip={clip} metadata={data.metadata} /></TabsContent>
         </Tabs>
       </div>
     </div>
