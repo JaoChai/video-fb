@@ -107,7 +107,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 		return fmt.Errorf("kie เครดิตหมด (เหลือ %d) — เติมเครดิตที่ kie.ai ก่อนผลิต", credits)
 	}
 
-	feat, err := o.pickVerifiedFeature(ctx)
+	feat, err := o.pickVerifiedFeature(ctx, repository.TutorialLevelAdvanced)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (o *Orchestrator) tutorialAvoidRepeat(ctx context.Context, feat *models.Tut
 // produced anyway. Never returning a feature would mean 0 clips, which is worse
 // than one clip on a possibly-moved menu (the ui_vocab gate still guards the
 // labels themselves).
-func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.TutorialFeature, error) {
+func (o *Orchestrator) pickVerifiedFeature(ctx context.Context, level string) (*models.TutorialFeature, error) {
 	// maxSkips bounds latency, not catalog size: each skip costs a research call
 	// plus a verify call. The floor that keeps the catalog usable lives in Park.
 	const maxSkips = 2
@@ -218,7 +218,7 @@ func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.Tutoria
 	var last *models.TutorialFeature
 
 	for attempt := 0; attempt <= maxSkips; attempt++ {
-		feat, err := o.tutorialFeaturesRepo.PickNext(ctx, skipped)
+		feat, err := o.tutorialFeaturesRepo.PickNext(ctx, level, skipped)
 		if err != nil {
 			return nil, fmt.Errorf("pick tutorial feature: %w", err)
 		}
