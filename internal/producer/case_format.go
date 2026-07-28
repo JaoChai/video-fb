@@ -1,19 +1,13 @@
 package producer
 
 import (
-	"os"
 	"strings"
 
 	"github.com/jaochai/video-fb/internal/agent"
 )
 
-// CaseFormatEnabled reports whether the case-file investigation format is on.
-// Off => every code path behaves exactly as before (spec 2026-07-24 §4).
-func CaseFormatEnabled() bool { return os.Getenv("CASE_FORMAT_ENABLED") == "true" }
-
-// CaseFilePreset is the visual identity of the case-file format. It is
-// deliberately NOT in Presets: the random/weighted pickers must never select
-// it — the orchestrator chooses it explicitly when CaseFormatEnabled().
+// CaseFilePreset is the visual identity of the case-file format — the channel
+// default. Every clip that is not a tutorial/basic walkthrough renders with it.
 var CaseFilePreset = StylePreset{
 	Key:         "case-file",
 	DisplayName: "Case File",

@@ -21,7 +21,7 @@ func TestRenderSampleA1A4(t *testing.T) {
 		t.Fatal("HF_OUT (absolute .mp4 path) required")
 	}
 
-	preset := PresetByKey("editorial-bold")
+	preset := PresetByKey("case-file")
 	sc := func(n int, layout string, start, end float64, c SceneContent) SceneSpec {
 		c.SceneNumber, c.Start, c.End = n, start, end
 		c.Layout, c.Speed = layout, speedForLayout(layout)

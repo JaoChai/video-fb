@@ -91,10 +91,7 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	r.Post("/api/v1/analytics/fetch", analytics.Trigger)
 
 	presets := handler.NewPresetsHandler(repository.NewAnalyticsRepo(pool))
-	r.Route("/api/v1/presets", func(r chi.Router) {
-		r.Get("/", presets.List)
-		r.Get("/performance", presets.Performance)
-	})
+	r.Get("/api/v1/presets/performance", presets.Performance)
 
 	formulaRepo := repository.NewFormulaScoresRepo(pool)
 	sbHandler := handler.NewScoreboardHandler(formulaRepo,

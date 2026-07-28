@@ -352,24 +352,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 }
 
 func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
-	preset := producer.PresetByKey("editorial-bold")
-	if fixed, ok := fixedPreset(format.FormatName); ok {
-		preset = fixed // fixed identity, skip random/weighted pickers
-	} else if producer.StylePresetsEnabled() {
-		last, _ := o.clipsRepo.LastStylePreset(ctx)
-		preset = producer.PickPreset(last)
-		if producer.StylePresetsPerformanceEnabled() {
-			scores, err := o.analyticsRepo.PresetRetention(ctx, producer.DefaultWindowDays)
-			if err != nil {
-				log.Printf("preset perf: scores unavailable (%v); uniform pick %s", err, preset.Key)
-			} else {
-				preset = producer.PickPresetWeighted(last, scores,
-					producer.DefaultEpsilon, producer.DefaultMinClips, rand.Intn)
-				log.Printf("preset perf: picked %s (window=%dd, %d preset scores)",
-					preset.Key, producer.DefaultWindowDays, len(scores))
-			}
-		}
-	}
+	preset := presetFor(format.FormatName)
 
 	featKey := ""
 	if feat != nil {
@@ -472,11 +455,8 @@ func applyGeneratedMetadata(script *agent.GeneratedScript, md *agent.GeneratedMe
 
 func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
-	// rendered. When the flag is off clipTheme == theme — no behavior change.
-	clipTheme := theme
-	if producer.StylePresetsEnabled() {
-		clipTheme = preset.AsTheme(theme)
-	}
+	// rendered.
+	clipTheme := preset.AsTheme(theme)
 
 	o.tracker.StartStep("script")
 	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), agent.TutorialBrief(feat)+o.tutorialAvoidRepeat(ctx, feat), scriptCfg)
@@ -907,11 +887,12 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
 	// A full rebuild regenerates ALL content with the CURRENT mode's prompts
-	// (modeAgentConfig above), so the preset must follow the same mode — a stored
-	// classic preset + case prompts (or the inverse after a rollback) would render
-	// a mongrel clip. Resume-at-render keeps the stored identity instead because
-	// it reuses the stored scenes.
-	retryPreset := retryPresetForCurrentMode(clip.StylePreset, clip.ContentFormat)
+	// (modeAgentConfig above), so the preset must come from the clip's format —
+	// clip.StylePreset is deliberately ignored, or a clip stored under a since-
+	// deleted theme would render a mongrel of old visuals and today's prompts.
+	// Resume-at-render keeps the stored identity instead because it reuses the
+	// stored scenes.
+	retryPreset := presetFor(clip.ContentFormat)
 	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "", feat)
 }
 
@@ -952,49 +933,27 @@ func buildVoiceScript(scenes []models.Scene, brandAliases map[string]string) str
 }
 
 // modeAgentConfig resolves the agent row for a role in a given content mode: it
-// prefers "<name>_<mode>" and fails open to the classic row so a missing or
+// prefers "<name>_<mode>" and fails open to the base row so a missing or
 // disabled mode-specific row never blocks production (spec §4).
 func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (*models.AgentConfig, error) {
-	if mode != producer.ModeClassic {
-		if cfg, err := o.agentsRepo.GetByName(ctx, name+"_"+mode); err == nil && cfg.Enabled {
-			return cfg, nil
-		}
-		log.Printf("mode %s: %s_%s row missing/disabled — falling back to %s", mode, name, mode, name)
+	if cfg, err := o.agentsRepo.GetByName(ctx, name+"_"+mode); err == nil && cfg.Enabled {
+		return cfg, nil
 	}
+	log.Printf("mode %s: %s_%s row missing/disabled — falling back to %s", mode, name, mode, name)
 	return o.agentsRepo.GetByName(ctx, name)
 }
 
-// fixedPreset returns the preset a clip is pinned to regardless of the random
-// and performance-weighted pickers, and whether it is pinned at all.
+// presetFor returns the preset a clip is pinned to. Every clip is pinned: its
+// content_format decides which of the two formats it belongs to.
 //
 // preset เป็นตัวตัดสินหน้าตาคลิปจริง (resolveFormatInfo แปลง preset เป็น
 // FormatInfo.Mode ที่ไปเป็น data-format ของ template และนโยบายภาพ) การถามผ่าน
 // clipMode ที่เดียวจึงกัน tutorial กับ basic แยกหน้าตากันโดยไม่มีใครรู้ตัว
-func fixedPreset(contentFormat string) (producer.StylePreset, bool) {
+func presetFor(contentFormat string) producer.StylePreset {
 	if clipMode(contentFormat) == producer.ModeTutorial {
-		return producer.TutorialPreset, true
+		return producer.TutorialPreset
 	}
-	if producer.CaseFormatEnabled() {
-		return producer.CaseFilePreset, true
-	}
-	return producer.StylePreset{}, false
-}
-
-// retryPresetForCurrentMode picks the preset for a FULL-rebuild retry, which
-// regenerates every asset with the current mode's prompts. The clip's own
-// content_format decides first (a tutorial clip stays a tutorial even while the
-// case flag is on), then the flag, then the stored preset — with a stored
-// case/tutorial key on a clip that is neither falling back to the classic
-// default so prompts and visuals never mix modes.
-func retryPresetForCurrentMode(stored, contentFormat string) producer.StylePreset {
-	if fixed, ok := fixedPreset(contentFormat); ok {
-		return fixed
-	}
-	p := producer.PresetByKey(stored)
-	if p.Key == producer.CaseFilePreset.Key || p.Key == producer.TutorialPreset.Key {
-		return producer.PresetByKey("")
-	}
-	return p
+	return producer.CaseFilePreset
 }
 
 // resolveFormatInfo builds the FormatInfo for a clip about to render. Case mode

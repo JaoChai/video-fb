@@ -24,14 +24,6 @@
       :root{ --amber:var(--orange); --amber-soft:var(--orange-soft); --amber-bright:var(--orange-bright); }
       .kicker,h1.title,.stat,.stat-label,.step-of,.step-title,.pill,.cta,.brandbig,
       .chip .n,.badge-brand,.cap-word.key{font-family:var(--font-heading,"Sarabun"),sans-serif}
-      /* per-theme texture (brand palette stays constant; texture adds feel) */
-      [data-theme="neon-techno"] .scrim{background:
-        linear-gradient(180deg, rgba(6,24,64,.10) 0%, rgba(6,24,64,.60) 45%, rgba(6,24,64,.95) 62%, var(--navy-deep) 100%)}
-      [data-theme="neon-techno"] .scene-bg::after{content:"";position:absolute;inset:0;
-        background-image:linear-gradient(rgba(46,139,255,.08) 1px,transparent 1px),
-          linear-gradient(90deg,rgba(46,139,255,.08) 1px,transparent 1px);background-size:64px 64px}
-      [data-theme="soft-3d-clay"] .card{border-radius:44px;
-        box-shadow:0 30px 70px rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.25)}
       *{margin:0;padding:0;box-sizing:border-box}
       html,body{width:{{.Width}}px;height:{{.Height}}px;overflow:hidden;background:var(--navy-deep)}
       /* Thai-safe: NEVER negative letter-spacing (it collides vowels/tone marks) */

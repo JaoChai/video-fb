@@ -29,17 +29,14 @@ const basicFormatName = "basic"
 const basicAgentMode = "basic"
 
 // clipMode derives the RENDER mode from the clip's persisted content_format.
-// Tutorial wins over the process-wide case flag so a tutorial clip renders as a
-// manual even on a server where CASE_FORMAT_ENABLED is on. Basic clips render
-// identically to tutorial clips — same preset, same image policy, same gate.
+// Tutorial and basic clips render as a manual; everything else is a case file.
+// Basic clips render identically to tutorial clips — same preset, same image
+// policy, same gate.
 func clipMode(contentFormat string) string {
 	if contentFormat == tutorialFormatName || contentFormat == basicFormatName {
 		return producer.ModeTutorial
 	}
-	if producer.CaseFormatEnabled() {
-		return producer.ModeCase
-	}
-	return producer.ModeClassic
+	return producer.ModeCase
 }
 
 // agentModeFor answers a different question from clipMode: which prompt rows

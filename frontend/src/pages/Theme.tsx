@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getActiveTheme, updateTheme, getPresets, type BrandTheme } from '../api';
+import { getActiveTheme, updateTheme, type BrandTheme } from '../api';
 import { PageHeader } from '../components/page-header';
 import { useToast } from '../components/ui/toaster';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
@@ -42,21 +42,6 @@ function ColorField({
   );
 }
 
-function StatusBadge({ label, enabled }: { label: string; enabled: boolean }) {
-  return (
-    <div
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border ${
-        enabled
-          ? 'bg-green-500/10 text-green-600 border-green-500/30 dark:text-green-400'
-          : 'bg-muted text-muted-foreground border-border'
-      }`}
-    >
-      <span>{label}</span>
-      <span className="font-semibold">{enabled ? 'ON' : 'OFF'}</span>
-    </div>
-  );
-}
-
 const EMPTY_FORM: ThemeForm = {
   name: '',
   primary_color: '#000000',
@@ -74,7 +59,6 @@ export default function ThemePage() {
   const { success, error: showError } = useToast();
 
   const { data: theme } = useQuery({ queryKey: ['theme-active'], queryFn: getActiveTheme });
-  const { data: presetsData } = useQuery({ queryKey: ['presets'], queryFn: getPresets });
 
   const [form, setForm] = useState<ThemeForm>(EMPTY_FORM);
   const [dirty, setDirty] = useState(false);
@@ -206,42 +190,6 @@ export default function ThemePage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Style Presets</CardTitle>
-            <CardDescription>Available visual style presets (read-only)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {presetsData?.presets.map(preset => (
-                <div
-                  key={preset.key}
-                  className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
-                >
-                  <span
-                    className="h-4 w-4 rounded-sm border"
-                    style={{ backgroundColor: preset.primary_color }}
-                  />
-                  <span
-                    className="h-4 w-4 rounded-sm border"
-                    style={{ backgroundColor: preset.accent_color }}
-                  />
-                  <span>{preset.display_name}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3 flex-wrap">
-              <StatusBadge
-                label="Style Presets"
-                enabled={presetsData?.style_presets_enabled ?? false}
-              />
-              <StatusBadge
-                label="Performance"
-                enabled={presetsData?.performance_enabled ?? false}
-              />
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
