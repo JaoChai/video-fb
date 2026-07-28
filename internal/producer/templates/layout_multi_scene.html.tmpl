@@ -416,7 +416,7 @@
         const reuseCover =
           (FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict")) ||
           (FORMAT_TUTORIAL && (sc.type === "hero" || sc.type === "tip" || sc.type === "cta")) ||
-          (FORMAT_CHAT && (sc.type === "chat_in" || sc.type === "chat_out" || sc.type === "recap")) ||
+          (FORMAT_CHAT && (sc.type === "chat_in" || sc.type === "chat_out" || sc.type === "recap" || sc.type === "cta")) ||
           (FORMAT_WARROOM && (sc.type === "dashboard" || sc.type === "alarm" || sc.type === "cta"));
         const bgSrc = (!sc.bg && reuseCover && SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
         // giant faint case-number watermark fills imageless case scenes
@@ -435,7 +435,7 @@
 
       function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
       function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
-      function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",c.t.replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
+      function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",(c.t||"").replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
 
       // uistep scenes register their target row here; the markers (pointer tag +
       // tap ring) are positioned after layout, when offsets are real.
