@@ -139,7 +139,51 @@ func New(
 // point refuses to start a second concurrent run rather than oversubscribe it.
 var ErrProductionRunning = errors.New("production already in progress")
 
-func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
+// remainingWithoutNews drops "news" from a slot's allowed set. Pure, so the rule
+// that matters most here is testable without a DB: a slot whose only format was
+// news must fail loudly instead of silently borrowing another slot's format —
+// borrowing would render the clip in a different visual mode entirely.
+// An empty allowed means the unrestricted manual path; it stays empty (= no limit).
+func remainingWithoutNews(allowed []string) ([]string, error) {
+	remaining := make([]string, 0, len(allowed))
+	for _, a := range allowed {
+		if a != "news" {
+			remaining = append(remaining, a)
+		}
+	}
+	if len(allowed) > 0 && len(remaining) == 0 {
+		return nil, fmt.Errorf("no fresh news and no other format allowed for this slot (%v)", allowed)
+	}
+	return remaining, nil
+}
+
+// fallbackFormatWithoutNews picks the replacement format after the news agent
+// found nothing reliable. It never leaves the slot's set: allowed decides the
+// clip's visual mode, so a fallback outside it would render the clip in another
+// mode entirely. An empty allowed means the manual /produce path — no slot, no
+// restriction, but still never news (it just failed; its 7-day count has not
+// moved, so the picker would hand it back).
+func (o *Orchestrator) fallbackFormatWithoutNews(ctx context.Context, allowed []string) (*models.ContentFormat, error) {
+	remaining, err := remainingWithoutNews(allowed)
+	if err != nil {
+		return nil, err
+	}
+	f, err := o.formatsRepo.PickNextIn(ctx, remaining)
+	if err != nil {
+		return nil, err
+	}
+	if f.FormatName == "news" {
+		// unrestricted path only — the picker cannot exclude a single name
+		return o.formatsRepo.GetByName(ctx, "qa")
+	}
+	return f, nil
+}
+
+// ProduceWeekly produces count clips. allowed limits which content_formats the
+// picker may choose — the caller's slot decides it, because content_format is
+// what selects the clip's visual mode (see clipMode). Pass nil for no limit
+// (manual /produce).
+func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int, allowed []string) error {
 	// Pre-flight: don't kick off an expensive run with no kie credits. Fail-open
 	// on a check error (don't block production on a flaky meta-check) — only abort
 	// when we positively know the balance is empty.
@@ -250,7 +294,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("read brand aliases: %w", err)
 	}
 
-	format, err := o.formatsRepo.PickNext(ctx)
+	format, err := o.formatsRepo.PickNextIn(ctx, allowed)
 	if err != nil {
 		return fmt.Errorf("pick content format: %w", err)
 	}
@@ -280,24 +324,17 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 
 	questions, err := o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, RoleInstruction(role), topicStats, qaCfg)
 	if errors.Is(err, agent.ErrNoFreshNews) {
-		// No reliable news found — never fabricate news; produce a non-news clip instead.
-		if v2 {
-			// v2: fall back to the least-used format (not hard-pinned to qa).
-			log.Println("No fresh news available, falling back to least-used format")
-			// ข้าม "news" (เพิ่งล้มไปแล้ว — PickNext อาจคืน news ซ้ำเพราะ count ไม่เปลี่ยน) → ไม่งั้น loop fail
-			if f, ferr := o.formatsRepo.PickNext(ctx); ferr == nil && f != nil && f.FormatName != "news" {
-				format = f
-			} else {
-				format, _ = o.formatsRepo.GetByName(ctx, "qa") // last resort (ข้าม news)
-			}
-		} else {
-			log.Println("No fresh news available, falling back to Q&A format")
-			format, err = o.formatsRepo.GetByName(ctx, "qa")
-			if err != nil {
-				o.tracker.FailStep("question", err)
-				return fmt.Errorf("fallback to qa format: %w", err)
-			}
+		// No reliable news found — never fabricate news; produce another format from
+		// THIS SLOT's set. Falling back outside the set would hand the clip to a
+		// different visual mode (see clipMode), which is worse than skipping the run.
+		// ข้าม "news" (เพิ่งล้มไปแล้ว — PickNextIn อาจคืน news ซ้ำเพราะ count ไม่เปลี่ยน)
+		log.Println("No fresh news available, falling back within the slot's formats")
+		f, ferr := o.fallbackFormatWithoutNews(ctx, allowed)
+		if ferr != nil {
+			o.tracker.FailStep("question", ferr)
+			return fmt.Errorf("news fallback: %w", ferr)
 		}
+		format = f
 		questions, err = o.questionAgent.Generate(ctx, count, category, categoryAngle, format, persona, archetype.Instruction, RoleInstruction(role), topicStats, qaCfg)
 	}
 	if err != nil {
@@ -944,24 +981,35 @@ func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (
 }
 
 // presetFor returns the preset a clip is pinned to. Every clip is pinned: its
-// content_format decides which of the two formats it belongs to.
+// content_format decides which of the four formats it belongs to.
 //
 // preset เป็นตัวตัดสินหน้าตาคลิปจริง (resolveFormatInfo แปลง preset เป็น
 // FormatInfo.Mode ที่ไปเป็น data-format ของ template และนโยบายภาพ) การถามผ่าน
 // clipMode ที่เดียวจึงกัน tutorial กับ basic แยกหน้าตากันโดยไม่มีใครรู้ตัว
 func presetFor(contentFormat string) producer.StylePreset {
-	if clipMode(contentFormat) == producer.ModeTutorial {
+	switch clipMode(contentFormat) {
+	case producer.ModeTutorial:
 		return producer.TutorialPreset
+	case producer.ModeWarRoom:
+		return producer.WarRoomPreset
+	case producer.ModeChat:
+		return producer.ChatPreset
+	default:
+		return producer.CaseFilePreset
 	}
-	return producer.CaseFilePreset
 }
 
 // resolveFormatInfo builds the FormatInfo for a clip about to render. Case mode
 // resolves/persists the running case number; every error path fails open — the
 // clip renders without a number rather than block production.
 func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.FormatInfo {
-	if preset.Key == producer.TutorialPreset.Key {
+	switch preset.Key {
+	case producer.TutorialPreset.Key:
 		return producer.FormatInfo{Mode: producer.ModeTutorial}
+	case producer.ChatPreset.Key:
+		return producer.FormatInfo{Mode: producer.ModeChat}
+	case producer.WarRoomPreset.Key:
+		return producer.FormatInfo{Mode: producer.ModeWarRoom}
 	}
 	if preset.Key != producer.CaseFilePreset.Key {
 		return producer.FormatInfo{}

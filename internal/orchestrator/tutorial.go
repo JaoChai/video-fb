@@ -29,14 +29,22 @@ const basicFormatName = "basic"
 const basicAgentMode = "basic"
 
 // clipMode derives the RENDER mode from the clip's persisted content_format.
-// Tutorial and basic clips render as a manual; everything else is a case file.
-// Basic clips render identically to tutorial clips — same preset, same image
-// policy, same gate.
+//
+// ชื่อ content_format กับชื่อโหมดไม่ตรงกันโดยตั้งใจ: "tutorial" คือคลิปสอนขั้นสูง
+// (21:00) ที่ตอนนี้แต่งหน้าเป็นห้องควบคุม ส่วน "basic" คือคลิปสอนมือใหม่ (15:00)
+// ที่ใช้หน้าตาคู่มือ — content_format ตอบว่า "ใครเขียนบท" ส่วนโหมดตอบว่า
+// "หน้าตาเป็นแบบไหน" สองคำถามนี้แยกกันมาตั้งแต่ต้น (ดู agentModeFor)
 func clipMode(contentFormat string) string {
-	if contentFormat == tutorialFormatName || contentFormat == basicFormatName {
+	switch contentFormat {
+	case basicFormatName:
 		return producer.ModeTutorial
+	case tutorialFormatName:
+		return producer.ModeWarRoom
+	case "qa", "tips":
+		return producer.ModeChat
+	default:
+		return producer.ModeCase
 	}
-	return producer.ModeCase
 }
 
 // agentModeFor answers a different question from clipMode: which prompt rows
@@ -57,8 +65,16 @@ func agentModeFor(contentFormat string) string {
 // คนตรวจ ถ้า retry รอบใหม่ไม่โหลดแถวคลังมาด้วย feat จะเป็น nil แปลว่า
 // ตะแกรง ui_vocab ปิดเงียบ + agent ไม่ได้ menu path/steps → คลิปสอนเมนูที่โมเดล
 // แต่งเองแล้วขึ้น YouTube เลย จึงต้องถามผ่าน clipMode ชุดเดียวกับที่เลือก preset
+// ต้องครอบทุกโหมดที่ "สอน UI จริง" ไม่ใช่แค่โหมดที่ชื่อว่า tutorial — ห้องควบคุม
+// (21:00) ก็เดินขั้นตอนเมนูด้วย layout uistep เหมือนกัน ลืมโหมดใดโหมดหนึ่งตรงนี้
+// เท่ากับเปิดตะแกรง ui_vocab ค้างไว้ให้คลิปนั้นทั้งรอบ
 func needsCatalogFeature(contentFormat string) bool {
-	return clipMode(contentFormat) == producer.ModeTutorial
+	switch clipMode(contentFormat) {
+	case producer.ModeTutorial, producer.ModeWarRoom:
+		return true
+	default:
+		return false
+	}
 }
 
 // tutorialSceneShape maps a catalog step count onto the clip's scene budget:
@@ -126,9 +142,13 @@ func freshnessDecision(v agent.FreshnessVerdict, err error) (stale bool, reason 
 }
 
 // ProduceTutorial produces the daily advanced tutorial clip (21:00 slot).
+//
+// agentMode ต้องมาจาก agentModeFor เสมอ ห้ามใส่ค่าคงที่: 21:00 ย้ายไปโหมด
+// ห้องควบคุมแล้ว การฝัง ModeTutorial ไว้ตรงนี้ทำให้รอบผลิตใช้ script_tutorial
+// แต่รอบ retry ใช้ script_warroom — คลิปเดียวกันเปลี่ยนเสียงกลางคัน
 func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	return o.produceCatalogClip(ctx, repository.TutorialLevelAdvanced,
-		tutorialFormatName, producer.ModeTutorial, "tutorial")
+		tutorialFormatName, agentModeFor(tutorialFormatName), "tutorial")
 }
 
 // ProduceBasic produces the daily beginner clip (15:00 slot). Same machinery,
@@ -136,7 +156,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 // term instead of assuming the viewer already runs ads.
 func (o *Orchestrator) ProduceBasic(ctx context.Context) error {
 	return o.produceCatalogClip(ctx, repository.TutorialLevelBasic,
-		basicFormatName, basicAgentMode, "basic")
+		basicFormatName, agentModeFor(basicFormatName), "basic")
 }
 
 // produceCatalogClip produces exactly one clip whose topic comes from the

@@ -19,6 +19,53 @@ func NewFormatsRepo(pool *pgxpool.Pool) *FormatsRepo {
 // PickNext returns the enabled format that has been used least (relative to its
 // weight) in the last 7 days — guarantees every format gets airtime.
 func (r *FormatsRepo) PickNext(ctx context.Context) (*models.ContentFormat, error) {
+	usages, err := r.formatUsages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	picked := pickLeastUsed(usages)
+	return &picked, nil
+}
+
+// PickNextIn is PickNext restricted to one slot's formats. The slot decides the
+// clip's visual mode (see clipMode), so letting an unlisted format through would
+// render, say, an evening Q&A clip as a case file. Returns an error when nothing
+// in allowed is enabled — producing the wrong mode is worse than producing nothing.
+func (r *FormatsRepo) PickNextIn(ctx context.Context, allowed []string) (*models.ContentFormat, error) {
+	usages, err := r.formatUsages(ctx)
+	if err != nil {
+		return nil, err
+	}
+	usages = filterAllowed(usages, allowed)
+	if len(usages) == 0 {
+		return nil, fmt.Errorf("no enabled content_format in %v", allowed)
+	}
+	picked := pickLeastUsed(usages)
+	return &picked, nil
+}
+
+// filterAllowed keeps only the usages whose format is in allowed. An empty or
+// nil allowed list means "no restriction" — the manual /produce path relies on
+// that. Pure, so the slot-locking rule is testable without a DB.
+func filterAllowed(usages []models.FormatUsage, allowed []string) []models.FormatUsage {
+	if len(allowed) == 0 {
+		return usages
+	}
+	ok := make(map[string]bool, len(allowed))
+	for _, a := range allowed {
+		ok[a] = true
+	}
+	out := make([]models.FormatUsage, 0, len(usages))
+	for _, u := range usages {
+		if ok[u.Format.FormatName] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// formatUsages loads every enabled format with its 7-day usage count.
+func (r *FormatsRepo) formatUsages(ctx context.Context) ([]models.FormatUsage, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT cf.id, cf.format_name, cf.display_name, cf.question_instruction,
 		       cf.script_instruction, cf.enabled, cf.weight,
@@ -47,9 +94,7 @@ func (r *FormatsRepo) PickNext(ctx context.Context) (*models.ContentFormat, erro
 		}
 		usages = append(usages, u)
 	}
-
-	picked := pickLeastUsed(usages)
-	return &picked, nil
+	return usages, nil
 }
 
 // GetByName returns a single content format by its format_name.

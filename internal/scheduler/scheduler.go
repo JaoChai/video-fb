@@ -131,9 +131,23 @@ func (s *Scheduler) Reload(ctx context.Context) error {
 // produceAndPublish and produceTutorial share one tick body: the same pre-flight,
 // the same circuit breaker, and the same production gate. Only the produce call
 // differs — a tutorial tick must never skip those guards.
-func (s *Scheduler) produceAndPublish(ctx context.Context) error {
-	return s.produceTick(ctx, "1 new clip", func(c context.Context) error {
-		return s.orchestrator.ProduceWeekly(c, 1)
+// noonFormats / eveningFormats ล็อกชนิดเนื้อหาไว้กับ slot เพราะ content_format
+// เป็นตัวกำหนดโหมดหน้าตาของคลิป (ดู clipMode) — ปล่อยให้สุ่มข้ามชุดเมื่อไร
+// คลิปเย็นจะกลายเป็นแฟ้มคดีทันที
+var (
+	noonFormats    = []string{"case_story", "news"}
+	eveningFormats = []string{"qa", "tips"}
+)
+
+func (s *Scheduler) produceNoon(ctx context.Context) error {
+	return s.produceTick(ctx, "1 new case-file clip", func(c context.Context) error {
+		return s.orchestrator.ProduceWeekly(c, 1, noonFormats)
+	})
+}
+
+func (s *Scheduler) produceEvening(ctx context.Context) error {
+	return s.produceTick(ctx, "1 new chat clip", func(c context.Context) error {
+		return s.orchestrator.ProduceWeekly(c, 1, eveningFormats)
 	})
 }
 
@@ -226,7 +240,9 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 	case "publish_tiktok":
 		return s.publisher.PublishTikTok
 	case "produce_and_publish":
-		return s.produceAndPublish
+		return s.produceNoon
+	case "produce_evening":
+		return s.produceEvening
 	case "produce_tutorial":
 		return s.produceTutorial
 	case "produce_basic":

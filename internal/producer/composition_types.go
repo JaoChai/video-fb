@@ -73,6 +73,12 @@ type SceneContent struct {
 	Panel     *ContentUIPanel `json:"panel,omitempty"`
 	Callout   string          `json:"callout,omitempty"`
 	StepTotal int             `json:"stepTotal,omitempty"`
+
+	// chat format (spec 2026-07-28). Msgs drives chat_in/chat_out; Asker names
+	// the customer in the thread header; Verdict is the green summary chip.
+	Msgs    []ContentMessage `json:"msgs,omitempty"`
+	Asker   string           `json:"asker,omitempty"`
+	Verdict string           `json:"verdict,omitempty"`
 }
 
 // ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
@@ -81,10 +87,22 @@ type ContentRow struct {
 	Bad  bool   `json:"bad,omitempty"`
 }
 
-// ContentChip is one small stat chip beneath a stat card.
+// ContentChip is one small stat chip beneath a stat card, and one KPI tile in
+// the war-room dashboard. Bad=true renders the number in red (a metric moving
+// the wrong way).
 type ContentChip struct {
-	N string `json:"n"`
-	T string `json:"t"`
+	N   string `json:"n"`
+	T   string `json:"t"`
+	Bad bool   `json:"bad,omitempty"`
+}
+
+// ContentMessage is one bubble in a chat-format thread. From is "them" (the
+// customer, left) or "me" (us, right). Alert=true tints the bubble red — used
+// for the detail that signals danger, not for every negative sentence.
+type ContentMessage struct {
+	From  string `json:"from"`
+	Text  string `json:"t"`
+	Alert bool   `json:"alert,omitempty"`
 }
 
 // ContentPanel is one comic panel (case-file format). Dark=true renders the

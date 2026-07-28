@@ -214,6 +214,73 @@
       [data-format='tutorial'] .scene[data-layout="hero"] .scene-bg,
       [data-format='tutorial'] .scene[data-layout="tip"] .scene-bg,
       [data-format='tutorial'] .scene[data-layout="cta"] .scene-bg{opacity:.35;filter:saturate(.6)}
+      /* ── chat format (data-format='chat') ──
+         Thai-safe: letter-spacing >= 0, line-height >= 1.3, break-word เท่านั้น */
+      [data-format='chat'] .scene[data-layout="chat_in"] .scene-content,
+      [data-format='chat'] .scene[data-layout="chat_out"] .scene-content{
+        top:150px;bottom:400px;justify-content:flex-start}
+      [data-format='chat'] .scene[data-layout="chat_in"] .scene-bg,
+      [data-format='chat'] .scene[data-layout="chat_out"] .scene-bg,
+      [data-format='chat'] .scene[data-layout="recap"] .scene-bg{opacity:.28;filter:saturate(.6)}
+      [data-format='chat'] .scene[data-layout="recap"] .scene-content{
+        top:150px;bottom:430px;justify-content:center}
+      .ch-head{display:flex;align-items:center;gap:20px;padding-bottom:26px;
+        border-bottom:2px solid rgba(255,255,255,.12);margin-bottom:26px}
+      .ch-ava{flex:0 0 auto;width:74px;height:74px;border-radius:50%;
+        background:linear-gradient(135deg,var(--amber),var(--amber-soft));
+        display:flex;align-items:center;justify-content:center;
+        font-weight:800;font-size:38px;color:#11182b}
+      .ch-name{font-weight:800;font-size:40px;line-height:1.32;color:#fff}
+      .ch-stamp{font-weight:600;font-size:28px;line-height:1.34;color:var(--muted)}
+      .ch-thread{display:flex;flex-direction:column;gap:22px}
+      .ch-bub{max-width:82%;padding:26px 30px;border-radius:34px;
+        font-weight:700;font-size:38px;line-height:1.38;overflow-wrap:break-word}
+      .ch-bub.them{align-self:flex-start;background:rgba(28,43,79,.94);
+        border:1px solid rgba(255,255,255,.10);border-bottom-left-radius:10px;color:#dbe5fb}
+      .ch-bub.them.alert{background:rgba(255,107,98,.16);
+        border-color:rgba(255,107,98,.55);color:#ffd9d6}
+      .ch-bub.me{align-self:flex-end;color:#11182b;border-bottom-right-radius:10px;
+        background:linear-gradient(135deg,var(--amber),var(--amber-soft))}
+      .ch-verdict{margin-top:28px;background:rgba(74,222,128,.14);
+        border:2px solid rgba(74,222,128,.55);border-radius:26px;padding:26px 30px;
+        font-weight:800;font-size:38px;line-height:1.38;color:#c9f7d8;overflow-wrap:break-word}
+      /* ── war-room format (data-format='warroom') ──
+         uistep ใช้ markup เดิมทุกอย่าง เปลี่ยนแค่กรอบที่ห่อมัน เพื่อให้ตะแกรง
+         ui_vocab + ตัวนับขั้นตอนทำงานเหมือนเดิมโดยไม่ต้องแก้โค้ดตะแกรง */
+      [data-format='warroom'] .scene-bg::after{content:"";position:absolute;inset:0;
+        background-image:linear-gradient(rgba(46,139,255,.09) 1px,transparent 1px),
+          linear-gradient(90deg,rgba(46,139,255,.09) 1px,transparent 1px);background-size:96px 96px}
+      [data-format='warroom'] .scene[data-layout="dashboard"] .scene-content{
+        top:170px;bottom:420px;justify-content:center}
+      [data-format='warroom'] .scene[data-layout="alarm"] .scene-content,
+      [data-format='warroom'] .scene[data-layout="uistep"] .scene-content{
+        top:160px;bottom:410px;justify-content:center}
+      [data-format='warroom'] .scene[data-layout="alarm"] .scene-bg,
+      [data-format='warroom'] .scene[data-layout="cta"] .scene-bg{opacity:.30;filter:saturate(.6)}
+      /* แผงยังเป็นหน้าจอ Ads Manager สว่างเหมือนเดิม — มันคือสิ่งที่คนดูต้องทำตาม
+         ทาพื้นให้ดำเมื่อไรคือทำลายความเป็นหน้าจอจริง และ breadcrumb ที่พื้นโปร่งใส
+         จะเหลือ contrast 3.85 ทันที · ห้องควบคุมจึงแต่งที่ "กรอบ" ให้เป็นจอมอนิเตอร์แทน */
+      [data-format='warroom'] .ui-panel{border:6px solid #0a1a3d;
+        box-shadow:0 0 0 3px rgba(88,146,255,.5),0 0 70px rgba(46,139,255,.28),0 30px 76px rgba(0,0,0,.62)}
+      .wr-live{display:flex;align-items:center;gap:14px;font-weight:800;font-size:28px;
+        letter-spacing:.10em;color:var(--muted);margin-bottom:20px}
+      .wr-live i{width:18px;height:18px;border-radius:50%;background:var(--red);
+        box-shadow:0 0 18px rgba(255,107,98,.85)}
+      .wr-gauge{background:rgba(9,22,52,.88);border:2px solid rgba(88,146,255,.34);
+        border-radius:26px;padding:28px 30px}
+      .wr-gauge-l{font-weight:700;font-size:30px;line-height:1.34;color:var(--muted)}
+      .wr-spark{height:150px;margin-top:18px;
+        background:linear-gradient(180deg,rgba(255,180,84,.34),transparent);
+        clip-path:polygon(0 76%,13% 60%,26% 68%,39% 40%,52% 52%,65% 22%,78% 34%,91% 10%,100% 16%,100% 100%,0 100%)}
+      .wr-kpis{display:flex;gap:18px;margin-top:22px}
+      .wr-kpi{flex:1;background:rgba(9,22,52,.88);border:2px solid rgba(88,146,255,.28);
+        border-radius:22px;padding:24px 20px}
+      .wr-kpi .n{font-weight:800;font-size:64px;line-height:1.3;color:var(--amber-bright)}
+      .wr-kpi .n.bad{color:var(--red)}
+      .wr-kpi .t{font-weight:700;font-size:26px;line-height:1.34;color:var(--muted);margin-top:6px}
+      .wr-alarm{margin-top:24px;background:rgba(255,107,98,.16);border-left:10px solid var(--red);
+        border-radius:0 22px 22px 0;padding:26px 30px;font-weight:800;font-size:38px;
+        line-height:1.38;color:#ffd9d6;overflow-wrap:break-word}
       .ui-rail{display:flex;align-items:center;gap:18px}
       .ui-rail .rl{font-weight:700;font-size:36px;letter-spacing:.04em;color:var(--amber-bright)}
       .ui-rail .dots{display:flex;gap:14px}
@@ -324,6 +391,8 @@
       const BG_ZOOM_TO = {{.BGZoomTo}} || 1.06;
       const FORMAT_CASE = {{if eq .Format "case"}}true{{else}}false{{end}};
       const FORMAT_TUTORIAL = {{if eq .Format "tutorial"}}true{{else}}false{{end}};
+      const FORMAT_CHAT = {{if eq .Format "chat"}}true{{else}}false{{end}};
+      const FORMAT_WARROOM = {{if eq .Format "warroom"}}true{{else}}false{{end}};
       const CASE_NO = {{.CaseNumber}} || 0;
 
       // ── Scene content (cleaned: NO emoji, real slots) ──
@@ -346,7 +415,9 @@
         // clip at zero extra image cost.
         const reuseCover =
           (FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict")) ||
-          (FORMAT_TUTORIAL && (sc.type === "hero" || sc.type === "tip" || sc.type === "cta"));
+          (FORMAT_TUTORIAL && (sc.type === "hero" || sc.type === "tip" || sc.type === "cta")) ||
+          (FORMAT_CHAT && (sc.type === "chat_in" || sc.type === "chat_out" || sc.type === "recap" || sc.type === "cta")) ||
+          (FORMAT_WARROOM && (sc.type === "dashboard" || sc.type === "alarm" || sc.type === "cta"));
         const bgSrc = (!sc.bg && reuseCover && SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
         // giant faint case-number watermark fills imageless case scenes
         const wm = (FORMAT_CASE && CASE_NO > 0 &&
@@ -364,7 +435,7 @@
 
       function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
       function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
-      function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",c.t.replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
+      function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",(c.t||"").replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
 
       // uistep scenes register their target row here; the markers (pointer tag +
       // tap ring) are positioned after layout, when offsets are real.
@@ -488,6 +559,51 @@
           // measured after layout (offsets are relative to .ui-panel, which is
           // position:relative). A panel with no target row gets neither.
           if(targetRow) uiStepMarkers.push({box:box,row:targetRow});
+        }
+        else if(sc.type==="chat_in" || sc.type==="chat_out"){
+          if(sc.asker){
+            const head=el("div","ch-head");
+            head.appendChild(el("div","ch-ava",(sc.asker||"?").trim().charAt(0)));
+            const nw=el("div");
+            nw.appendChild(el("div","ch-name",sc.asker));
+            if(sc.stamp) nw.appendChild(el("div","ch-stamp",sc.stamp));
+            head.appendChild(nw);
+            c.appendChild(head);
+          }
+          const th=el("div","ch-thread");
+          (sc.msgs||[]).forEach(m=>{
+            const side=(m.from==="me")?"me":"them";
+            th.appendChild(el("div","ch-bub "+side+(m.alert?" alert":""),m.t));
+          });
+          c.appendChild(th);
+          if(sc.verdict) c.appendChild(el("div","ch-verdict",sc.verdict));
+        }
+        else if(sc.type==="recap"){
+          if(sc.title) c.appendChild(el("h1","title",sc.title));
+          if(sc.chips) c.appendChild(chipsBlock(sc.chips));
+        }
+        else if(sc.type==="dashboard"){
+          const live=el("div","wr-live");live.appendChild(el("i"));
+          live.appendChild(el("span",null,"LIVE"));c.appendChild(live);
+          const g=el("div","wr-gauge");
+          if(sc.statLabel) g.appendChild(el("div","wr-gauge-l",sc.statLabel));
+          g.appendChild(el("div","wr-spark"));
+          c.appendChild(g);
+          if(sc.chips&&sc.chips.length){
+            const k=el("div","wr-kpis");
+            sc.chips.forEach(ch=>{
+              const t=el("div","wr-kpi");
+              t.appendChild(el("div","n"+(ch.bad?" bad":""),ch.n));
+              t.appendChild(el("div","t",ch.t));
+              k.appendChild(t);
+            });
+            c.appendChild(k);
+          }
+          if(sc.callout) c.appendChild(el("div","wr-alarm",sc.callout));
+        }
+        else if(sc.type==="alarm"){
+          if(sc.title) c.appendChild(el("h1","title",sc.title));
+          c.appendChild(rowsBlock(sc.rows));
         }
         else if(sc.type==="cta"){
           c.appendChild(el("h1","title",sc.title));

@@ -1,0 +1,332 @@
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>4 โหมด 4 ช่วงเวลา — แบบร่าง</title>
+<style>
+  :root{
+    --navy-deep:#062F78; --navy:#0047AF; --navy-hi:#1A5FD0;
+    --amber:#F0A030; --amber-soft:#E8A030; --amber-bright:#FFB454;
+    --ink:#F6F9FF; --muted:#BCD2FF; --red:#FF6B62; --green:#4ADE80;
+    --page:#0b1020; --card:#141a2e; --line:#2a3350; --txt:#e8edf9; --dim:#93a1c4;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --page:#f4f6fb; --card:#ffffff; --line:#dde3f0; --txt:#131a2c; --dim:#5b6787; }
+  }
+  :root[data-theme="dark"]{ --page:#0b1020; --card:#141a2e; --line:#2a3350; --txt:#e8edf9; --dim:#93a1c4; }
+  :root[data-theme="light"]{ --page:#f4f6fb; --card:#ffffff; --line:#dde3f0; --txt:#131a2c; --dim:#5b6787; }
+
+  body{background:var(--page);color:var(--txt);
+    font-family:"Sarabun","IBM Plex Sans Thai",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    line-height:1.7;padding:32px 20px 80px;max-width:1240px;margin:0 auto}
+  h1{font-size:28px;line-height:1.4;font-weight:800;margin-bottom:6px}
+  .lede{color:var(--dim);margin-bottom:28px;max-width:70ch}
+  h2{font-size:19px;font-weight:800;margin:0 0 4px}
+  .slot-grid{display:grid;gap:22px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+  .slot{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;
+    display:flex;flex-direction:column;gap:14px}
+  .slot-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .time{font-weight:800;font-size:22px;color:var(--amber)}
+  .tag{font-size:12px;font-weight:700;letter-spacing:.08em;padding:3px 10px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim)}
+  .tag.new{color:#0b1020;background:var(--amber-bright);border-color:transparent}
+  .why{font-size:14px;color:var(--dim);margin:0}
+  .frames{display:flex;gap:12px;overflow-x:auto;padding-bottom:4px}
+
+  /* ── กรอบมือถือ 9:16 ── */
+  .ph{flex:0 0 auto;width:172px;height:306px;border-radius:14px;overflow:hidden;position:relative;
+    background:var(--navy-deep);color:#fff;font-size:9px;box-shadow:0 8px 26px rgba(0,0,0,.35)}
+  .ph .pad{position:absolute;inset:0;padding:14px 13px;display:flex;flex-direction:column}
+  .cap{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:9.5px;font-weight:800;
+    color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.9)}
+  .cap b{color:var(--amber-bright)}
+  .fname{font-size:11px;color:var(--dim);text-align:center;margin-top:5px;font-weight:600}
+  .fwrap{flex:0 0 auto;width:172px}
+
+  /* ── โหมด 1 แฟ้มคดี ── */
+  .m-case{background:linear-gradient(170deg,#12275c,#071534)}
+  .cf-photo{position:absolute;inset:0;background:
+    repeating-linear-gradient(115deg,rgba(255,255,255,.045) 0 3px,transparent 3px 7px),
+    radial-gradient(120% 70% at 50% 22%,#31447a 0%,#0a1738 62%,#050d22 100%)}
+  .cf-grain{position:absolute;inset:0;opacity:.5;background-image:
+    radial-gradient(rgba(255,255,255,.10) .6px,transparent .6px);background-size:5px 5px}
+  .cf-hook{font-weight:800;font-size:15px;line-height:1.35;position:relative;z-index:2}
+  .cf-folder{margin-top:auto;position:relative;z-index:2;background:#E9DCB5;color:#3A2E12;
+    border-radius:6px 12px 6px 6px;padding:11px 11px 9px}
+  .cf-folder::before{content:"";position:absolute;top:-7px;left:12px;width:74px;height:11px;
+    background:#E9DCB5;border-radius:5px 5px 0 0}
+  .cf-label{font-weight:800;font-size:7.5px;letter-spacing:.14em;color:#8A6D2F}
+  .cf-name{font-weight:800;font-size:12.5px;line-height:1.35;margin-top:2px}
+  .cf-meta{font-size:8px;color:#6B5A32;margin-top:5px;border-top:1px solid rgba(0,0,0,.16);padding-top:5px}
+  .ev-card{margin:auto 0;background:#fff;padding:8px 8px 22px;border-radius:3px;transform:rotate(-1.6deg);
+    box-shadow:0 12px 30px rgba(0,0,0,.55);position:relative;z-index:2}
+  .ev-img{height:104px;border-radius:2px;background:
+    radial-gradient(90% 70% at 50% 35%,#c9d4e8,#5d6c8c 70%,#3b465e)}
+  .ev-cap{position:absolute;left:8px;right:8px;bottom:6px;font-size:8px;color:#333;font-weight:700;text-align:center}
+  .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:44px;font-weight:800;color:rgba(255,255,255,.05);letter-spacing:.04em}
+
+  /* ── โหมด 2 คู่มือ spotlight ── */
+  .m-tut{background:linear-gradient(180deg,#0a1c46,#061029)}
+  .ui-panel{background:#0d1b3c;border:1px solid rgba(255,255,255,.11);border-radius:7px;
+    padding:8px;margin-top:auto;position:relative}
+  .ui-row{display:flex;align-items:center;gap:6px;padding:5.5px 7px;border-radius:5px;
+    font-size:8.5px;color:#93a4c9;opacity:.42}
+  .ui-row .sq{width:8px;height:8px;border-radius:2px;background:#33456f}
+  .ui-row.on{opacity:1;color:#fff;background:rgba(255,180,84,.15);border:1px solid var(--amber-bright);font-weight:800}
+  .ui-row.on .sq{background:var(--amber-bright)}
+  .tap{position:absolute;right:9px;width:20px;height:20px;border-radius:50%;
+    border:2px solid var(--amber-bright);box-shadow:0 0 0 5px rgba(255,180,84,.2)}
+  .ptr{position:absolute;right:34px;background:var(--amber-bright);color:#11182b;font-weight:800;
+    font-size:7.5px;padding:2.5px 7px;border-radius:999px;white-space:nowrap}
+  .step-head{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .step-num{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--amber),var(--amber-soft));
+    color:#11182b;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+  .step-title{font-weight:800;font-size:11.5px;line-height:1.35}
+  .step-of{font-size:7.5px;color:var(--muted);letter-spacing:.1em;font-weight:700}
+
+  /* ── โหมด 3 แชทลูกค้า (ใหม่) ── */
+  .m-chat{background:linear-gradient(180deg,#0a1a3f,#050d22)}
+  .chat-top{display:flex;align-items:center;gap:6px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.1)}
+  .ava{width:19px;height:19px;border-radius:50%;background:linear-gradient(135deg,var(--amber),#c9761d);
+    display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#11182b}
+  .chat-name{font-weight:800;font-size:10px}
+  .chat-sub{font-size:7.5px;color:var(--muted)}
+  .msgs{display:flex;flex-direction:column;gap:7px;margin-top:9px}
+  .bub{max-width:82%;padding:8px 10px;border-radius:12px;font-size:9.5px;line-height:1.45;font-weight:600}
+  .bub.them{background:#1c2b4f;border:1px solid rgba(255,255,255,.09);border-bottom-left-radius:3px;color:#dbe5fb}
+  .bub.me{align-self:flex-end;background:linear-gradient(135deg,var(--amber),var(--amber-soft));
+    color:#11182b;border-bottom-right-radius:3px;font-weight:700}
+  .bub.alert{background:rgba(255,107,98,.14);border:1px solid rgba(255,107,98,.5);color:#ffd9d6}
+  .typing{display:flex;gap:3px;align-self:flex-start;padding:8px 11px;background:#1c2b4f;border-radius:12px;
+    border-bottom-left-radius:3px}
+  .typing i{width:4px;height:4px;border-radius:50%;background:var(--muted);display:block}
+  .stamp{font-size:7px;color:#7b8db5;text-align:center;margin:5px 0 1px}
+  .verdict-chip{margin-top:auto;background:rgba(74,222,128,.13);border:1px solid rgba(74,222,128,.55);
+    color:#c9f7d8;border-radius:9px;padding:8px 10px;font-size:9px;font-weight:800;line-height:1.4}
+
+  /* ── โหมด 4 ห้องควบคุม (ใหม่) ── */
+  .m-war{background:radial-gradient(120% 80% at 50% 0%,#0d2350,#04091a 75%)}
+  .war-scan{position:absolute;inset:0;background-image:
+    linear-gradient(rgba(46,139,255,.10) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(46,139,255,.10) 1px,transparent 1px);background-size:17px 17px}
+  .war-top{display:flex;align-items:center;gap:5px;font-size:7.5px;font-weight:800;letter-spacing:.1em;
+    color:var(--muted);position:relative;z-index:2}
+  .dot-live{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+  .gauge{position:relative;z-index:2;margin-top:9px;background:rgba(9,22,52,.85);
+    border:1px solid rgba(88,146,255,.34);border-radius:7px;padding:9px}
+  .gauge-l{font-size:7.5px;color:var(--muted);font-weight:700;letter-spacing:.08em}
+  .spark{height:42px;margin-top:5px;background:
+    linear-gradient(180deg,rgba(255,180,84,.28),transparent);
+    clip-path:polygon(0 76%,13% 60%,26% 68%,39% 40%,52% 52%,65% 22%,78% 34%,91% 10%,100% 16%,100% 100%,0 100%)}
+  .kpis{display:flex;gap:6px;margin-top:8px;position:relative;z-index:2}
+  .kpi{flex:1;background:rgba(9,22,52,.85);border:1px solid rgba(88,146,255,.28);border-radius:6px;padding:7px 6px}
+  .kpi .n{font-weight:800;font-size:15px;color:var(--amber-bright);line-height:1.2}
+  .kpi .n.bad{color:var(--red)}
+  .kpi .t{font-size:7px;color:var(--muted);font-weight:700;margin-top:1px}
+  .alarm{margin-top:auto;position:relative;z-index:2;background:rgba(255,107,98,.15);
+    border-left:3px solid var(--red);border-radius:5px;padding:8px 9px;font-size:9px;font-weight:800;
+    color:#ffd9d6;line-height:1.4}
+  .mon{position:relative;z-index:2;margin-top:auto;background:#050d22;border:1px solid rgba(88,146,255,.4);
+    border-radius:6px;padding:6px}
+  .mon-bar{display:flex;gap:3px;margin-bottom:5px}
+  .mon-bar i{width:5px;height:5px;border-radius:50%;background:#2b3f6d;display:block}
+  .mon-bar i:first-child{background:var(--red)}
+
+  /* ── ตารางสรุป ── */
+  .tbl-wrap{overflow-x:auto;margin-top:34px;border:1px solid var(--line);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:620px}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:rgba(127,127,127,.09);font-weight:800;font-size:12px;letter-spacing:.04em}
+  tr:last-child td{border-bottom:none}
+  .ok{color:#2f9e5f;font-weight:700}
+  .warn{color:#c2801a;font-weight:700}
+  code{background:rgba(127,127,127,.16);padding:1px 6px;border-radius:5px;font-size:12.5px}
+  .note{margin-top:26px;border-left:3px solid var(--amber);padding:10px 16px;background:rgba(240,160,48,.09);
+    border-radius:0 10px 10px 0}
+  .note b{color:var(--amber)}
+</style>
+
+<h1>4 ช่วงเวลา 4 โหมด — แบบร่าง</h1>
+<p class="lede">สัดส่วน 9:16 สีแบรนด์จริง (navy #0047AF + amber #F0A030) ทุกโหมดใช้ไฟล์ template เดียวกัน ต่างกันที่ CSS ของ <code>data-format</code> + ชุด layout + นโยบายภาพ AI</p>
+
+<div class="slot-grid">
+
+  <!-- 12:00 -->
+  <section class="slot">
+    <div class="slot-head"><span class="time">12:00</span><h2>แฟ้มคดี</h2><span class="tag">เดิม</span></div>
+    <p class="why">เคสเสียหายของลูกค้า — เล่าแบบสืบสวน มีเลขคดีเรียงต่อเนื่อง</p>
+    <div class="frames">
+      <div class="fwrap">
+        <div class="ph m-case"><div class="cf-photo"></div><div class="cf-grain"></div>
+          <div class="pad">
+            <div class="cf-hook">สูญ 3 แสนใน 5 วัน<br>เพราะกด Duplicate</div>
+            <div class="cf-folder">
+              <div class="cf-label">CASE FILE · 148</div>
+              <div class="cf-name">แอดติด Review<br>24 ชั่วโมง</div>
+              <div class="cf-meta">ผู้เสียหาย: เอเจนซี่แฟชั่น · งบ 60,000/วัน</div>
+            </div>
+          </div>
+          <div class="cap">ซีนเปิด · <b>ภาพ AI 1</b></div>
+        </div>
+        <div class="fname">casefile</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-case"><div class="cf-photo" style="opacity:.35"></div>
+          <div class="pad"><div class="ev-card"><div class="ev-img"></div><div class="ev-cap">หลักฐาน ก · สลิปตัดเงิน</div></div></div>
+          <div class="cap">หลักฐาน · <b>ภาพ AI 2</b></div>
+        </div>
+        <div class="fname">evidence</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-case"><div class="wm">คดี 148</div>
+          <div class="pad" style="justify-content:center">
+            <div style="font-weight:800;font-size:13px;line-height:1.4;text-align:center">สรุปคดี</div>
+            <div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">
+              <div style="background:rgba(10,35,88,.72);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:7px 9px;font-size:9px;font-weight:700">อย่ากด Duplicate ระหว่าง Review</div>
+              <div style="background:rgba(255,107,98,.14);border:1px solid rgba(255,107,98,.42);border-radius:7px;padding:7px 9px;font-size:9px;font-weight:700;color:#ffd9d6">ยิ่งกด ยิ่งโดนแบนซ้อน</div>
+            </div>
+          </div>
+          <div class="cap">คำตัดสิน · <b>ไม่ใช้ภาพ</b></div>
+        </div>
+        <div class="fname">verdict</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 15:00 -->
+  <section class="slot">
+    <div class="slot-head"><span class="time">15:00</span><h2>คู่มือ spotlight</h2><span class="tag">เดิม</span></div>
+    <p class="why">สอนมือใหม่ — หน้าจอ Ads Manager จำลอง หรี่แถวที่ไม่เกี่ยว ชี้จุดที่ต้องกด</p>
+    <div class="frames">
+      <div class="fwrap">
+        <div class="ph m-tut">
+          <div class="pad">
+            <div class="step-head"><div class="step-num">1</div><div><div class="step-of">ขั้นที่ 1 จาก 4</div><div class="step-title">เปิดบัญชีโฆษณา</div></div></div>
+            <div class="ui-panel">
+              <div class="ui-row"><span class="sq"></span>ภาพรวม</div>
+              <div class="ui-row"><span class="sq"></span>แคมเปญ</div>
+              <div class="ui-row on" style="position:relative"><span class="sq"></span>การตั้งค่าบัญชี
+                <span class="ptr" style="top:-16px">กดตรงนี้</span><span class="tap" style="top:-2px"></span></div>
+              <div class="ui-row"><span class="sq"></span>การเรียกเก็บเงิน</div>
+            </div>
+          </div>
+          <div class="cap">ขั้นตอน · <b>ไม่ใช้ภาพ</b></div>
+        </div>
+        <div class="fname">uistep</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-tut" style="background:radial-gradient(110% 60% at 50% 18%,#26365f,#060f26 70%)">
+          <div class="pad" style="justify-content:flex-end">
+            <div style="font-weight:800;font-size:14px;line-height:1.35">ตั้งบัญชีโฆษณา<br>ให้ถูกตั้งแต่วันแรก</div>
+            <div style="font-size:9px;color:var(--muted);margin-top:6px;font-weight:600">4 ขั้น จบใน 60 วินาที</div>
+          </div>
+          <div class="cap">ซีนเปิด · <b>ภาพ AI 1 (ตัวเดียวของคลิป)</b></div>
+        </div>
+        <div class="fname">hook</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 18:00 -->
+  <section class="slot">
+    <div class="slot-head"><span class="time">18:00</span><h2>แชทลูกค้า</h2><span class="tag new">ใหม่</span></div>
+    <p class="why">คำถามลูกค้าจริง — เหมือนแอบส่องหน้าจอแชท ตอบทีละข้อความ</p>
+    <div class="frames">
+      <div class="fwrap">
+        <div class="ph m-chat">
+          <div class="pad">
+            <div class="chat-top"><div class="ava">ก</div><div><div class="chat-name">คุณเก่ง</div><div class="chat-sub">กำลังพิมพ์…</div></div></div>
+            <div class="stamp">21:47 น.</div>
+            <div class="msgs">
+              <div class="bub them">พี่ครับ บัญชีโดนแบน<br>ยิงครีมงบวันละ 45,000</div>
+              <div class="bub them alert">เพิ่งผูกบัตรใหม่เมื่อวาน</div>
+              <div class="typing"><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="cap">เปิดด้วยคำถาม · <b>ภาพ AI 1</b></div>
+        </div>
+        <div class="fname">chat_in</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-chat">
+          <div class="pad">
+            <div class="chat-top"><div class="ava">ก</div><div><div class="chat-name">คุณเก่ง</div><div class="chat-sub">ออนไลน์</div></div></div>
+            <div class="msgs">
+              <div class="bub me">อย่าเพิ่งยื่นอุทธรณ์ครับ</div>
+              <div class="bub me">ยื่นตอนนี้ = ปิดประตูตัวเอง</div>
+              <div class="bub them">อ้าว แล้วทำไงดีครับ</div>
+            </div>
+            <div class="verdict-chip">รอ 72 ชม. แล้วยื่นครั้งเดียว<br>พร้อมสลิป 3 ใบ</div>
+          </div>
+          <div class="cap">ตอบ · <b>ไม่ใช้ภาพ</b></div>
+        </div>
+        <div class="fname">chat_out</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-chat" style="background:radial-gradient(110% 65% at 50% 20%,#1d2f5e,#050d22 72%)">
+          <div class="pad" style="justify-content:center;text-align:center">
+            <div style="font-weight:800;font-size:13px;line-height:1.4">คำถามนี้มีคนถามซ้ำ<br>ทุกสัปดาห์</div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+              <div style="background:rgba(10,35,88,.72);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 9px;font-size:8.5px;font-weight:700">ผูกบัตรใหม่ = สัญญาณเสี่ยง</div>
+              <div style="background:rgba(10,35,88,.72);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 9px;font-size:8.5px;font-weight:700">รอ 72 ชม. ก่อนอุทธรณ์</div>
+            </div>
+          </div>
+          <div class="cap">สรุป · <b>ไม่ใช้ภาพ</b></div>
+        </div>
+        <div class="fname">recap</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 21:00 -->
+  <section class="slot">
+    <div class="slot-head"><span class="time">21:00</span><h2>ห้องควบคุม</h2><span class="tag new">ใหม่</span></div>
+    <p class="why">สอนมือโปร — จอมอนิเตอร์ ตัวเลขจริง ไฟเตือน · <b>ยังมี uistep อยู่ข้างใน</b> (ตะแกรงกันสอนผิดบังคับ)</p>
+    <div class="frames">
+      <div class="fwrap">
+        <div class="ph m-war"><div class="war-scan"></div>
+          <div class="pad">
+            <div class="war-top"><span class="dot-live"></span>LIVE · บัญชี #4</div>
+            <div class="gauge"><div class="gauge-l">CPM 7 วัน</div><div class="spark"></div></div>
+            <div class="kpis">
+              <div class="kpi"><div class="n bad">+38%</div><div class="t">CPM</div></div>
+              <div class="kpi"><div class="n">1.4x</div><div class="t">ROAS</div></div>
+            </div>
+            <div class="alarm">ค่าโฆษณาแพงขึ้น 38%<br>ใน 3 วัน — รู้ทันไหม</div>
+          </div>
+          <div class="cap">เปิดด้วยตัวเลข · <b>ภาพ AI 1</b></div>
+        </div>
+        <div class="fname">dashboard</div>
+      </div>
+      <div class="fwrap">
+        <div class="ph m-war"><div class="war-scan"></div>
+          <div class="pad">
+            <div class="war-top"><span class="dot-live"></span>ขั้นที่ 2 จาก 5</div>
+            <div class="mon" style="margin-top:9px">
+              <div class="mon-bar"><i></i><i></i><i></i></div>
+              <div class="ui-row"><span class="sq"></span>Audience Overlap</div>
+              <div class="ui-row on" style="position:relative"><span class="sq"></span>Automated Rules
+                <span class="ptr" style="top:-15px">กดตรงนี้</span><span class="tap" style="top:-2px"></span></div>
+              <div class="ui-row"><span class="sq"></span>Breakdown</div>
+            </div>
+            <div class="alarm" style="background:rgba(255,180,84,.12);border-left-color:var(--amber-bright);color:#ffe6c2">ตั้งกฎหยุดแอดเมื่อ CPM ทะลุเพดาน</div>
+          </div>
+          <div class="cap">ขั้นตอนในจอมอนิเตอร์ · <b>ไม่ใช้ภาพ</b></div>
+        </div>
+        <div class="fname">uistep (แต่งใหม่)</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="tbl-wrap">
+<table>
+  <tr><th>ช่วง</th><th>โหมด</th><th>layout เฉพาะตัว</th><th>ภาพ AI</th><th>ตะแกรงสอน</th></tr>
+  <tr><td><b>12:00</b></td><td>แฟ้มคดี <span class="tag">เดิม</span></td><td><code>casefile · evidence · comic · board · verdict</code></td><td>2 ภาพ</td><td>—</td></tr>
+  <tr><td><b>15:00</b></td><td>คู่มือ spotlight <span class="tag">เดิม</span></td><td><code>uistep</code></td><td>1 ภาพ</td><td class="ok">ui_vocab + นับขั้นตอน</td></tr>
+  <tr><td><b>18:00</b></td><td>แชทลูกค้า <span class="tag new">ใหม่</span></td><td><code>chat_in · chat_out · recap</code></td><td>1 ภาพ</td><td>—</td></tr>
+  <tr><td><b>21:00</b></td><td>ห้องควบคุม <span class="tag new">ใหม่</span></td><td><code>dashboard · alarm</code> + <code>uistep</code></td><td>1 ภาพ</td><td class="ok">ui_vocab + นับขั้นตอน</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <p><b>ทำไม 21:00 ต้องเก็บ uistep ไว้</b> — ตะแกรงที่กันคลิปสอนผิด (ห้ามแต่งชื่อเมนู + ขั้นตอนต้องครบตามคลัง) นับเฉพาะซีนที่ layout เป็น <code>uistep</code> ถ้าห้องควบคุมเปลี่ยนไปใช้ layout ใหม่ล้วน ตะแกรงจะเปิดค้าง แล้วคลิปที่แต่งชื่อเมนูเองจะขึ้น YouTube อัตโนมัติโดยไม่มีใครตรวจ · ทางแก้คือห่อ <code>uistep</code> ด้วยหน้าตาจอมอนิเตอร์ ไม่ใช่แทนที่มัน</p>
+</div>

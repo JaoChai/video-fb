@@ -50,7 +50,7 @@ func (h *OrchestratorHandler) TriggerWeekly(w http.ResponseWriter, r *http.Reque
 	go func() {
 		// ProduceWeekly owns the production gate AND its cancellation registration,
 		// so the handler just kicks it off with a base context.
-		if err := h.orch.ProduceWeekly(context.Background(), count); err != nil {
+		if err := h.orch.ProduceWeekly(context.Background(), count, nil); err != nil {
 			log.Printf("Weekly production failed: %v", err)
 			h.tracker.AddErrorLog(err.Error())
 		}
