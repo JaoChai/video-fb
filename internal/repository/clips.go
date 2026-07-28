@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 )
@@ -334,4 +336,25 @@ func (r *ClipsRepo) UpsertMetadata(ctx context.Context, m models.ClipMetadata) e
 		return fmt.Errorf("upsert metadata for clip %s: %w", m.ClipID, err)
 	}
 	return nil
+}
+
+// GetMetadata คืน metadata ของคลิป (ชื่อ/คำบรรยาย YouTube + post id ของแต่ละ
+// แพลตฟอร์ม) หรือ (nil, nil) เมื่อคลิปยังไม่ถูก publish จึงยังไม่มีแถว
+func (r *ClipsRepo) GetMetadata(ctx context.Context, clipID string) (*models.ClipMetadata, error) {
+	var m models.ClipMetadata
+	err := r.pool.QueryRow(ctx,
+		`SELECT clip_id, youtube_title, youtube_description, youtube_tags,
+		        zernio_post_id, youtube_video_id, tiktok_post_id, ig_post_id, fb_post_id,
+		        zernio_shorts_post_id, zernio_tiktok_post_id
+		 FROM clip_metadata WHERE clip_id = $1`, clipID).
+		Scan(&m.ClipID, &m.YoutubeTitle, &m.YoutubeDesc, &m.YoutubeTags,
+			&m.ZernioPostID, &m.YoutubeVideoID, &m.TiktokPostID, &m.IGPostID, &m.FBPostID,
+			&m.ZernioShortsPostID, &m.ZernioTiktokPostID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get metadata for clip %s: %w", clipID, err)
+	}
+	return &m, nil
 }
