@@ -2,6 +2,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getClipDetail } from '../api';
+import { OverviewTab } from '../components/clip-detail/OverviewTab';
+import { ScriptTab } from '../components/clip-detail/ScriptTab';
 import { StatusBadge } from '../components/status-badge';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -97,8 +99,8 @@ export default function ClipDetailPage() {
             <TabsTrigger value="publish">เผยแพร่</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" />
-          <TabsContent value="script" />
+          <TabsContent value="overview"><OverviewTab clip={clip} /></TabsContent>
+          <TabsContent value="script"><ScriptTab clip={clip} debate={data.script_debate} /></TabsContent>
           <TabsContent value="scenes" />
           <TabsContent value="qa" />
           <TabsContent value="stats" />
