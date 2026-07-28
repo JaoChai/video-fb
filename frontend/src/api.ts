@@ -45,16 +45,9 @@ export interface BrandTheme {
   active: boolean;
 }
 
-export interface PresetsResponse {
-  presets: { key: string; display_name: string; primary_color: string; accent_color: string }[];
-  style_presets_enabled: boolean;
-  performance_enabled: boolean;
-}
-
 export const getActiveTheme = () => apiFetch<BrandTheme>('/api/v1/themes/active');
 export const updateTheme = (id: string, body: Partial<BrandTheme>) =>
   apiFetch<void>(`/api/v1/themes/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
-export const getPresets = () => apiFetch<PresetsResponse>('/api/v1/presets');
 
 export interface PresetScore {
   preset: string;

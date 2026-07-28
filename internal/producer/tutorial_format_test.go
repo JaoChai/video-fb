@@ -7,12 +7,7 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 )
 
-func TestTutorialPresetNotInRandomPool(t *testing.T) {
-	for _, p := range Presets {
-		if p.Key == "tutorial" {
-			t.Fatal("tutorial must NOT be in Presets (random pool)")
-		}
-	}
+func TestTutorialPresetResolvesAndKeepsBrand(t *testing.T) {
 	if PresetByKey("tutorial").Key != "tutorial" {
 		t.Error("PresetByKey must resolve tutorial (resume path)")
 	}

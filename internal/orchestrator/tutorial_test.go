@@ -12,19 +12,15 @@ import (
 )
 
 func TestClipModeFromContentFormat(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
-	if got := clipMode("tutorial"); got != producer.ModeTutorial {
-		t.Errorf("tutorial format = %q, want tutorial mode even while the case flag is on", got)
+	for _, format := range []string{"tutorial", "basic"} {
+		if got := clipMode(format); got != producer.ModeTutorial {
+			t.Errorf("%s format = %q, want tutorial mode", format, got)
+		}
 	}
-	if got := clipMode("qa"); got != producer.ModeCase {
-		t.Errorf("qa with case flag on = %q, want case", got)
-	}
-	t.Setenv("CASE_FORMAT_ENABLED", "")
-	if got := clipMode("qa"); got != producer.ModeClassic {
-		t.Errorf("qa with case flag off = %q, want classic", got)
-	}
-	if got := clipMode("tutorial"); got != producer.ModeTutorial {
-		t.Errorf("tutorial must not depend on the case flag, got %q", got)
+	for _, format := range []string{"qa", "tips", "news", "case_story"} {
+		if got := clipMode(format); got != producer.ModeCase {
+			t.Errorf("%s format = %q, want case mode", format, got)
+		}
 	}
 }
 
@@ -103,64 +99,24 @@ func TestTutorialGateNilFeatureIsNoOp(t *testing.T) {
 	}
 }
 
-// retryPresetForCurrentMode ต้องเลือก preset ตาม content_format ของคลิป ไม่ใช่ตาม flag
-// อย่างเดียว ไม่งั้น retry ของคลิป tutorial จะได้ prompt คู่มือ + หน้าตาแฟ้มคดี
-func TestRetryPresetFollowsClipFormat(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
-	if got := retryPresetForCurrentMode("tutorial", "tutorial"); got.Key != producer.TutorialPreset.Key {
-		t.Errorf("tutorial clip retry preset = %q, want tutorial even with the case flag on", got.Key)
-	}
-	if got := retryPresetForCurrentMode("case-file", "qa"); got.Key != producer.CaseFilePreset.Key {
-		t.Errorf("case clip retry preset = %q, want case-file", got.Key)
-	}
-	t.Setenv("CASE_FORMAT_ENABLED", "")
-	// flag rolled back mid-life: a stored case/tutorial preset must not leak into a classic clip
-	if got := retryPresetForCurrentMode("case-file", "qa"); got.Key != producer.PresetByKey("").Key {
-		t.Errorf("stored case preset with flag off = %q, want the classic default", got.Key)
-	}
-	if got := retryPresetForCurrentMode("tutorial", "qa"); got.Key != producer.PresetByKey("").Key {
-		t.Errorf("stored tutorial preset on a non-tutorial clip = %q, want the classic default", got.Key)
-	}
-}
-
-// preset เป็นตัวตัดสินหน้าตาคลิปจริง คลิป basic ที่หลุดไปเข้าสาขา CaseFormatEnabled
-// จะ render เป็นแฟ้มคดี (data-format="case") กิน case number ของ 21:00 และไม่ได้ภาพ AI
-// เลย ทั้งที่ prompt เป็นคู่มือ — ต้องผูกกับ clipMode ที่เดียวเสมอ
-func TestFixedPresetCoversBasicAndTutorial(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
+// preset เป็นตัวตัดสินหน้าตาคลิปจริง คลิป basic ที่หลุดไปเข้าสาขาแฟ้มคดีจะ render
+// เป็น data-format="case" กิน case number ของ 21:00 และไม่ได้ภาพ AI เลย ทั้งที่
+// prompt เป็นคู่มือ — ต้องผูกกับ clipMode ที่เดียวเสมอ
+func TestPresetForCoversBasicAndTutorial(t *testing.T) {
 	for _, format := range []string{tutorialFormatName, basicFormatName} {
-		got, ok := fixedPreset(format)
-		if !ok || got.Key != producer.TutorialPreset.Key {
-			t.Errorf("fixedPreset(%q) = (%q, %v), want the tutorial preset even with the case flag on",
-				format, got.Key, ok)
+		if got := presetFor(format); got.Key != producer.TutorialPreset.Key {
+			t.Errorf("presetFor(%q) = %q, want the tutorial preset", format, got.Key)
 		}
 	}
-	// the 3 pre-existing slots must be byte-identical to before basic existed
 	for _, format := range []string{"qa", "tips", "news", "case_story"} {
-		got, ok := fixedPreset(format)
-		if !ok || got.Key != producer.CaseFilePreset.Key {
-			t.Errorf("fixedPreset(%q) = (%q, %v), want case-file while the case flag is on", format, got.Key, ok)
+		if got := presetFor(format); got.Key != producer.CaseFilePreset.Key {
+			t.Errorf("presetFor(%q) = %q, want case-file", format, got.Key)
 		}
 	}
-	t.Setenv("CASE_FORMAT_ENABLED", "")
-	if _, ok := fixedPreset("qa"); ok {
-		t.Error("with the case flag off a qa clip must fall through to the random/weighted pickers")
-	}
-	if got, ok := fixedPreset(basicFormatName); !ok || got.Key != producer.TutorialPreset.Key {
-		t.Errorf("basic with the case flag off = (%q, %v), want the tutorial preset", got.Key, ok)
-	}
-}
-
-// retry ของคลิป basic ต้องได้ preset เดียวกับรอบแรก ไม่งั้นคลิปเดิมจะเปลี่ยนหน้าตา
-// กลางคันตอน tick retry */15 หยิบไป rebuild
-func TestRetryPresetCoversBasic(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
-	if got := retryPresetForCurrentMode("case-file", basicFormatName); got.Key != producer.TutorialPreset.Key {
-		t.Errorf("basic clip retry preset = %q, want tutorial", got.Key)
-	}
-	t.Setenv("CASE_FORMAT_ENABLED", "")
-	if got := retryPresetForCurrentMode("", basicFormatName); got.Key != producer.TutorialPreset.Key {
-		t.Errorf("basic clip retry preset with the case flag off = %q, want tutorial", got.Key)
+	// retry แบบ rebuild เรียก presetFor ด้วย content_format ล้วน คีย์ธีมเก่าที่ยัง
+	// ค้างใน clips.style_preset จึงย้อนกลับมาไม่ได้ ต่อให้แถวนั้นเก่ากว่าสองฟอร์แมต
+	if got := producer.PresetByKey("neon-techno"); got.Key != producer.CaseFilePreset.Key {
+		t.Errorf("legacy stored theme resolves to %q, want case-file", got.Key)
 	}
 }
 
@@ -168,7 +124,6 @@ func TestRetryPresetCoversBasic(t *testing.T) {
 // tutorialGateFailure คืน "" (ประตูเปิดค้าง) และ TutorialBrief ก็คืน "" แปลว่า agent
 // เขียนขั้นตอนเมนูจากชื่อคลิปล้วนๆ แล้วคลิปนั้น auto-publish ขึ้น YouTube
 func TestNeedsCatalogFeatureCoversBasic(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
 	for _, format := range []string{tutorialFormatName, basicFormatName} {
 		if !needsCatalogFeature(format) {
 			t.Errorf("needsCatalogFeature(%q) = false, want true — the ui_vocab gate must never be skipped", format)

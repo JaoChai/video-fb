@@ -8,28 +8,9 @@ import (
 	"github.com/jaochai/video-fb/internal/agent"
 )
 
-func TestCaseFormatEnabled(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "")
-	if CaseFormatEnabled() {
-		t.Error("must be off by default")
-	}
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
-	if !CaseFormatEnabled() {
-		t.Error("must be on when env=true")
-	}
-}
-
-func TestCaseFilePresetNotInRandomPool(t *testing.T) {
-	for _, p := range Presets {
-		if p.Key == "case-file" {
-			t.Fatal("case-file must NOT be in Presets (random pool)")
-		}
-	}
+func TestCaseFilePresetResolves(t *testing.T) {
 	if PresetByKey("case-file").Key != "case-file" {
 		t.Error("PresetByKey must resolve case-file (resume path)")
-	}
-	if PresetByKey("unknown-key").Key != "editorial-bold" {
-		t.Error("unknown key must still fall back to editorial-bold")
 	}
 	if CaseFilePreset.BrandCSS() == "" {
 		t.Error("case-file BrandCSS must render")

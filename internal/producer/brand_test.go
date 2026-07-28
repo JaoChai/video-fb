@@ -7,7 +7,7 @@ import (
 
 // TestBuildScenePrompt covers the three-block contract for buildScenePrompt.
 func TestBuildScenePrompt(t *testing.T) {
-	preset := Presets[0] // signature preset — identical to the former hardcoded Brand look
+	preset := CaseFilePreset // the channel default identity
 	anchor := preset.ImageAnchor
 	sz916 := preset.Palette.SafeZone("9:16")
 	sz169 := preset.Palette.SafeZone("16:9")
@@ -21,8 +21,8 @@ func TestBuildScenePrompt(t *testing.T) {
 
 	t.Run("contains preset ImageAnchor", func(t *testing.T) {
 		out := buildScenePrompt("a rising conversion graph dashboard", "9:16", preset, "clip-test")
-		if !strings.Contains(out, Presets[0].ImageAnchor) {
-			t.Errorf("output missing Presets[0].ImageAnchor\ngot: %q", out)
+		if !strings.Contains(out, CaseFilePreset.ImageAnchor) {
+			t.Errorf("output missing CaseFilePreset.ImageAnchor\ngot: %q", out)
 		}
 	})
 
@@ -399,7 +399,7 @@ func TestMotionProfile_Default(t *testing.T) {
 }
 
 func TestBuildScenePrompt_HasNegativeExclusionsAndCohesion(t *testing.T) {
-	p := PresetByKey("cinematic-photo")
+	p := PresetByKey("tutorial")
 	got := buildScenePrompt("hands on a laptop", "9:16", p, "clip-abc123")
 	for _, want := range []string{
 		p.ImageAnchor,       // theme art anchor present
@@ -415,7 +415,7 @@ func TestBuildScenePrompt_HasNegativeExclusionsAndCohesion(t *testing.T) {
 }
 
 func TestBuildScenePrompt_EmptyConceptFallsBack(t *testing.T) {
-	got := buildScenePrompt("   ", "9:16", PresetByKey("editorial-bold"), "clip-x")
+	got := buildScenePrompt("   ", "9:16", PresetByKey("case-file"), "clip-x")
 	if !strings.Contains(got, genericSceneSubject) {
 		t.Errorf("empty concept must fall back to genericSceneSubject:\n%s", got)
 	}

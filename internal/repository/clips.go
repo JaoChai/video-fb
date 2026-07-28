@@ -2,10 +2,8 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/models"
 )
@@ -324,21 +322,6 @@ func (r *ClipsRepo) CountConsecutiveFailed(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("count consecutive failed: %w", err)
 	}
 	return count, nil
-}
-
-// LastStylePreset returns the style_preset of the most recently created clip,
-// or "" if there are none. Used to avoid repeating a look on the next clip.
-func (r *ClipsRepo) LastStylePreset(ctx context.Context) (string, error) {
-	var key string
-	err := r.pool.QueryRow(ctx,
-		`SELECT COALESCE(style_preset, '') FROM clips ORDER BY created_at DESC LIMIT 1`).Scan(&key)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("last style preset: %w", err)
-	}
-	return key, nil
 }
 
 func (r *ClipsRepo) UpsertMetadata(ctx context.Context, m models.ClipMetadata) error {

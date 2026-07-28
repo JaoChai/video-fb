@@ -290,11 +290,11 @@ func TestRenderCompositionScenes_CountUpSkipsSuffixedStat(t *testing.T) {
 	}
 }
 
-// All presets share Palette: Brand, so palette alone no longer varies by
-// theme (see presets.go). This asserts the property that DOES vary per theme
-// instead: the rendered --font-heading value tracks the preset's HeadingFont.
+// All presets share Palette: Brand, so palette alone never varies by format
+// (see presets.go). This asserts the wiring that must hold regardless: the
+// rendered --font-heading value comes from the preset, not a hardcoded default.
 func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
-	preset := PresetByKey("neon-techno")
+	preset := PresetByKey("case-file")
 	params := ScenesParams{
 		AspectRatio:     "9:16",
 		BrandName:       BrandName,
@@ -311,9 +311,6 @@ func TestRenderCompositionScenes_UsesPresetPalette(t *testing.T) {
 	want := fmt.Sprintf(`--font-heading: "%s"`, preset.HeadingFont.HeadingFamily)
 	if !strings.Contains(string(html), want) {
 		t.Errorf("rendered HTML missing preset heading font %q", want)
-	}
-	if strings.Contains(string(html), `--font-heading: "Kanit"`) {
-		t.Errorf("rendered HTML leaked hardcoded editorial-bold heading font")
 	}
 }
 
@@ -353,7 +350,7 @@ func TestRenderCompositionScenes_StyleB(t *testing.T) {
 // (drives per-theme texture CSS), the --font-heading var (drives display
 // font), and the motion consts derived from the preset's MotionProfile.
 func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
-	preset := PresetByKey("neon-techno")
+	preset := PresetByKey("case-file")
 	params := sampleScenesParams("9:16")
 	params.ThemeKey = preset.Key
 	params.Motion = preset.Motion
@@ -364,7 +361,7 @@ func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
 		t.Fatalf("render: %v", err)
 	}
 	html := string(out)
-	for _, want := range []string{`data-theme="neon-techno"`, "--font-heading", "ENTRANCE_EASE"} {
+	for _, want := range []string{fmt.Sprintf(`data-theme="%s"`, preset.Key), "--font-heading", "ENTRANCE_EASE"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered HTML missing %q", want)
 		}
@@ -375,14 +372,15 @@ func TestRenderScenes_InjectsThemeKeyAndHeadingFont(t *testing.T) {
 }
 
 // TestRenderScenes_ParenthesizedEaseSurvivesEscaping guards against html/template
-// mangling a GSAP ease string that itself contains parens — soft-3d-clay's
-// EntranceEase is "back.out(1.6)", the exact shape the review flagged as risky
-// for JS-string escaping inside a Go template.
+// mangling a GSAP ease string that itself contains parens — "back.out(1.6)" is
+// the exact shape the review flagged as risky for JS-string escaping inside a Go
+// template. No shipped preset uses it today, so the ease is fed in directly.
 func TestRenderScenes_ParenthesizedEaseSurvivesEscaping(t *testing.T) {
-	preset := PresetByKey("soft-3d-clay")
+	preset := PresetByKey("tutorial")
 	params := sampleScenesParams("9:16")
 	params.ThemeKey = preset.Key
 	params.Motion = preset.Motion
+	params.Motion.EntranceEase = "back.out(1.6)"
 	params.BrandCSS = preset.BrandCSS()
 
 	out, err := RenderCompositionScenes(params)
