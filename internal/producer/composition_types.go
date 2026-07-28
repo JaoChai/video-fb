@@ -87,10 +87,13 @@ type ContentRow struct {
 	Bad  bool   `json:"bad,omitempty"`
 }
 
-// ContentChip is one small stat chip beneath a stat card.
+// ContentChip is one small stat chip beneath a stat card, and one KPI tile in
+// the war-room dashboard. Bad=true renders the number in red (a metric moving
+// the wrong way).
 type ContentChip struct {
-	N string `json:"n"`
-	T string `json:"t"`
+	N   string `json:"n"`
+	T   string `json:"t"`
+	Bad bool   `json:"bad,omitempty"`
 }
 
 // ContentMessage is one bubble in a chat-format thread. From is "them" (the

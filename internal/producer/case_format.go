@@ -54,6 +54,8 @@ func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode 
 		return buildTutorialCoverPrompt(s.ImagePrompt, preset, clipToken)
 	case ModeChat:
 		return buildChatCoverPrompt(s.ImagePrompt, preset, clipToken)
+	case ModeWarRoom:
+		return buildWarRoomCoverPrompt(s.ImagePrompt, preset, clipToken)
 	default:
 		return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 	}

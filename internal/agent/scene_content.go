@@ -17,6 +17,8 @@ var sceneLayouts = map[string]bool{
 	"uistep": true,
 	// chat format (spec 2026-07-28): a customer's message thread
 	"chat_in": true, "chat_out": true, "recap": true,
+	// war-room format (spec 2026-07-28): live dashboard wrapping the uistep walkthrough
+	"dashboard": true, "alarm": true,
 }
 
 // ClampLayout maps an LLM layout value to a supported one; unknown -> "hero".
