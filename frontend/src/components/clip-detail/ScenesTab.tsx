@@ -5,7 +5,12 @@ import { ImageOff } from 'lucide-react';
 function SceneImage({ url }: { url: string | null }) {
   const [failed, setFailed] = useState(false);
 
-  if (!url || failed) {
+  // ฉากส่วนใหญ่ไม่มีภาพเก็บไว้เลย (พื้นหลังมาจาก template ตอน render) การจอง
+  // กล่อง 9:16 ว่างไว้ทุกใบทำให้แท็บนี้กลายเป็นแถวเทายาวเปล่าๆ
+  if (!url) return null;
+
+  // มี URL แต่โหลดไม่ขึ้น = ไฟล์ชั่วคราวหมดอายุ อันนี้ต้องบอกให้รู้
+  if (failed) {
     return (
       <div className="w-[104px] shrink-0 aspect-[9/16] rounded-md bg-muted flex items-center justify-center">
         <ImageOff className="size-4 text-muted-foreground opacity-50" />

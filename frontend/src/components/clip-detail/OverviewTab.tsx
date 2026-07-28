@@ -1,12 +1,6 @@
 import type { ClipFull } from '../../api';
 import { Row } from './Row';
-
-function thaiDateTime(s: string | null): string | null {
-  if (!s) return null;
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
-}
+import { thaiDate, thaiDateTime } from '../../lib/format';
 
 export function OverviewTab({ clip }: { clip: ClipFull }) {
   return (
@@ -24,7 +18,7 @@ export function OverviewTab({ clip }: { clip: ClipFull }) {
       <Row label="สาเหตุที่ล้มเหลว" value={clip.fail_reason} pre />
       <Row label="สร้างเมื่อ" value={thaiDateTime(clip.created_at)} />
       <Row label="แก้ไขล่าสุด" value={thaiDateTime(clip.updated_at)} />
-      <Row label="กำหนดเผยแพร่" value={clip.publish_date} />
+      <Row label="กำหนดเผยแพร่" value={thaiDate(clip.publish_date)} />
     </div>
   );
 }

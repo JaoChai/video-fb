@@ -1,5 +1,5 @@
 import type { ClipAnalyticsRow } from '../../api';
-import { formatNum, formatWatch } from '../../lib/format';
+import { formatNum, formatWatch, thaiDateTime } from '../../lib/format';
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
@@ -27,7 +27,7 @@ export function StatsTab({ rows }: { rows: ClipAnalyticsRow[] }) {
             <span className="font-medium">{r.platform}</span>
             {r.post_type && <span className="text-xs text-muted-foreground">{r.post_type}</span>}
             <span className="text-xs text-muted-foreground ml-auto">
-              ดึงเมื่อ {new Date(r.fetched_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+              ดึงเมื่อ {thaiDateTime(r.fetched_at)}
             </span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
