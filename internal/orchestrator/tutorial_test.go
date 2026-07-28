@@ -39,6 +39,20 @@ func TestTutorialSceneShape(t *testing.T) {
 	}
 }
 
+func TestTutorialArchetypeRejectsConsultQA(t *testing.T) {
+	consult := &models.TitleArchetype{ArchetypeName: "consult_qa", Instruction: "รบกวนปรึกษา..."}
+	if got := tutorialArchetype(consult); got != (models.TitleArchetype{}) {
+		t.Errorf("consult_qa archetype must fall back to empty, got %+v", got)
+	}
+	if got := tutorialArchetype(nil); got != (models.TitleArchetype{}) {
+		t.Errorf("nil archetype must fall back to empty, got %+v", got)
+	}
+	other := &models.TitleArchetype{ArchetypeName: "how_to", Instruction: "วิธีทำ..."}
+	if got := tutorialArchetype(other); got != *other {
+		t.Errorf("non-consult_qa archetype must pass through unchanged, got %+v want %+v", got, *other)
+	}
+}
+
 func gateFeature() *models.TutorialFeature {
 	return &models.TutorialFeature{
 		FeatureKey: "f",

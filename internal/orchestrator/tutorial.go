@@ -63,6 +63,23 @@ func tutorialGateFailure(scenes []agent.GeneratedScene, feat *models.TutorialFea
 	return ""
 }
 
+// consultQAArchetype is the one archetype name ProduceTutorial refuses to use.
+const consultQAArchetype = "consult_qa"
+
+// tutorialArchetype filters out consult_qa for tutorial clips: its instruction
+// frames the title as a fictitious person asking for advice ("คุณXครับ รบกวน
+// ปรึกษา..."), which contradicts tutorial mode's no-greeting/no-persona prompt
+// prefix (063_tutorial_agents.sql: "ห้ามขึ้นต้นด้วยชื่อฟีเจอร์ ห้ามทักทาย") and
+// has no asker to name — tutorial clips run with an empty questioner_name.
+// Tutorial auto-publishes with no human review, so a wrong pick would ship.
+// ProduceWeekly is untouched and keeps picking consult_qa normally.
+func tutorialArchetype(a *models.TitleArchetype) models.TitleArchetype {
+	if a == nil || a.ArchetypeName == consultQAArchetype {
+		return models.TitleArchetype{}
+	}
+	return *a
+}
+
 // freshnessDecision turns a verifier outcome into the (stale, reason) pair the
 // picker acts on. It is the single place the fail-open contract lives: ANY error
 // — LLM down, bad JSON, timeout — means "not stale", because parking a feature
@@ -137,7 +154,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
 		log.Printf("tutorial: archetype pick failed, using empty: %v", aerr)
 	} else {
-		archetype = *a
+		archetype = tutorialArchetype(a)
 	}
 
 	var persona string
