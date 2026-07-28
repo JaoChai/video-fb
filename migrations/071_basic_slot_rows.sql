@@ -17,8 +17,9 @@
 BEGIN;
 
 -- 1) content format (ปิดไว้ เพื่อไม่ให้ FormatsRepo.PickNext ของรอบปกติหยิบไปใช้)
-INSERT INTO content_formats (format_name, display_name, script_instruction, enabled, weight)
+INSERT INTO content_formats (format_name, display_name, question_instruction, script_instruction, enabled, weight)
 VALUES ('basic', 'สอนพื้นฐานจากหน้าจอ',
+        'หัวข้อมาจาก catalog tutorial_features (level = basic) เท่านั้น — agent ไม่ต้องคิดหัวข้อเอง',
         'เขียนสคริปต์แบบคู่มือสำหรับคนเพิ่งเริ่ม: เปิดด้วยความเสียหาย -> สัญญา+จำนวนขั้น -> เดินขั้นตอนตามข้อมูลฟีเจอร์ -> กับดัก -> สรุป โดยนิยามศัพท์อังกฤษทุกคำที่โผล่ครั้งแรก',
         FALSE, 1)
 ON CONFLICT (format_name) DO NOTHING;
