@@ -2,14 +2,17 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/jaochai/video-fb/internal/agent"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/producer"
+	"github.com/jaochai/video-fb/internal/repository"
 )
 
 // tutorialFormatName is the content_formats row (seeded disabled so the normal
@@ -58,6 +61,23 @@ func tutorialGateFailure(scenes []agent.GeneratedScene, feat *models.TutorialFea
 		return fmt.Sprintf("step count mismatch: %d uistep scenes, catalog has %d steps", got, want)
 	}
 	return ""
+}
+
+// consultQAArchetype is the one archetype name ProduceTutorial refuses to use.
+const consultQAArchetype = "consult_qa"
+
+// tutorialArchetype filters out consult_qa for tutorial clips: its instruction
+// frames the title as a fictitious person asking for advice ("คุณXครับ รบกวน
+// ปรึกษา..."), which contradicts tutorial mode's no-greeting/no-persona prompt
+// prefix (063_tutorial_agents.sql: "ห้ามขึ้นต้นด้วยชื่อฟีเจอร์ ห้ามทักทาย") and
+// has no asker to name — tutorial clips run with an empty questioner_name.
+// Tutorial auto-publishes with no human review, so a wrong pick would ship.
+// ProduceWeekly is untouched and keeps picking consult_qa normally.
+func tutorialArchetype(a *models.TitleArchetype) models.TitleArchetype {
+	if a == nil || a.ArchetypeName == consultQAArchetype {
+		return models.TitleArchetype{}
+	}
+	return *a
 }
 
 // freshnessDecision turns a verifier outcome into the (stale, reason) pair the
@@ -128,7 +148,23 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get tutorial content format: %w", err)
 	}
-	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	var archetype models.TitleArchetype
+	if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
+		log.Printf("tutorial: archetype pick failed, using empty: %v", aerr)
+	} else {
+		archetype = tutorialArchetype(a)
+	}
+
+	var persona string
+	personasJSON, _ := o.settingsRepo.Get(ctx, "audience_personas")
+	var personas []string
+	if json.Unmarshal([]byte(personasJSON), &personas) == nil && len(personas) > 0 {
+		persona = PickPersona(personas, rng)
+	} else {
+		persona, _ = o.settingsRepo.Get(ctx, "audience_persona")
+	}
 
 	q := agent.GeneratedQuestion{
 		Question:  feat.DisplayNameTH,
@@ -139,7 +175,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	o.tracker.SetTotalClips(1)
 	o.tracker.StartClip(1, feat.DisplayNameTH)
 	if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format,
-		persona, models.TitleArchetype{}, "reach", feat); err != nil {
+		persona, archetype, "reach", feat); err != nil {
 		o.tracker.AddErrorLog(fmt.Sprintf("tutorial clip failed: %v", err))
 		o.nudgeRetry()
 		return err
@@ -150,6 +186,22 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	o.tracker.CompleteStep("complete")
 	log.Println("Tutorial production complete")
 	return nil
+}
+
+// tutorialAvoidRepeat looks up prior angles used on this catalog feature and
+// renders the avoid-repeat prompt block for the script agent. Fails open on
+// any lookup error (non-fatal log + "") — a flaky DB read must never block a
+// clip, same contract as every other tutorial fallback in this file.
+func (o *Orchestrator) tutorialAvoidRepeat(ctx context.Context, feat *models.TutorialFeature) string {
+	if feat == nil {
+		return ""
+	}
+	angles, err := o.tutorialFeaturesRepo.RecentAngles(ctx, feat.FeatureKey, 5)
+	if err != nil {
+		log.Printf("tutorial: RecentAngles failed (non-fatal): %v", err)
+		return ""
+	}
+	return agent.TutorialAvoidRepeatBlock(angles)
 }
 
 // pickVerifiedFeature picks the least-used feature and asks research whether its
@@ -181,19 +233,27 @@ func (o *Orchestrator) pickVerifiedFeature(ctx context.Context) (*models.Tutoria
 		if !stale {
 			return feat, nil
 		}
-		parked, pErr := o.tutorialFeaturesRepo.Park(ctx, feat.ID, reason)
+		outcome, pErr := o.tutorialFeaturesRepo.Park(ctx, feat.ID, reason)
 		if pErr != nil {
-			log.Printf("tutorial: park failed (non-fatal): %v", pErr)
-		}
-		if !parked {
-			// คลังเหลือน้อยถึงพื้น หรือ park พลาด — ผลิตตัวนี้ต่อดีกว่าไม่มีคลิป
+			// error ระหว่าง park — ทำเหมือน ParkRefusedFloor (fail-open เดิม):
 			// ตะแกรง ui_vocab ยังกันชื่อเมนูที่โมเดลแต่งเองอยู่
-			log.Printf("tutorial: feature %s looks stale (%s) but was not parked — producing it anyway",
+			log.Printf("tutorial: park failed (non-fatal): %v", pErr)
+			return feat, nil
+		}
+		switch outcome {
+		case repository.ParkFirstStrike:
+			log.Printf("tutorial: feature %s got its first stale flag (not parked yet): %s",
+				feat.FeatureKey, reason)
+			skipped = append(skipped, feat.FeatureKey)
+		case repository.ParkedForVerify:
+			log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
+			skipped = append(skipped, feat.FeatureKey)
+		case repository.ParkRefusedFloor:
+			// คลังเหลือน้อยถึงพื้น — ผลิตตัวนี้ต่อดีกว่าไม่มีคลิป
+			log.Printf("tutorial: feature %s looks stale (%s) but catalog is at the floor — producing it anyway",
 				feat.FeatureKey, reason)
 			return feat, nil
 		}
-		log.Printf("tutorial: feature %s parked for re-verification: %s", feat.FeatureKey, reason)
-		skipped = append(skipped, feat.FeatureKey)
 	}
 	return last, nil
 }
