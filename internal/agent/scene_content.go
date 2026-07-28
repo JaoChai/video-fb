@@ -15,6 +15,8 @@ var sceneLayouts = map[string]bool{
 	"casefile": true, "comic": true, "evidence": true, "board": true, "verdict": true,
 	// tutorial format (spec 2026-07-25): simulated Ads Manager UI walkthrough
 	"uistep": true,
+	// chat format (spec 2026-07-28): a customer's message thread
+	"chat_in": true, "chat_out": true, "recap": true,
 }
 
 // ClampLayout maps an LLM layout value to a supported one; unknown -> "hero".

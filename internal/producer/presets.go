@@ -33,8 +33,11 @@ const DefaultWindowDays = 30
 // whose stored key predates the two-format world still renders a valid identity.
 // Never panics.
 func PresetByKey(key string) StylePreset {
-	if key == TutorialPreset.Key {
+	switch key {
+	case TutorialPreset.Key:
 		return TutorialPreset
+	case ChatPreset.Key:
+		return ChatPreset
 	}
 	return CaseFilePreset
 }

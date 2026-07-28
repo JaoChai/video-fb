@@ -52,18 +52,22 @@ func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode 
 		return buildEvidencePrompt(s.ImagePrompt, preset, clipToken)
 	case ModeTutorial:
 		return buildTutorialCoverPrompt(s.ImagePrompt, preset, clipToken)
+	case ModeChat:
+		return buildChatCoverPrompt(s.ImagePrompt, preset, clipToken)
 	default:
 		return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 	}
 }
 
 // Content mode of a clip. Derived per-clip (from clips.content_format), never
-// from a process-wide flag alone — so a tutorial clip and a case clip can be
-// produced by the same running server.
+// from a process-wide flag alone — so clips of different modes can be produced
+// by the same running server.
 const (
 	ModeClassic  = ""
 	ModeCase     = "case"
 	ModeTutorial = "tutorial"
+	ModeChat     = "chat"
+	ModeWarRoom  = "warroom"
 )
 
 // FormatInfo carries the per-clip content mode down the producer path.
@@ -94,7 +98,7 @@ func imageScenesForMode(scenes []agent.GeneratedScene, mode string) map[int]bool
 			}
 		}
 		return allowed
-	case ModeTutorial:
+	case ModeTutorial, ModeChat, ModeWarRoom:
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) != "" {
 				return map[int]bool{s.SceneNumber: true}
