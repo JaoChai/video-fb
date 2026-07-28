@@ -53,12 +53,18 @@ func TestRenderWarRoomFormat(t *testing.T) {
 		"const FORMAT_WARROOM = true",
 		`data-layout="dashboard"`,
 		`data-layout="alarm"`,
-		"CPM 7 วันล่าสุด",
-		"ค่าโฆษณาแพงขึ้น 38% ใน 3 วัน",
-		"wr-kpi",
+		// assert บน payload ของ SCENES ไม่ใช่ชื่อ class — CSS ถูกฝังในทุกคลิป
+		// ทุกโหมดอยู่แล้ว การหา "wr-kpi" จึงผ่านแม้ renderer จะถูกลบทิ้ง
+		`"statLabel":"CPM 7 วันล่าสุด"`,
+		`"callout":"ค่าโฆษณาแพงขึ้น 38% ใน 3 วัน"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered warroom HTML missing %q", want)
+		}
+	}
+	for _, branch := range []string{`sc.type==="dashboard"`, `sc.type==="alarm"`, `el("div","wr-kpi")`} {
+		if !strings.Contains(html, branch) {
+			t.Errorf("JS renderer branch missing: %s — war-room scenes would render empty", branch)
 		}
 	}
 }
@@ -68,9 +74,17 @@ func TestRenderWarRoomFormat(t *testing.T) {
 func TestWarRoomStillRendersUIStep(t *testing.T) {
 	out, _ := RenderCompositionScenes(warroomParams())
 	html := string(out)
-	for _, want := range []string{`data-layout="uistep"`, "ui-panel", "Automated Rules", "ui-rail"} {
+	for _, want := range []string{`data-layout="uistep"`, `"label":"Automated Rules"`,
+		`"state":"target"`, `"stepTotal":2`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("warroom must keep the uistep walkthrough intact — missing %q", want)
+		}
+	}
+	// โค้ดที่วาดแผงจำลองกับป้าย "กดตรงนี้" ต้องยังอยู่ — ถ้าใครลบ branch uistep ทิ้ง
+	// payload ข้างบนยังผ่านหมดเพราะมันมาจาก params ของเทสต์เอง
+	for _, branch := range []string{`sc.type==="uistep"`, `el("div","ui-point"`, `el("div","ui-tap")`} {
+		if !strings.Contains(html, branch) {
+			t.Errorf("uistep renderer gone: %s — teaching steps would render blank", branch)
 		}
 	}
 }
@@ -78,8 +92,10 @@ func TestWarRoomStillRendersUIStep(t *testing.T) {
 // KPI ที่แย่ต้องมีธง bad ติดไปถึง JSON ไม่งั้นเลขแดงหายทั้งโหมด
 func TestWarRoomKPICarriesBadFlag(t *testing.T) {
 	out, _ := RenderCompositionScenes(warroomParams())
-	if !strings.Contains(string(out), `"bad":true`) {
-		t.Error("SCENES JSON must carry the bad flag for a failing KPI")
+	// ต้องเจาะจงถึงชิป ไม่ใช่หา "bad":true ลอยๆ — ซีน alarm ก็มี row ที่ bad:true
+	// เหมือนกัน เทสต์แบบกว้างจึงผ่านแม้ ContentChip.Bad จะถูกลบทิ้งทั้งฟิลด์
+	if !strings.Contains(string(out), `"n":"+38%","t":"CPM","bad":true`) {
+		t.Error("SCENES JSON must carry the bad flag on the failing KPI chip itself")
 	}
 }
 

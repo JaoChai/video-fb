@@ -29,4 +29,12 @@ func TestSlotFormatsDoNotOverlap(t *testing.T) {
 	if len(noonFormats) == 0 || len(eveningFormats) == 0 {
 		t.Error("ทั้งสอง slot ต้องมีอย่างน้อย 1 format ไม่งั้น PickNextIn จะ error ทุกครั้ง")
 	}
+	// คลิปสอนต้องมาจากคลังหัวข้อผ่าน produce_tutorial/produce_basic เท่านั้น ถ้าชื่อ
+	// format ของมันหลุดมาอยู่ในชุดของ slot ปกติ คลิปนั้นจะถูกผลิตโดยไม่มีแถวคลัง
+	// แปลว่าตะแกรง ui_vocab ไม่มีคำอนุญาตให้เทียบเลยทั้งคลิป
+	for _, f := range append(append([]string{}, noonFormats...), eveningFormats...) {
+		if f == "tutorial" || f == "basic" {
+			t.Errorf("format %q เป็นคลิปสอน ห้ามอยู่ในชุดของ slot ปกติ", f)
+		}
+	}
 }

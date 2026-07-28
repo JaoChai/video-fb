@@ -65,12 +65,18 @@ func TestRenderChatFormat(t *testing.T) {
 func TestChatBubblesCarrySide(t *testing.T) {
 	out, _ := RenderCompositionScenes(chatParams())
 	html := string(out)
-	if !strings.Contains(html, "ch-bub") {
-		t.Fatal("chat bubbles must render with the ch-bub class")
-	}
-	for _, want := range []string{`"from":"them"`, `"from":"me"`} {
+	// อะไรจับได้จริงในระดับนี้: (1) payload ถึง template ครบ (2) โค้ด renderer
+	// ยังอยู่ในไฟล์ที่ส่งออก · ชื่อ class อย่าง "ch-bub" จับอะไรไม่ได้เลยเพราะ CSS
+	// ถูกฝังในทุกคลิปทุกโหมด ส่วน payload ก็มาจาก params ที่เทสต์ป้อนเอง จึงโผล่
+	// แม้เรนเดอร์เป็นโหมดอื่น — ตัวที่หายไปจริงถ้า branch ถูกลบคือโค้ด JS
+	for _, want := range []string{`"from":"them"`, `"from":"me"`, `"alert":true`} {
 		if !strings.Contains(html, want) {
-			t.Errorf("SCENES JSON missing %q — the renderer cannot tell the sides apart", want)
+			t.Errorf("SCENES JSON missing %q — payload never reached the template", want)
+		}
+	}
+	for _, branch := range []string{`sc.type==="chat_in"`, `sc.type==="recap"`, `"ch-bub "+side`} {
+		if !strings.Contains(html, branch) {
+			t.Errorf("JS renderer branch missing: %s — chat scenes would render empty", branch)
 		}
 	}
 }

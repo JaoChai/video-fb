@@ -139,13 +139,12 @@ func New(
 // point refuses to start a second concurrent run rather than oversubscribe it.
 var ErrProductionRunning = errors.New("production already in progress")
 
-// fallbackFormatWithoutNews picks the replacement format after the news agent
-// found nothing reliable. It never leaves the slot's set: allowed decides the
-// clip's visual mode, so a fallback outside it would render the clip in another
-// mode entirely. An empty allowed means the manual /produce path — no slot, no
-// restriction, but still never news (it just failed; its 7-day count has not
-// moved, so the picker would hand it back).
-func (o *Orchestrator) fallbackFormatWithoutNews(ctx context.Context, allowed []string) (*models.ContentFormat, error) {
+// remainingWithoutNews drops "news" from a slot's allowed set. Pure, so the rule
+// that matters most here is testable without a DB: a slot whose only format was
+// news must fail loudly instead of silently borrowing another slot's format —
+// borrowing would render the clip in a different visual mode entirely.
+// An empty allowed means the unrestricted manual path; it stays empty (= no limit).
+func remainingWithoutNews(allowed []string) ([]string, error) {
 	remaining := make([]string, 0, len(allowed))
 	for _, a := range allowed {
 		if a != "news" {
@@ -154,6 +153,20 @@ func (o *Orchestrator) fallbackFormatWithoutNews(ctx context.Context, allowed []
 	}
 	if len(allowed) > 0 && len(remaining) == 0 {
 		return nil, fmt.Errorf("no fresh news and no other format allowed for this slot (%v)", allowed)
+	}
+	return remaining, nil
+}
+
+// fallbackFormatWithoutNews picks the replacement format after the news agent
+// found nothing reliable. It never leaves the slot's set: allowed decides the
+// clip's visual mode, so a fallback outside it would render the clip in another
+// mode entirely. An empty allowed means the manual /produce path — no slot, no
+// restriction, but still never news (it just failed; its 7-day count has not
+// moved, so the picker would hand it back).
+func (o *Orchestrator) fallbackFormatWithoutNews(ctx context.Context, allowed []string) (*models.ContentFormat, error) {
+	remaining, err := remainingWithoutNews(allowed)
+	if err != nil {
+		return nil, err
 	}
 	f, err := o.formatsRepo.PickNextIn(ctx, remaining)
 	if err != nil {

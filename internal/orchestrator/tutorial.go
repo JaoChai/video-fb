@@ -142,9 +142,13 @@ func freshnessDecision(v agent.FreshnessVerdict, err error) (stale bool, reason 
 }
 
 // ProduceTutorial produces the daily advanced tutorial clip (21:00 slot).
+//
+// agentMode ต้องมาจาก agentModeFor เสมอ ห้ามใส่ค่าคงที่: 21:00 ย้ายไปโหมด
+// ห้องควบคุมแล้ว การฝัง ModeTutorial ไว้ตรงนี้ทำให้รอบผลิตใช้ script_tutorial
+// แต่รอบ retry ใช้ script_warroom — คลิปเดียวกันเปลี่ยนเสียงกลางคัน
 func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	return o.produceCatalogClip(ctx, repository.TutorialLevelAdvanced,
-		tutorialFormatName, producer.ModeTutorial, "tutorial")
+		tutorialFormatName, agentModeFor(tutorialFormatName), "tutorial")
 }
 
 // ProduceBasic produces the daily beginner clip (15:00 slot). Same machinery,
@@ -152,7 +156,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 // term instead of assuming the viewer already runs ads.
 func (o *Orchestrator) ProduceBasic(ctx context.Context) error {
 	return o.produceCatalogClip(ctx, repository.TutorialLevelBasic,
-		basicFormatName, basicAgentMode, "basic")
+		basicFormatName, agentModeFor(basicFormatName), "basic")
 }
 
 // produceCatalogClip produces exactly one clip whose topic comes from the
