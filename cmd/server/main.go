@@ -137,7 +137,7 @@ func main() {
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)
 
 	if *produceFlag > 0 {
-		if err := orch.ProduceWeekly(ctx, *produceFlag); err != nil {
+		if err := orch.ProduceWeekly(ctx, *produceFlag, nil); err != nil {
 			log.Fatalf("Production failed: %v", err)
 		}
 		return
