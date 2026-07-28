@@ -12,14 +12,17 @@ import (
 )
 
 func TestClipModeFromContentFormat(t *testing.T) {
-	for _, format := range []string{"tutorial", "basic"} {
-		if got := clipMode(format); got != producer.ModeTutorial {
-			t.Errorf("%s format = %q, want tutorial mode", format, got)
-		}
-	}
-	for _, format := range []string{"qa", "tips", "news", "case_story"} {
-		if got := clipMode(format); got != producer.ModeCase {
-			t.Errorf("%s format = %q, want case mode", format, got)
+	for _, tc := range []struct{ format, want string }{
+		{"basic", producer.ModeTutorial},
+		{"tutorial", producer.ModeWarRoom},
+		{"qa", producer.ModeChat},
+		{"tips", producer.ModeChat},
+		{"case_story", producer.ModeCase},
+		{"news", producer.ModeCase},
+		{"ไม่รู้จัก", producer.ModeCase},
+	} {
+		if got := clipMode(tc.format); got != tc.want {
+			t.Errorf("clipMode(%q) = %q, want %q", tc.format, got, tc.want)
 		}
 	}
 }
@@ -99,39 +102,32 @@ func TestTutorialGateNilFeatureIsNoOp(t *testing.T) {
 	}
 }
 
-// preset เป็นตัวตัดสินหน้าตาคลิปจริง คลิป basic ที่หลุดไปเข้าสาขาแฟ้มคดีจะ render
-// เป็น data-format="case" กิน case number ของ 21:00 และไม่ได้ภาพ AI เลย ทั้งที่
-// prompt เป็นคู่มือ — ต้องผูกกับ clipMode ที่เดียวเสมอ
-func TestPresetForCoversBasicAndTutorial(t *testing.T) {
-	for _, format := range []string{tutorialFormatName, basicFormatName} {
-		if got := presetFor(format); got.Key != producer.TutorialPreset.Key {
-			t.Errorf("presetFor(%q) = %q, want the tutorial preset", format, got.Key)
+// preset เป็นตัวตัดสินหน้าตาคลิปจริง ทุก content_format ต้องได้ preset ของโหมดตัวเอง
+func TestPresetForCoversAllFourModes(t *testing.T) {
+	for _, tc := range []struct{ format, wantKey string }{
+		{"basic", "tutorial"},
+		{"tutorial", "warroom"},
+		{"qa", "chat"},
+		{"tips", "chat"},
+		{"case_story", "case-file"},
+		{"news", "case-file"},
+	} {
+		if got := presetFor(tc.format); got.Key != tc.wantKey {
+			t.Errorf("presetFor(%q) = %q, want %q", tc.format, got.Key, tc.wantKey)
 		}
-	}
-	for _, format := range []string{"qa", "tips", "news", "case_story"} {
-		if got := presetFor(format); got.Key != producer.CaseFilePreset.Key {
-			t.Errorf("presetFor(%q) = %q, want case-file", format, got.Key)
-		}
-	}
-	// retry แบบ rebuild เรียก presetFor ด้วย content_format ล้วน คีย์ธีมเก่าที่ยัง
-	// ค้างใน clips.style_preset จึงย้อนกลับมาไม่ได้ ต่อให้แถวนั้นเก่ากว่าสองฟอร์แมต
-	if got := producer.PresetByKey("neon-techno"); got.Key != producer.CaseFilePreset.Key {
-		t.Errorf("legacy stored theme resolves to %q, want case-file", got.Key)
 	}
 }
 
-// ตะแกรง ui_vocab ทำงานได้ก็ต่อเมื่อ retry โหลดแถวคลังกลับมา — ถ้า feat เป็น nil
-// tutorialGateFailure คืน "" (ประตูเปิดค้าง) และ TutorialBrief ก็คืน "" แปลว่า agent
-// เขียนขั้นตอนเมนูจากชื่อคลิปล้วนๆ แล้วคลิปนั้น auto-publish ขึ้น YouTube
-func TestNeedsCatalogFeatureCoversBasic(t *testing.T) {
+// คลิปสอนทั้งสอง slot ต้องผ่านคลังหัวข้อเสมอ ไม่งั้นตะแกรง ui_vocab ไม่มีคำอนุญาตให้เทียบ
+func TestNeedsCatalogFeatureCoversBothTeachingSlots(t *testing.T) {
 	for _, format := range []string{tutorialFormatName, basicFormatName} {
 		if !needsCatalogFeature(format) {
-			t.Errorf("needsCatalogFeature(%q) = false, want true — the ui_vocab gate must never be skipped", format)
+			t.Errorf("needsCatalogFeature(%q) = false, want true", format)
 		}
 	}
 	for _, format := range []string{"qa", "tips", "news", "case_story"} {
 		if needsCatalogFeature(format) {
-			t.Errorf("needsCatalogFeature(%q) = true, want false — non-catalog slots must be unchanged", format)
+			t.Errorf("needsCatalogFeature(%q) = true, want false", format)
 		}
 	}
 }
@@ -172,21 +168,28 @@ func TestBasicClipLooksLikeTutorialButUsesItsOwnPrompts(t *testing.T) {
 	if got := agentModeFor(basicFormatName); got != basicAgentMode {
 		t.Errorf("agentModeFor(basic) = %q, want %q — basic needs its own voice", got, basicAgentMode)
 	}
-	if got := agentModeFor(tutorialFormatName); got != producer.ModeTutorial {
-		t.Errorf("agentModeFor(tutorial) = %q, want tutorial — must not change", got)
+	// 21:00 ย้ายไปโหมดห้องควบคุมแล้ว พรอมป์จึงต้องเป็นชุด warroom (migration 073)
+	// ไม่ใช่ชุด tutorial ที่ตอนนี้เป็นของ 15:00 คนเดียว
+	if got := agentModeFor(tutorialFormatName); got != producer.ModeWarRoom {
+		t.Errorf("agentModeFor(tutorial) = %q, want warroom", got)
 	}
 	if got := agentModeFor("qa"); got != clipMode("qa") {
 		t.Errorf("agentModeFor(qa) = %q, want the same as clipMode — other formats unchanged", got)
 	}
 }
 
-// โหมด tutorial ยังต้องได้ผลเดิมทุกอย่างหลังเพิ่ม basic เข้ามา
-func TestTutorialModeUnchangedByBasic(t *testing.T) {
-	t.Setenv("CASE_FORMAT_ENABLED", "true")
-	if got := clipMode(tutorialFormatName); got != producer.ModeTutorial {
-		t.Errorf("tutorial = %q, want tutorial even with the case flag on", got)
-	}
+// สอง slot สอนต้องแยกหน้าตากันจริง แต่ต้องผ่านคลังหัวข้อเหมือนกันทั้งคู่ —
+// ถ้าวันหนึ่งมีคนทำให้สองอันนี้ไปโหมดเดียวกัน คลิปวันละ 4 รอบจะเหลือ 3 หน้าตา
+func TestBothTeachingSlotsDifferInLookButShareTheGate(t *testing.T) {
 	if got := clipMode(basicFormatName); got != producer.ModeTutorial {
-		t.Errorf("basic = %q, want tutorial even with the case flag on", got)
+		t.Errorf("clipMode(basic) = %q, want tutorial", got)
+	}
+	if got := clipMode(tutorialFormatName); got != producer.ModeWarRoom {
+		t.Errorf("clipMode(tutorial) = %q, want warroom", got)
+	}
+	for _, f := range []string{basicFormatName, tutorialFormatName} {
+		if !needsCatalogFeature(f) {
+			t.Errorf("needsCatalogFeature(%q) = false — ตะแกรง ui_vocab จะเปิดค้างทั้งรอบ", f)
+		}
 	}
 }

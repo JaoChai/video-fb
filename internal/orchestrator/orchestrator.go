@@ -968,24 +968,35 @@ func (o *Orchestrator) modeAgentConfig(ctx context.Context, name, mode string) (
 }
 
 // presetFor returns the preset a clip is pinned to. Every clip is pinned: its
-// content_format decides which of the two formats it belongs to.
+// content_format decides which of the four formats it belongs to.
 //
 // preset เป็นตัวตัดสินหน้าตาคลิปจริง (resolveFormatInfo แปลง preset เป็น
 // FormatInfo.Mode ที่ไปเป็น data-format ของ template และนโยบายภาพ) การถามผ่าน
 // clipMode ที่เดียวจึงกัน tutorial กับ basic แยกหน้าตากันโดยไม่มีใครรู้ตัว
 func presetFor(contentFormat string) producer.StylePreset {
-	if clipMode(contentFormat) == producer.ModeTutorial {
+	switch clipMode(contentFormat) {
+	case producer.ModeTutorial:
 		return producer.TutorialPreset
+	case producer.ModeWarRoom:
+		return producer.WarRoomPreset
+	case producer.ModeChat:
+		return producer.ChatPreset
+	default:
+		return producer.CaseFilePreset
 	}
-	return producer.CaseFilePreset
 }
 
 // resolveFormatInfo builds the FormatInfo for a clip about to render. Case mode
 // resolves/persists the running case number; every error path fails open — the
 // clip renders without a number rather than block production.
 func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, preset producer.StylePreset) producer.FormatInfo {
-	if preset.Key == producer.TutorialPreset.Key {
+	switch preset.Key {
+	case producer.TutorialPreset.Key:
 		return producer.FormatInfo{Mode: producer.ModeTutorial}
+	case producer.ChatPreset.Key:
+		return producer.FormatInfo{Mode: producer.ModeChat}
+	case producer.WarRoomPreset.Key:
+		return producer.FormatInfo{Mode: producer.ModeWarRoom}
 	}
 	if preset.Key != producer.CaseFilePreset.Key {
 		return producer.FormatInfo{}
