@@ -1,5 +1,6 @@
 export const ROUTES = {
   CONTENT: '/',
+  CLIP_DETAIL: '/clips/:id',
   SCHEDULES: '/schedules',
   ANALYTICS: '/analytics',
   KNOWLEDGE: '/knowledge',

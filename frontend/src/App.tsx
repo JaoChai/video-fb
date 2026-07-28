@@ -13,6 +13,7 @@ import AnalyticsPage from "./pages/Analytics"
 import SettingsPage from "./pages/Settings"
 import PromptHistoryPage from "./pages/PromptHistory"
 import ThemePage from "./pages/Theme"
+import ClipDetailPage from "./pages/ClipDetail"
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +37,7 @@ export default function App() {
                 <ErrorBoundary>
                   <Routes>
                     <Route path={ROUTES.CONTENT} element={<ContentPage />} />
+                    <Route path={ROUTES.CLIP_DETAIL} element={<ClipDetailPage />} />
                     <Route path={ROUTES.SCHEDULES} element={<SchedulesPage />} />
                     <Route path={ROUTES.ANALYTICS} element={<AnalyticsPage />} />
                     <Route path={ROUTES.KNOWLEDGE} element={<KnowledgePage />} />

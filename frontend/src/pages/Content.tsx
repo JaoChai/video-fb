@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, stopProduction, publishTikTok } from '../api';
 import { Badge } from '../components/ui/badge';
@@ -69,6 +70,7 @@ function relativeTime(dateStr: string): string {
 
 export default function ContentPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { success, error: showError } = useToast();
   const [retrying, setRetrying] = useState(false);
   const [producing, setProducing] = useState(false);
@@ -406,14 +408,12 @@ export default function ContentPage() {
               {paged.map(clip => {
                 const reviewable = clip.status === 'needs_review';
                 // A held clip is 'ready' but the publisher skips it (Visual QA gate).
-                // Make it clickable too so the reasons dialog explains why it won't publish.
                 const held = clip.status === 'ready' && !!clip.auto_review_held;
-                const clickable = reviewable || held;
                 return (
                 <TableRow
                   key={clip.id}
-                  onClick={clickable ? () => setReviewClip(clip) : undefined}
-                  className={cn(clickable && 'cursor-pointer hover:bg-muted/50')}
+                  onClick={() => navigate(`/clips/${clip.id}`)}
+                  className="cursor-pointer hover:bg-muted/50"
                 >
                   <TableCell className="pl-4 py-3">
                     <div className="text-sm font-medium leading-snug line-clamp-1">{clip.title}</div>
