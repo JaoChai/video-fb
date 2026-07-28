@@ -315,7 +315,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int) error {
 		return fmt.Errorf("get active theme: %w", err)
 	}
 
-	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(format.FormatName))
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", agentModeFor(format.FormatName))
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -491,7 +491,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Break the narration into 6-10 animated scenes (SceneAgent, Claude) ──
 	o.tracker.StartStep("scene")
-	sceneCfg, err := o.modeAgentConfig(ctx, "scene", clipMode(format.FormatName))
+	sceneCfg, err := o.modeAgentConfig(ctx, "scene", agentModeFor(format.FormatName))
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("get scene config: %w", err))
@@ -510,7 +510,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 
 	// ── Content Critic: review + revise content before render. Optional gate;
 	//    on disable/error/anomaly it returns the original content unchanged. ──
-	if criticCfg, cErr := o.modeAgentConfig(ctx, "critic", clipMode(format.FormatName)); cErr == nil && criticCfg.Enabled {
+	if criticCfg, cErr := o.modeAgentConfig(ctx, "critic", agentModeFor(format.FormatName)); cErr == nil && criticCfg.Enabled {
 		o.tracker.StartStep("critic")
 		res := o.criticAgent.Review(ctx, agent.CriticInput{
 			Question:  q.Question,
@@ -872,7 +872,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get theme: %w", err))
 	}
-	scriptCfg, err := o.modeAgentConfig(ctx, "script", clipMode(clip.ContentFormat))
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", agentModeFor(clip.ContentFormat))
 	if err != nil {
 		return o.failClip(ctx, clip.ID, fmt.Errorf("get script config: %w", err))
 	}

@@ -19,18 +19,38 @@ import (
 // weighted picker can never select it) that marks a clip as tutorial mode.
 const tutorialFormatName = "tutorial"
 
-// clipMode derives the render mode from the clip's persisted content_format.
+// basicFormatName คือ content_formats row ของคลิปสอนพื้นฐาน (seed ไว้แบบ disabled
+// เพื่อไม่ให้ตัวสุ่ม format ของรอบปกติหยิบไปใช้) — คู่กับ tutorialFormatName
+const basicFormatName = "basic"
+
+// basicAgentMode คือ suffix ของ agent row ที่เขียนบทคลิปพื้นฐาน (script_basic ฯลฯ)
+// จงใจไม่เพิ่มค่านี้เป็นโหมดใน internal/producer เพราะ "ใครเขียนบท" กับ
+// "หน้าตาเป็นแบบไหน" เป็นคนละคำถาม และคลิป basic ต้องหน้าตาเหมือน tutorial เป๊ะ
+const basicAgentMode = "basic"
+
+// clipMode derives the RENDER mode from the clip's persisted content_format.
 // Tutorial wins over the process-wide case flag so a tutorial clip renders as a
-// manual even on a server where CASE_FORMAT_ENABLED is on. Deriving from the
-// stored column (not a flag) is what makes resume and retry pick the right mode.
+// manual even on a server where CASE_FORMAT_ENABLED is on. Basic clips render
+// identically to tutorial clips — same preset, same image policy, same gate.
 func clipMode(contentFormat string) string {
-	if contentFormat == tutorialFormatName {
+	if contentFormat == tutorialFormatName || contentFormat == basicFormatName {
 		return producer.ModeTutorial
 	}
 	if producer.CaseFormatEnabled() {
 		return producer.ModeCase
 	}
 	return producer.ModeClassic
+}
+
+// agentModeFor answers a different question from clipMode: which prompt rows
+// write this clip. A basic clip looks exactly like a tutorial clip but is
+// written for someone who has never run an ad, so it needs its own
+// script/scene/critic rows while sharing every pixel of the tutorial's visuals.
+func agentModeFor(contentFormat string) string {
+	if contentFormat == basicFormatName {
+		return basicAgentMode
+	}
+	return clipMode(contentFormat)
 }
 
 // tutorialSceneShape maps a catalog step count onto the clip's scene budget:
@@ -97,27 +117,42 @@ func freshnessDecision(v agent.FreshnessVerdict, err error) (stale bool, reason 
 	return true, r
 }
 
-// ProduceTutorial produces exactly one tutorial clip from the catalog. It mirrors
-// ProduceWeekly's gate/tracker discipline but skips the question agent entirely —
-// the topic IS the catalog row, so there is nothing to invent.
+// ProduceTutorial produces the daily advanced tutorial clip (21:00 slot).
 func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
+	return o.produceCatalogClip(ctx, repository.TutorialLevelAdvanced,
+		tutorialFormatName, producer.ModeTutorial, "tutorial")
+}
+
+// ProduceBasic produces the daily beginner clip (15:00 slot). Same machinery,
+// same visuals, different catalog level and a script agent that explains every
+// term instead of assuming the viewer already runs ads.
+func (o *Orchestrator) ProduceBasic(ctx context.Context) error {
+	return o.produceCatalogClip(ctx, repository.TutorialLevelBasic,
+		basicFormatName, basicAgentMode, "basic")
+}
+
+// produceCatalogClip produces exactly one clip whose topic comes from the
+// tutorial catalog. It mirrors ProduceWeekly's gate/tracker discipline but skips
+// the question agent entirely — the topic IS the catalog row, so there is
+// nothing to invent. label appears in logs and error messages only.
+func (o *Orchestrator) produceCatalogClip(ctx context.Context, level, formatName, agentMode, label string) error {
 	if credits, err := o.producer.KieCredits(ctx); err != nil {
 		log.Printf("kie credit pre-check skipped (non-fatal): %v", err)
 	} else if credits <= 0 {
 		return fmt.Errorf("kie เครดิตหมด (เหลือ %d) — เติมเครดิตที่ kie.ai ก่อนผลิต", credits)
 	}
 
-	feat, err := o.pickVerifiedFeature(ctx, repository.TutorialLevelAdvanced)
+	feat, err := o.pickVerifiedFeature(ctx, level)
 	if err != nil {
 		return err
 	}
 	if feat == nil {
-		return fmt.Errorf("tutorial catalog is empty or every feature is parked for re-verification")
+		return fmt.Errorf("%s catalog is empty or every feature is parked for re-verification", label)
 	}
 	if len(feat.Steps) == 0 {
-		return fmt.Errorf("tutorial feature %s has no steps — fix the catalog row", feat.FeatureKey)
+		return fmt.Errorf("%s feature %s has no steps — fix the catalog row", label, feat.FeatureKey)
 	}
-	log.Printf("Producing tutorial clip — feature: %s (%d steps)", feat.FeatureKey, len(feat.Steps))
+	log.Printf("Producing %s clip — feature: %s (%d steps)", label, feat.FeatureKey, len(feat.Steps))
 
 	if !o.tracker.StartProduction(1) {
 		return ErrProductionRunning
@@ -132,7 +167,7 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get active theme: %w", err)
 	}
-	scriptCfg, err := o.modeAgentConfig(ctx, "script", producer.ModeTutorial)
+	scriptCfg, err := o.modeAgentConfig(ctx, "script", agentMode)
 	if err != nil {
 		return fmt.Errorf("get script agent config: %w", err)
 	}
@@ -144,15 +179,15 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read brand aliases: %w", err)
 	}
-	format, err := o.formatsRepo.GetByName(ctx, tutorialFormatName)
+	format, err := o.formatsRepo.GetByName(ctx, formatName)
 	if err != nil {
-		return fmt.Errorf("get tutorial content format: %w", err)
+		return fmt.Errorf("get %s content format: %w", label, err)
 	}
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var archetype models.TitleArchetype
 	if a, aerr := o.titleArchetypesRepo.PickNext(ctx); aerr != nil || a == nil {
-		log.Printf("tutorial: archetype pick failed, using empty: %v", aerr)
+		log.Printf("%s: archetype pick failed, using empty: %v", label, aerr)
 	} else {
 		archetype = tutorialArchetype(a)
 	}
@@ -176,15 +211,15 @@ func (o *Orchestrator) ProduceTutorial(ctx context.Context) error {
 	o.tracker.StartClip(1, feat.DisplayNameTH)
 	if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format,
 		persona, archetype, "reach", feat); err != nil {
-		o.tracker.AddErrorLog(fmt.Sprintf("tutorial clip failed: %v", err))
+		o.tracker.AddErrorLog(fmt.Sprintf("%s clip failed: %v", label, err))
 		o.nudgeRetry()
 		return err
 	}
 	if mErr := o.tutorialFeaturesRepo.MarkUsed(ctx, feat.ID); mErr != nil {
-		log.Printf("tutorial: MarkUsed failed (non-fatal): %v", mErr)
+		log.Printf("%s: MarkUsed failed (non-fatal): %v", label, mErr)
 	}
 	o.tracker.CompleteStep("complete")
-	log.Println("Tutorial production complete")
+	log.Printf("%s production complete", label)
 	return nil
 }
 

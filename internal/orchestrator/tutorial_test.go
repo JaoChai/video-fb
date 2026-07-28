@@ -149,3 +149,31 @@ func TestFreshnessDecisionAlwaysHasAReason(t *testing.T) {
 		t.Errorf("a parked feature must carry a reason for the human who fixes it, got %q", reason)
 	}
 }
+
+// คลิป basic ต้องหน้าตาเหมือนคลิป tutorial เป๊ะ (โหมดภาพเดียวกัน) แต่ใช้พรอมป์
+// คนละชุด ถ้าสองอย่างนี้ผูกติดกันเมื่อไหร่ ต้องเลือกอย่างใดอย่างหนึ่งเสียเสมอ
+func TestBasicClipLooksLikeTutorialButUsesItsOwnPrompts(t *testing.T) {
+	if got := clipMode(basicFormatName); got != producer.ModeTutorial {
+		t.Errorf("clipMode(basic) = %q, want tutorial — visuals must be identical", got)
+	}
+	if got := agentModeFor(basicFormatName); got != basicAgentMode {
+		t.Errorf("agentModeFor(basic) = %q, want %q — basic needs its own voice", got, basicAgentMode)
+	}
+	if got := agentModeFor(tutorialFormatName); got != producer.ModeTutorial {
+		t.Errorf("agentModeFor(tutorial) = %q, want tutorial — must not change", got)
+	}
+	if got := agentModeFor("qa"); got != clipMode("qa") {
+		t.Errorf("agentModeFor(qa) = %q, want the same as clipMode — other formats unchanged", got)
+	}
+}
+
+// โหมด tutorial ยังต้องได้ผลเดิมทุกอย่างหลังเพิ่ม basic เข้ามา
+func TestTutorialModeUnchangedByBasic(t *testing.T) {
+	t.Setenv("CASE_FORMAT_ENABLED", "true")
+	if got := clipMode(tutorialFormatName); got != producer.ModeTutorial {
+		t.Errorf("tutorial = %q, want tutorial even with the case flag on", got)
+	}
+	if got := clipMode(basicFormatName); got != producer.ModeTutorial {
+		t.Errorf("basic = %q, want tutorial even with the case flag on", got)
+	}
+}

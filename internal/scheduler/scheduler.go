@@ -142,6 +142,11 @@ func (s *Scheduler) produceTutorial(ctx context.Context) error {
 	return s.produceTick(ctx, "the daily tutorial clip", s.orchestrator.ProduceTutorial)
 }
 
+// produceBasic produces the daily beginner clip from the catalog.
+func (s *Scheduler) produceBasic(ctx context.Context) error {
+	return s.produceTick(ctx, "the daily basic clip", s.orchestrator.ProduceBasic)
+}
+
 func (s *Scheduler) produceTick(ctx context.Context, what string, produce func(context.Context) error) error {
 	check := preflight.Run(ctx, s.pool)
 	if !check.OK {
@@ -224,6 +229,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.produceAndPublish
 	case "produce_tutorial":
 		return s.produceTutorial
+	case "produce_basic":
+		return s.produceBasic
 	case "analyze_and_improve":
 		return s.analyzer.AnalyzeAndImprove
 	case "fetch_analytics":
