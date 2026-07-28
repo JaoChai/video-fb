@@ -148,13 +148,15 @@ const tutorialFirstStrikeSQL = `
 // พื้นนับเฉพาะหัวข้อระดับเดียวกับแถวที่กำลังพัก (correlated subquery) — คลัง basic
 // กับ advanced เป็นคนละคิว ถ้านับรวมกัน การพักแถว basic จะผ่านตลอดเพราะไปนับ
 // แถว advanced ที่ยังว่างอยู่ แล้วคลัง basic ก็ยุบจนวนซ้ำทุกไม่กี่วัน
+//
+// ใช้ tutorialAvailableWhere ตัวเดียวกับ PickNext (ชื่อคอลัมน์ที่ไม่ระบุตารางใน
+// subquery ผูกกับ t2) เพื่อไม่ให้พื้นนับคนละพูลกับตัวเลือกเมื่อมีใครแก้เงื่อนไข
 const tutorialSecondStrikeSQL = `
 	UPDATE tutorial_features
 	SET verify_reason = $2, parked_until = NOW() + make_interval(days => $3), flagged_at = NULL
 	WHERE id = $1
 	  AND (SELECT COUNT(*) FROM tutorial_features t2
-	       WHERE t2.enabled = TRUE
-	         AND (t2.parked_until IS NULL OR t2.parked_until <= NOW())
+	       WHERE ` + tutorialAvailableWhere + `
 	         AND t2.level = tutorial_features.level) > $4`
 
 // Park benches a feature whose menu path research says has changed, so no clip

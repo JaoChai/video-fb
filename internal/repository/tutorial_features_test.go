@@ -129,6 +129,11 @@ func TestParkFloorCountsOnlyTheSameLevel(t *testing.T) {
 	if !strings.Contains(tutorialPickSQL, "level = $1") {
 		t.Error("PickNext must filter by level — one table, two independent queues")
 	}
+	// พื้นต้องนับพูลเดียวกับที่ PickNext หยิบ ถ้ามีคนพิมพ์เงื่อนไขซ้ำเองแล้วแก้ไม่ครบ
+	// ที่ พื้นจะกันคนละคลังกับที่ผลิตจริง
+	if !strings.Contains(tutorialSecondStrikeSQL, tutorialAvailableWhere) {
+		t.Error("park floor must reuse tutorialAvailableWhere, not re-type the predicate")
+	}
 }
 
 func TestTutorialLevelsAreDistinct(t *testing.T) {

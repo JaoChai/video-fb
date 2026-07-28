@@ -53,6 +53,17 @@ func agentModeFor(contentFormat string) string {
 	return clipMode(contentFormat)
 }
 
+// needsCatalogFeature reports whether rebuilding this clip from scratch must
+// reload its tutorial_features row first.
+//
+// คลิปที่หน้าตาเป็นคู่มือทุกตัวสอน UI จริงของ Facebook และ auto-publish โดยไม่มี
+// คนตรวจ ถ้า retry รอบใหม่ไม่โหลดแถวคลังมาด้วย feat จะเป็น nil แปลว่า
+// ตะแกรง ui_vocab ปิดเงียบ + agent ไม่ได้ menu path/steps → คลิปสอนเมนูที่โมเดล
+// แต่งเองแล้วขึ้น YouTube เลย จึงต้องถามผ่าน clipMode ชุดเดียวกับที่เลือก preset
+func needsCatalogFeature(contentFormat string) bool {
+	return clipMode(contentFormat) == producer.ModeTutorial
+}
+
 // tutorialSceneShape maps a catalog step count onto the clip's scene budget:
 // hook + promise + N uisteps + trap + recap + cta. Duration grows ~9s per step.
 func tutorialSceneShape(steps int) (sceneCount, durationSec int) {

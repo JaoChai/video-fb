@@ -13,4 +13,16 @@ BEGIN;
 ALTER TABLE tutorial_features
   ADD COLUMN IF NOT EXISTS level TEXT NOT NULL DEFAULT 'advanced';
 
+-- level ที่สะกดผิด ('Basic'/'beginner') ไม่ทำให้อะไรพัง แต่แถวนั้นจะหายไปจากทั้ง
+-- สองคิว (PickNext กรองด้วย level = $1 เป๊ะๆ) แบบเงียบสนิท — CHECK ทำให้คนที่
+-- แก้แถวด้วยมือเจอ error ทันทีแทนที่จะมารู้ตอนคลังยุบ
+-- drop-then-add เพราะ Postgres ไม่มี ADD CONSTRAINT IF NOT EXISTS และทั้งคู่อยู่ใน
+-- transaction เดียวกัน จึงรันซ้ำได้โดยไม่มีจังหวะที่ตารางไม่มี constraint
+ALTER TABLE tutorial_features
+  DROP CONSTRAINT IF EXISTS tutorial_features_level_check;
+
+ALTER TABLE tutorial_features
+  ADD CONSTRAINT tutorial_features_level_check
+  CHECK (level IN ('advanced', 'basic'));
+
 COMMIT;
