@@ -63,7 +63,37 @@ func NewPublisher(zernio *ZernioClient, pool *pgxpool.Pool, clips *repository.Cl
 	return &Publisher{zernio: zernio, pool: pool, clipsRepo: clips, analytics: analytics}
 }
 
+// publishLockKey กันสองรอบส่งทำงานทับกัน · ตั้งแต่รอบส่งมี schedule ของตัวเองทุก 15
+// นาที มันจึงชนกับขั้น publish ที่แปะท้ายรอบผลิตได้ (ผลิตเสร็จคาบเกี่ยวนาที :15 พอดี)
+// สองรอบจะ SELECT คลิป ready ตัวเดียวกันแล้วอัปขึ้น YouTube ซ้ำ เพราะการโพสต์เกิดก่อน
+// UPDATE status เสมอ — ล็อกนี้คือสิ่งที่ทำให้เพิ่มความถี่รอบส่งได้อย่างปลอดภัย
+const publishLockKey int64 = 8213401
+
 func (p *Publisher) PublishReady(ctx context.Context) error {
+	conn, err := p.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire publish lock conn: %w", err)
+	}
+	defer conn.Release()
+	var locked bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, publishLockKey).Scan(&locked); err != nil {
+		return fmt.Errorf("publish lock: %w", err)
+	}
+	if !locked {
+		log.Println("PublishReady: another publish run is in flight, skipping this tick")
+		return nil
+	}
+	// ปลดล็อกด้วย connection เดิมเสมอ และใช้ context.Background() เพราะถ้า ctx ถูก
+	// cancel กลางทาง (deploy/stop) การปลดล็อกด้วย ctx เดิมจะไม่ทำงาน แล้วล็อกจะค้าง
+	// จนกว่า connection จะตาย = รอบส่งหยุดทั้งระบบเงียบๆ · ต้อง log ถ้าปลดไม่สำเร็จ
+	// เพราะอาการของมันคือ "ไม่มีอะไรเกิดขึ้น" ซึ่งหน้าตาเหมือนตอนไม่มีคลิปให้ส่งเป๊ะ
+	defer func() {
+		if _, err := conn.Exec(context.Background(),
+			`SELECT pg_advisory_unlock($1)`, publishLockKey); err != nil {
+			log.Printf("CRITICAL PublishReady: ปลด advisory lock ไม่สำเร็จ: %v — รอบส่งจะข้ามไปเรื่อยๆ จนกว่า connection นี้จะถูกรีไซเคิล", err)
+		}
+	}()
+
 	rows, err := p.pool.Query(ctx,
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
