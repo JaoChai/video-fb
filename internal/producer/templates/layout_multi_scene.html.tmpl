@@ -250,8 +250,9 @@
       [data-format='warroom'] .scene-bg::after{content:"";position:absolute;inset:0;
         background-image:linear-gradient(rgba(46,139,255,.09) 1px,transparent 1px),
           linear-gradient(90deg,rgba(46,139,255,.09) 1px,transparent 1px);background-size:96px 96px}
-      [data-format='warroom'] .scene[data-layout="dashboard"] .scene-content{
-        top:170px;bottom:420px;justify-content:center}
+      /* dashboard ไม่มี override โดยตั้งใจ — ใช้ .scene-content ฐานที่เกาะแถบคำบรรยาย
+         ของเดิมใส่ top:170px+justify-content:center ไว้ ซึ่งดันการ์ดขึ้นไปนั่งทับโซนรูป
+         (ตรงนั้น scrim ยังใส) แล้วทิ้งพื้นน้ำเงินสะอาดครึ่งล่างว่างเปล่า ~400px */
       [data-format='warroom'] .scene[data-layout="alarm"] .scene-content,
       [data-format='warroom'] .scene[data-layout="uistep"] .scene-content{
         top:160px;bottom:410px;justify-content:center}
@@ -269,15 +270,22 @@
       .wr-gauge{background:rgba(9,22,52,.88);border:2px solid rgba(88,146,255,.34);
         border-radius:26px;padding:28px 30px}
       .wr-gauge-l{font-weight:700;font-size:30px;line-height:1.34;color:var(--muted)}
-      .wr-spark{height:150px;margin-top:18px;
-        background:linear-gradient(180deg,rgba(255,180,84,.34),transparent);
-        clip-path:polygon(0 76%,13% 60%,26% 68%,39% 40%,52% 52%,65% 22%,78% 34%,91% 10%,100% 16%,100% 100%,0 100%)}
+      .wr-spark{height:210px;margin-top:18px;display:block;width:100%}
+      .wr-spark .grid{stroke:rgba(88,146,255,.20);stroke-width:2;stroke-dasharray:10 14}
+      .wr-spark .line{fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+      .wr-spark .head{stroke:rgba(9,22,52,.9);stroke-width:4}
       .wr-kpis{display:flex;gap:18px;margin-top:22px}
-      .wr-kpi{flex:1;background:rgba(9,22,52,.88);border:2px solid rgba(88,146,255,.28);
-        border-radius:22px;padding:24px 20px}
+      /* แถบสีหัวการ์ด: การ์ดที่มีเลขสั้น ("0") เคยเหลือที่ว่างจนดูเหมือนช่องเปล่า
+         แถบนี้ทำให้ทั้งสองใบอ่านเป็นชุดเดียวกันไม่ว่าเลขจะยาวสั้นแค่ไหน */
+      .wr-kpi{position:relative;overflow:hidden;flex:1;background:rgba(9,22,52,.88);
+        border:2px solid rgba(88,146,255,.28);border-radius:22px;padding:30px 20px 24px}
+      .wr-kpi::before{content:"";position:absolute;top:0;left:0;right:0;height:7px;
+        background:var(--amber-bright);opacity:.85}
+      .wr-kpi.bad::before{background:var(--red)}
       .wr-kpi .n{font-weight:800;font-size:64px;line-height:1.3;color:var(--amber-bright)}
-      .wr-kpi .n.bad{color:var(--red)}
-      .wr-kpi .t{font-weight:700;font-size:26px;line-height:1.34;color:var(--muted);margin-top:6px}
+      .wr-kpi.bad .n{font-size:76px;color:var(--red)}
+      .wr-kpi .t{font-weight:700;font-size:26px;line-height:1.34;color:var(--muted);
+        margin-top:6px;letter-spacing:.05em}
       .wr-alarm{margin-top:24px;background:rgba(255,107,98,.16);border-left:10px solid var(--red);
         border-radius:0 22px 22px 0;padding:26px 30px;font-weight:800;font-size:38px;
         line-height:1.38;color:#ffd9d6;overflow-wrap:break-word}
@@ -437,6 +445,56 @@
       function rowsBlock(rows){const w=el("div","rows");(rows||[]).forEach(r=>{const row=el("div","row"+(r.bad?" bad":""));row.appendChild(el("div","dot"));row.appendChild(el("div","rt",r.t));w.appendChild(row);});return w;}
       function chipsBlock(chips){const w=el("div","chips");chips.forEach(c=>{const ch=el("div","chip");ch.appendChild(el("div","n",c.n));ch.appendChild(el("div","t",(c.t||"").replace(/\n/g,"<br>")));w.appendChild(ch);});return w;}
 
+      // ── war-room spark ──
+      // เส้นกราฟจริง ไม่ใช่ clip-path เงาภูเขา: ของเดิมวาดยอดเขาชุดเดียวกันทุกคลิป
+      // ที่เคยผลิตมา คนดูซ้ำจึงจำได้ว่าเป็นภาพประกอบ ไม่ใช่ข้อมูล · ชุดตัวเลขสุ่มจาก
+      // ข้อความของซีนเอง (seeded) คลิปเดิมเรนเดอร์ซ้ำได้เส้นเดิม คนละคลิปได้คนละเส้น
+      let sparkN=0;
+      function sparkChart(seed){
+        const uid=sparkN++;
+        // PADR กว้างกว่า PAD เพราะจุดล่าสุดมีวงเรืองแสง r=22 อยู่ตรงนั้น ถ้าเว้นเท่ากัน
+        // สองข้างวงจะโดนขอบ svg ตัดครึ่ง
+        const NS="http://www.w3.org/2000/svg",W=1000,H=210,PAD=16,PADR=46,N=9;
+        let h=2166136261;
+        for(let i=0;i<seed.length;i++){h^=seed.charCodeAt(i);h=Math.imul(h,16777619);}
+        const rnd=()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return ((h>>>0)%1000)/1000;};
+        const pts=[];
+        for(let i=0;i<N;i++){
+          const t=i/(N-1);
+          // ไต่ขึ้นเป็นหลัก + สั่นเล็กน้อย — ห้องควบคุมเปิดมาดูตัวเลขที่กำลังพุ่ง
+          const v=Math.min(.97,.08+t*.70+rnd()*.24);
+          pts.push([PAD+t*(W-PAD-PADR),H-PAD-v*(H-PAD*2)]);
+        }
+        const svg=document.createElementNS(NS,"svg");
+        svg.setAttribute("class","wr-spark");
+        svg.setAttribute("viewBox","0 0 "+W+" "+H);
+        svg.setAttribute("preserveAspectRatio","none");
+        const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+        const defs=document.createElementNS(NS,"defs");
+        const lg=mk("linearGradient",{id:"wrl"+uid,x1:"0",y1:"0",x2:"1",y2:"0"});
+        lg.appendChild(mk("stop",{offset:"0","stop-color":"#FFB454"}));
+        lg.appendChild(mk("stop",{offset:"1","stop-color":"#FF6B62"}));
+        const ag=mk("linearGradient",{id:"wra"+uid,x1:"0",y1:"0",x2:"0",y2:"1"});
+        ag.appendChild(mk("stop",{offset:"0","stop-color":"#FF8A5B","stop-opacity":".38"}));
+        ag.appendChild(mk("stop",{offset:"1","stop-color":"#FF8A5B","stop-opacity":"0"}));
+        defs.appendChild(lg);defs.appendChild(ag);svg.appendChild(defs);
+        const base=H-PAD;
+        [.25,.5,.75].forEach(g=>{const y=(H*g).toFixed(1);
+          svg.appendChild(mk("line",{class:"grid",x1:PAD,x2:W-PAD,y1:y,y2:y}));});
+        const d=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+        const ex=pts[N-1][0].toFixed(1),ey=pts[N-1][1].toFixed(1);
+        svg.appendChild(mk("path",{d:d+" L"+ex+" "+base+" L"+PAD+" "+base+" Z",
+          fill:"url(#wra"+uid+")"}));
+        svg.appendChild(mk("path",{class:"line",d:d,stroke:"url(#wrl"+uid+")"}));
+        // เส้นชี้ค่าล่าสุด: ขอบขวาของ area ตัดตรงอยู่แล้ว ถ้าไม่ลากเส้นทับมันจะอ่าน
+        // เป็นรอยต่อ gradient ที่ดูเหมือน artifact แทนที่จะเป็นหมุดบอกค่าปัจจุบัน
+        svg.appendChild(mk("line",{x1:ex,x2:ex,y1:ey,y2:base,
+          stroke:"#FF6B62","stroke-opacity":".38","stroke-width":"3"}));
+        svg.appendChild(mk("circle",{cx:ex,cy:ey,r:22,fill:"#FF6B62","fill-opacity":".22"}));
+        svg.appendChild(mk("circle",{class:"head",cx:ex,cy:ey,r:11,fill:"#FF6B62"}));
+        return svg;
+      }
+
       // uistep scenes register their target row here; the markers (pointer tag +
       // tap ring) are positioned after layout, when offsets are real.
       const uiStepMarkers=[];
@@ -587,13 +645,13 @@
           live.appendChild(el("span",null,"LIVE"));c.appendChild(live);
           const g=el("div","wr-gauge");
           if(sc.statLabel) g.appendChild(el("div","wr-gauge-l",sc.statLabel));
-          g.appendChild(el("div","wr-spark"));
+          g.appendChild(sparkChart((sc.statLabel||"")+"|"+(sc.callout||"")+"|"+i));
           c.appendChild(g);
           if(sc.chips&&sc.chips.length){
             const k=el("div","wr-kpis");
             sc.chips.forEach(ch=>{
-              const t=el("div","wr-kpi");
-              t.appendChild(el("div","n"+(ch.bad?" bad":""),ch.n));
+              const t=el("div","wr-kpi"+(ch.bad?" bad":""));
+              t.appendChild(el("div","n",ch.n));
               t.appendChild(el("div","t",ch.t));
               k.appendChild(t);
             });
@@ -715,6 +773,21 @@
         if(meta.grouped){ const parts = s.split("."); parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ","); s = parts.join("."); }
         return s;
       }
+      // KPI ของห้องควบคุมนับขึ้นเหมือนซีน stat แต่เลขมักมีเครื่องหมายติดมาด้วย
+      // ("+38%", "1.4x") ซึ่ง parseStatNumber รับเฉพาะตัวเลขล้วน จึงต้องแยกหัว/ท้าย
+      // ออกก่อนแล้วนับเฉพาะแกนตัวเลข · ค่าที่เป็น 0 ข้ามไป นับ 0→0 ไม่มีอะไรให้ดู
+      function kpiCountUp(sceneEl,at,span){
+        sceneEl.querySelectorAll(".wr-kpi .n").forEach(function(nEl){
+          const m=String(nEl.textContent||"").match(/^(\D*)([\d.,]+)(\D*)$/);
+          if(!m)return;
+          const meta=parseStatNumber(m[2]);
+          if(!meta||meta.value<=0)return;
+          const pre=m[1],post=m[3],proxy={v:0};
+          nEl.textContent=pre+formatStat(0,meta)+post;
+          tl.to(proxy,{v:meta.value,duration:Math.min(1.1,Math.max(0.5,span*0.5)),ease:"power1.out",
+            onUpdate:function(){nEl.textContent=pre+formatStat(proxy.v,meta)+post;}},at);
+        });
+      }
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
@@ -802,6 +875,13 @@
           if(numEl0 && meta0){ numEl0.textContent = formatStat(meta0.value, meta0); }
         } else
         {{- end}}
+        // เฟรมโปสเตอร์ต้องโชว์เลขจริง ไม่ใช่ 0 ที่ยังไม่ทันนับ · เงื่อนไข COVER เชื่อมด้วย
+        // template action เหมือนที่อื่นในไฟล์ เพราะคลิปที่ไม่มีปกต้องไม่มีคำว่า COVER โผล่
+        // ใน output เลย (invariant ที่ TestRenderCompositionScenes_Cover ล็อกไว้)
+        // ห้ามพิมพ์ template action ลงในคอมเมนต์ JS — Go template อ่านมันเป็นบล็อกจริง
+        if(MOTION_V2 && sc.type==="dashboard"{{if .Cover}} && !(COVER && idx===0){{end}}){
+          kpiCountUp(sceneEl, sc.start+0.3, span);
+        }
         if(MOTION_V2 && sc.type==="stat"){
           const numEl = sceneEl.querySelector(".stat-num");
           const meta = parseStatNumber(sc.stat);
