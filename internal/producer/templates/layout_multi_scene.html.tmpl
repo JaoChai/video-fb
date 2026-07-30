@@ -244,6 +244,44 @@
       .ch-verdict{margin-top:28px;background:rgba(74,222,128,.14);
         border:2px solid rgba(74,222,128,.55);border-radius:26px;padding:26px 30px;
         font-weight:800;font-size:38px;line-height:1.38;color:#c9f7d8;overflow-wrap:break-word}
+      /* ── myth format (data-format='myth') ──
+         การ์ดกระดาษบนโต๊ะตรวจ: พื้นสว่าง ตัวหนังสือเข้ม ตรงข้ามกับซีนอื่นที่เป็น
+         ตัวขาวบนน้ำเงิน — คนดูต้องรู้ทันทีว่า "นี่คือของที่กำลังถูกตรวจ"
+         Thai-safe: letter-spacing >= 0, line-height >= 1.3, break-word เท่านั้น */
+      [data-format='myth'] .scene[data-layout="belief"] .scene-content,
+      [data-format='myth'] .scene[data-layout="proof"] .scene-content,
+      [data-format='myth'] .scene[data-layout="verdict"] .scene-content{top:170px;bottom:410px;justify-content:center}
+      [data-format='myth'] .scene[data-layout="belief"] .scene-bg,
+      [data-format='myth'] .scene[data-layout="proof"] .scene-bg,
+      [data-format='myth'] .scene[data-layout="verdict"] .scene-bg,
+      [data-format='myth'] .scene[data-layout="tip"] .scene-bg,
+      [data-format='myth'] .scene[data-layout="cta"] .scene-bg{opacity:.26;filter:saturate(.62)}
+      [data-format='myth'] .mb-card{position:relative;background:#FBF7EC;color:#141d33;
+        border-radius:26px;padding:40px 38px;transform:rotate(-1.1deg);
+        box-shadow:0 30px 72px rgba(0,0,0,.52)}
+      [data-format='myth'] .mb-kicker{font-weight:800;font-size:30px;line-height:1.34;
+        color:#8a6d28;margin-bottom:16px}
+      [data-format='myth'] .mb-belief{font-weight:800;font-size:60px;line-height:1.3;
+        overflow-wrap:break-word}
+      [data-format='myth'] .mb-why{margin-top:22px;font-weight:600;font-size:36px;
+        line-height:1.4;color:#41506b;overflow-wrap:break-word}
+      [data-format='myth'] .mb-stamp{display:inline-block;margin-top:30px;padding:16px 28px;
+        border:6px solid var(--red);border-radius:14px;transform:rotate(-4deg);
+        font-weight:800;font-size:44px;line-height:1.3;color:var(--red);
+        text-transform:none;opacity:.94}
+      [data-format='myth'] .mb-meter{display:flex;gap:12px;margin-top:30px}
+      [data-format='myth'] .mb-meter .lv{flex:1;height:20px;border-radius:10px;
+        background:rgba(188,210,255,.24)}
+      [data-format='myth'] .mb-meter .lv.on{background:var(--red)}
+      [data-format='myth'] .mb-meter.half .lv.on{background:var(--amber-bright)}
+      [data-format='myth'] .mb-meter-l{display:flex;gap:12px;margin-top:14px;
+        font-weight:700;font-size:26px;line-height:1.34;color:var(--muted)}
+      [data-format='myth'] .mb-meter-l span{flex:1;text-align:center}
+      [data-format='myth'] .mb-fact{font-weight:800;font-size:52px;line-height:1.3;
+        color:#141d33;overflow-wrap:break-word}
+      [data-format='myth'] .mb-src{margin-top:26px;padding-top:20px;
+        border-top:2px solid rgba(20,29,51,.18);font-weight:700;font-size:28px;
+        line-height:1.34;color:#5b6b8a}
       /* ── war-room format (data-format='warroom') ──
          uistep ใช้ markup เดิมทุกอย่าง เปลี่ยนแค่กรอบที่ห่อมัน เพื่อให้ตะแกรง
          ui_vocab + ตัวนับขั้นตอนทำงานเหมือนเดิมโดยไม่ต้องแก้โค้ดตะแกรง */
@@ -401,6 +439,7 @@
       const FORMAT_TUTORIAL = {{if eq .Format "tutorial"}}true{{else}}false{{end}};
       const FORMAT_CHAT = {{if eq .Format "chat"}}true{{else}}false{{end}};
       const FORMAT_WARROOM = {{if eq .Format "warroom"}}true{{else}}false{{end}};
+      const FORMAT_MYTH = {{if eq .Format "myth"}}true{{else}}false{{end}};
       const CASE_NO = {{.CaseNumber}} || 0;
 
       // ── Scene content (cleaned: NO emoji, real slots) ──
@@ -425,7 +464,8 @@
           (FORMAT_CASE && (sc.type === "hero" || sc.type === "verdict")) ||
           (FORMAT_TUTORIAL && (sc.type === "hero" || sc.type === "tip" || sc.type === "cta")) ||
           (FORMAT_CHAT && (sc.type === "chat_in" || sc.type === "chat_out" || sc.type === "recap" || sc.type === "cta")) ||
-          (FORMAT_WARROOM && (sc.type === "dashboard" || sc.type === "alarm" || sc.type === "cta"));
+          (FORMAT_WARROOM && (sc.type === "dashboard" || sc.type === "alarm" || sc.type === "cta")) ||
+          (FORMAT_MYTH && (sc.type === "belief" || sc.type === "proof" || sc.type === "verdict" || sc.type === "tip" || sc.type === "cta"));
         const bgSrc = (!sc.bg && reuseCover && SCENES[0] && SCENES[0].bg) ? SCENES[0].bg : sc.bg;
         // giant faint case-number watermark fills imageless case scenes
         const wm = (FORMAT_CASE && CASE_NO > 0 &&
@@ -566,6 +606,36 @@
             w3.appendChild(n);
           });
           c.appendChild(w3);
+        }
+        else if(sc.type==="belief"){
+          const card=el("div","mb-card");
+          if(sc.kicker) card.appendChild(el("div","mb-kicker",sc.kicker));
+          if(sc.title) card.appendChild(el("h1","mb-belief",sc.title));
+          if(sc.sub) card.appendChild(el("div","mb-why",sc.sub));
+          c.appendChild(card);
+        }
+        else if(sc.type==="proof"){
+          const card=el("div","mb-card");
+          if(sc.title) card.appendChild(el("h1","mb-fact",sc.title));
+          if(sc.rows&&sc.rows.length) card.appendChild(rowsBlock(sc.rows));
+          if(sc.source) card.appendChild(el("div","mb-src","แหล่งอ้าง: "+sc.source));
+          c.appendChild(card);
+        }
+        else if(FORMAT_MYTH && sc.type==="verdict"){
+          const card=el("div","mb-card");
+          if(sc.title) card.appendChild(el("h1","mb-fact",sc.title));
+          if(sc.stamp) card.appendChild(el("div","mb-stamp",sc.stamp));
+          if(sc.meter){
+            const half=(sc.meter==="half_true");
+            const on=(sc.meter==="false")?3:(half?2:1);
+            const m=el("div","mb-meter"+(half?" half":""));
+            for(let k=1;k<=3;k++){m.appendChild(el("div","lv"+(k<=on?" on":"")));}
+            card.appendChild(m);
+            const lbl=el("div","mb-meter-l");
+            ["เคยจริง","ครึ่งเดียว","ไม่จริง"].forEach(function(t){lbl.appendChild(el("span",null,t));});
+            card.appendChild(lbl);
+          }
+          c.appendChild(card);
         }
         else if(sc.type==="verdict"){
           if(sc.caseNo)c.appendChild(el("div","kicker","สรุปสำนวน · "+sc.caseNo));

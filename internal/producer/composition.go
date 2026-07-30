@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+
+	"github.com/jaochai/video-fb/internal/agent"
+	"github.com/jaochai/video-fb/internal/models"
 )
 
 // scenesTemplateData is the flat view passed to the multi-scene html/template.
@@ -108,6 +111,27 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 		if p.Format == "case" && p.CaseNumber > 0 &&
 			(contents[i].Layout == "casefile" || contents[i].Layout == "verdict") {
 			contents[i].CaseNo = fmt.Sprintf("คดีที่ %d", p.CaseNumber)
+		}
+		// โหมด myth: คำตัดสิน + แหล่งอ้างเป็น Go-injected (สเปก §7.1) — เขียนทับค่า
+		// ที่ LLM ส่งมาเสมอ ไม่ใช่เติมเมื่อว่าง ตรายางที่โมเดลเขียนเองเท่ากับให้โมเดล
+		// ตัดสินความเชื่อแทนคลัง
+		if p.Format == "myth" {
+			switch contents[i].Layout {
+			case "verdict":
+				// verdict ที่ไม่รู้จัก (หรือว่างเพราะผู้เรียกไม่ส่งมา) ต้องกลายเป็นค่าว่าง
+				// ไม่ใช่ปล่อยผ่าน: มิเตอร์ที่ไม่มีค่าจะวาดแถบแดงหนึ่งขีดพร้อมป้ายสามระดับ
+				// โดยไม่มีตรายาง = กราฟิกที่คนดูแปลไม่ได้ในคลิปที่เผยแพร่แล้ว
+				if models.ValidMythVerdict(p.MythVerdict) {
+					contents[i].Meter = p.MythVerdict
+					contents[i].Stamp = agent.MythVerdictLabelTH(p.MythVerdict)
+				} else {
+					contents[i].Meter, contents[i].Stamp = "", ""
+				}
+			case "proof":
+				contents[i].Source = p.MythSource
+			default:
+				contents[i].Meter, contents[i].Source = "", ""
+			}
 		}
 	}
 	scenesJSON, err := json.Marshal(contents)
