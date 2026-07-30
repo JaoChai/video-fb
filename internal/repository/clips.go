@@ -21,7 +21,7 @@ func NewClipsRepo(pool *pgxpool.Pool) *ClipsRepo {
 const clipColumns = `id, title, question, questioner_name, answer_script, voice_script,
 	category, status, video_16_9_url, video_9_16_url, thumbnail_url,
 	publish_date::text, created_at, updated_at, fail_reason, retry_count, style_preset, content_format,
-	production_stage, review_retry_count, auto_review_held, case_number, tutorial_feature`
+	production_stage, review_retry_count, auto_review_held, case_number, tutorial_feature, myth_belief`
 
 func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error) {
 	var c models.Clip
@@ -32,7 +32,7 @@ func scanClip(scanner interface{ Scan(dest ...any) error }) (models.Clip, error)
 		&c.PublishDate, &c.CreatedAt, &c.UpdatedAt,
 		&c.FailReason, &c.RetryCount, &c.StylePreset, &c.ContentFormat,
 		&c.ProductionStage, &c.ReviewRetryCount, &c.AutoReviewHeld, &c.CaseNumber,
-		&c.TutorialFeature,
+		&c.TutorialFeature, &c.MythBelief,
 	)
 	return c, err
 }
@@ -67,11 +67,11 @@ func (r *ClipsRepo) GetByID(ctx context.Context, id string) (*models.Clip, error
 
 func (r *ClipsRepo) Create(ctx context.Context, req models.CreateClipRequest) (*models.Clip, error) {
 	c, err := scanClip(r.pool.QueryRow(ctx,
-		`INSERT INTO clips (title, question, questioner_name, category, publish_date, content_format, clip_role, title_archetype, audience_persona, tutorial_feature)
-		 VALUES ($1, $2, $3, $4, $5::date, COALESCE(NULLIF($6, ''), 'qa'), $7, $8, $9, $10)
+		`INSERT INTO clips (title, question, questioner_name, category, publish_date, content_format, clip_role, title_archetype, audience_persona, tutorial_feature, myth_belief)
+		 VALUES ($1, $2, $3, $4, $5::date, COALESCE(NULLIF($6, ''), 'qa'), $7, $8, $9, $10, $11)
 		 RETURNING `+clipColumns,
 		req.Title, req.Question, req.QuestionerName, req.Category, req.PublishDate, req.ContentFormat,
-		req.ClipRole, req.TitleArchetype, req.AudiencePersona, req.TutorialFeature,
+		req.ClipRole, req.TitleArchetype, req.AudiencePersona, req.TutorialFeature, req.MythBelief,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("create clip: %w", err)
