@@ -19,6 +19,8 @@ var sceneLayouts = map[string]bool{
 	"chat_in": true, "chat_out": true, "recap": true,
 	// war-room format (spec 2026-07-28): live dashboard wrapping the uistep walkthrough
 	"dashboard": true, "alarm": true,
+	// myth format (spec 2026-07-30): การ์ดคำเชื่อ + การ์ดหลักฐาน
+	"belief": true, "proof": true,
 }
 
 // ClampLayout maps an LLM layout value to a supported one; unknown -> "hero".
