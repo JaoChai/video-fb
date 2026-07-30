@@ -56,6 +56,8 @@ func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode 
 		return buildChatCoverPrompt(s.ImagePrompt, preset, clipToken)
 	case ModeWarRoom:
 		return buildWarRoomCoverPrompt(s.ImagePrompt, preset, clipToken)
+	case ModeMyth:
+		return buildMythCoverPrompt(s.ImagePrompt, preset, clipToken)
 	default:
 		return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 	}
@@ -70,6 +72,7 @@ const (
 	ModeTutorial = "tutorial"
 	ModeChat     = "chat"
 	ModeWarRoom  = "warroom"
+	ModeMyth     = "myth"
 )
 
 // FormatInfo carries the per-clip content mode down the producer path.
@@ -100,7 +103,7 @@ func imageScenesForMode(scenes []agent.GeneratedScene, mode string) map[int]bool
 			}
 		}
 		return allowed
-	case ModeTutorial, ModeChat, ModeWarRoom:
+	case ModeTutorial, ModeChat, ModeWarRoom, ModeMyth:
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) != "" {
 				return map[int]bool{s.SceneNumber: true}
