@@ -29,6 +29,7 @@ func TestOrchestratorRoutesRegistered(t *testing.T) {
 		"/api/v1/orchestrator/produce",
 		"/api/v1/orchestrator/produce-tutorial",
 		"/api/v1/orchestrator/produce-basic",
+		"/api/v1/orchestrator/produce-myth",
 		"/api/v1/orchestrator/stop",
 		"/api/v1/orchestrator/publish",
 		"/api/v1/orchestrator/publish-tiktok",
