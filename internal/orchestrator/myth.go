@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,6 +46,37 @@ func needsMythBelief(contentFormat string) bool {
 // ตัวนี้ทำงานแทนคนตรวจ: คลิปเผยแพร่เองเมื่อผ่าน จึงเข้มกับสองสิ่งที่คลิปแนวนี้
 // พลาดแล้วเสียหายที่สุด — ตัวเลขที่โมเดลแต่งขึ้น และการอ้างระบบคะแนนที่ไม่มีเอกสาร
 func mythGateFailure(scenes []agent.GeneratedScene, b *models.MythBelief) string {
+	if msg := mythTextGateFailure(scenes, b); msg != "" {
+		return msg
+	}
+	if b == nil {
+		return ""
+	}
+	// คลิปที่ขาดซีน verdict หรือ proof = คลิปที่ไม่มีคำตัดสินและไม่มีแหล่งอ้างบนจอ
+	// ทั้งที่นั่นคือแกนทั้งหมดของรูปแบบนี้ — ตะแกรงข้อความจับไม่ได้เพราะ "ไม่มีอะไร"
+	// ไม่ใช่ "มีของผิด" (คลิปสอนใช้การนับซีน uistep กันเรื่องเดียวกัน)
+	//
+	// กฎนี้อยู่แยกจาก mythTextGateFailure โดยตั้งใจ: ตัวตรวจ title/description ของ
+	// YouTube ส่งข้อความเข้ามาในรูปซีนสมมุติหนึ่งตัว ถ้ารวมกฎนี้ไว้ด้วย คลิปทุกตัว
+	// จะถูกบล็อกที่ขั้น metadata ทันที = ช่องตายสนิท
+	need := map[string]bool{"verdict": true, "proof": true}
+	for _, sc := range scenes {
+		delete(need, agent.ClampLayout(sc.Layout))
+	}
+	if len(need) > 0 {
+		missing := make([]string, 0, len(need))
+		for layout := range need {
+			missing = append(missing, layout)
+		}
+		sort.Strings(missing)
+		return "missing required scene layout: " + strings.Join(missing, ", ")
+	}
+	return ""
+}
+
+// mythTextGateFailure ตรวจเฉพาะ "ข้อความพูดสิ่งที่คลังไม่ได้ให้มา" — ใช้ได้กับทั้งชุดซีน
+// และกับ title/description ของ YouTube ที่ห่อมาในรูปซีนสมมุติ
+func mythTextGateFailure(scenes []agent.GeneratedScene, b *models.MythBelief) string {
 	if b == nil {
 		return ""
 	}

@@ -658,7 +658,7 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 			OnScreenText: script.YoutubeDescription,
 			Content:      []byte("{}"),
 		}}
-		if msg := mythGateFailure(metaAsScene, myth); msg != "" {
+		if msg := mythTextGateFailure(metaAsScene, myth); msg != "" {
 			return o.blockForReview(ctx, clipID, "myth metadata", msg)
 		}
 	}
