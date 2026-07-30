@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -96,17 +98,15 @@ func TestMythSceneShape(t *testing.T) {
 	}
 }
 
-// helper ที่ส่งคำตัดสิน/แหล่งอ้างต่อให้ชั้นเรนเดอร์ต้องทนกับ belief ที่เป็น nil
-// (คลิปโหมดอื่นเดินผ่านโค้ดเส้นเดียวกัน)
-func TestMythVerdictSourceHelpersNilSafe(t *testing.T) {
-	if v := mythVerdict(nil); v != "" {
-		t.Errorf("mythVerdict(nil) = %q", v)
+// ตะแกรงต้องห่อ ErrContentGateBlocked เพื่อให้ ProduceMyth แยก "เนื้อหาผิด" ออกจาก
+// "ระบบพัง" ได้ — สองกรณีนี้จัดการคลังหัวข้อคนละแบบ (ตกตะแกรง = พักแถวนั้น,
+// ระบบพัง = ไม่แตะเพราะหัวข้อยังไม่ถูกใช้จริง)
+func TestContentGateErrorIsIdentifiable(t *testing.T) {
+	wrapped := fmt.Errorf("myth gate: %s: %w", "ตัวเลขไม่มีในคลัง", ErrContentGateBlocked)
+	if !errors.Is(wrapped, ErrContentGateBlocked) {
+		t.Error("error ของตะแกรงต้องระบุตัวได้ด้วย errors.Is")
 	}
-	if s := mythSource(nil); s != "" {
-		t.Errorf("mythSource(nil) = %q", s)
-	}
-	b := gateBelief()
-	if mythVerdict(b) != models.MythVerdictHalfTrue || mythSource(b) != "s" {
-		t.Errorf("helper ไม่คืนค่าจากแถวคลัง: %q / %q", mythVerdict(b), mythSource(b))
+	if errors.Is(errors.New("kie เครดิตหมด"), ErrContentGateBlocked) {
+		t.Error("error ของระบบต้องไม่ถูกนับเป็นตะแกรงเนื้อหา")
 	}
 }

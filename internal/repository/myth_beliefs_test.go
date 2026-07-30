@@ -53,3 +53,18 @@ func TestMythMarkUsedHasFloorInSameStatement(t *testing.T) {
 		t.Error("mythMarkUsedSQL ต้องนับคลังในคำสั่งเดียวกัน (พื้นกันคลังยุบ)")
 	}
 }
+
+// แถวที่ไม่มีชื่อแหล่งอ้างต้องถูกกันออกตั้งแต่ระดับ SQL ไม่ใช่พึ่ง needs_verify อย่างเดียว
+// เพราะเส้นทางขยายคลัง (สเปก §9) คือ "พลิก needs_verify เป็น FALSE" ถ้าคนพลิกโดยลืม
+// เติมแหล่งอ้าง คลิปจะขึ้นจอว่า "แหล่งอ้าง:" เปล่าๆ โดยไม่มีใครตรวจ
+func TestMythSQLRequiresSourceLabel(t *testing.T) {
+	for name, q := range map[string]string{
+		"pick":     mythPickSQL,
+		"fallback": mythPickFallbackSQL,
+		"markUsed": mythMarkUsedSQL,
+	} {
+		if !strings.Contains(q, "source_label <> ''") {
+			t.Errorf("%s SQL ไม่ได้กันแถวที่ไม่มีชื่อแหล่งอ้าง", name)
+		}
+	}
+}

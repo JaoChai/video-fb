@@ -33,6 +33,7 @@ const MythMinPool = 3
 // mythAvailableWhere นิยาม "แถวที่หยิบมาทำคลิปได้ตอนนี้" ที่เดียว เพื่อให้ตัวเลือก
 // กับตัวนับพื้นมองคลังชุดเดียวกันเสมอ
 const mythAvailableWhere = `enabled = TRUE AND needs_verify = FALSE
+	AND source_label <> ''
 	AND (parked_until IS NULL OR parked_until <= NOW())`
 
 const mythPickSQL = `SELECT ` + mythBeliefCols + `, used_count
@@ -44,7 +45,7 @@ const mythPickSQL = `SELECT ` + mythBeliefCols + `, used_count
 // ประตูทางเดียวเคยทำให้รอบผลิตคืน 0 คลิปเงียบๆ มาแล้วสองครั้งในระบบนี้
 const mythPickFallbackSQL = `SELECT ` + mythBeliefCols + `, used_count
 	FROM myth_beliefs
-	WHERE enabled = TRUE AND needs_verify = FALSE
+	WHERE enabled = TRUE AND needs_verify = FALSE AND source_label <> ''
 	ORDER BY parked_until NULLS FIRST, used_count
 	LIMIT 1`
 
@@ -57,7 +58,7 @@ const mythMarkUsedSQL = `
 	    last_used_at = NOW(),
 	    parked_until = CASE
 	        WHEN (SELECT COUNT(*) FROM myth_beliefs m2
-	              WHERE m2.enabled = TRUE AND m2.needs_verify = FALSE
+	              WHERE m2.enabled = TRUE AND m2.needs_verify = FALSE AND m2.source_label <> ''
 	                AND (m2.parked_until IS NULL OR m2.parked_until <= NOW())
 	                AND m2.id <> myth_beliefs.id) >= $2
 	        THEN NOW() + make_interval(days => $3)

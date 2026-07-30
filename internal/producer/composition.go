@@ -136,7 +136,12 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 				// ("ผลสำรวจ organic reach 2024") จึงต้องผ่านตัวประกบเหมือนข้อความอื่น
 				contents[i].Source = GuardLoanWords(p.MythSource)
 			default:
+				// ล้าง Stamp/Verdict ด้วย ไม่ใช่แค่ Meter/Source: layout อื่นที่โมเดล
+				// อาจหลุดไปเลือก (casefile/evidence/recap) เรนเดอร์สองฟิลด์นี้จริง
+				// ⇒ คำตัดสินที่โมเดลเขียนเองจะขึ้นจอโดยตะแกรงตัวเลขจับไม่ได้
+				// (ข้อความที่ไม่มีตัวเลข เช่น "จริงทุกกรณี" หลุดหมด)
 				contents[i].Meter, contents[i].Source = "", ""
+				contents[i].Stamp, contents[i].Verdict = "", ""
 			}
 		}
 	}

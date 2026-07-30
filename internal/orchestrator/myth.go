@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -18,6 +19,11 @@ import (
 // เพื่อไม่ให้ตัวสุ่ม format ของรอบ 12:00/18:00 หยิบไปใช้)
 const mythFormatName = "myth"
 
+// ErrContentGateBlocked ห่ออยู่ในทุก error ที่มาจากตะแกรงเนื้อหา (ui_vocab ของคลิปสอน,
+// ข้อเท็จจริงของคลิป myth) เพื่อให้ผู้เรียกแยก "เนื้อหาผิด" ออกจาก "ระบบพัง" ได้
+// โดยไม่ต้องอ่านข้อความ error — สองกรณีนี้ต้องจัดการคนละแบบกับคลังหัวข้อ
+var ErrContentGateBlocked = errors.New("content gate blocked")
+
 // mythSceneShape คือรูปร่างคลิปตามสเปก §6.2: hook + belief + verdict + proof +
 // tip(ส่วนที่จริง) + cta = 6 ซีน คงที่ ไม่ผูกกับข้อมูลในคลังอย่างคลิปสอน
 func mythSceneShape() (sceneCount, durationSec int) {
@@ -31,22 +37,6 @@ func mythSceneShape() (sceneCount, durationSec int) {
 // (บั๊กแบบเดียวกับที่เคยเกิดกับคลิป basic ตอน retryFull)
 func needsMythBelief(contentFormat string) bool {
 	return clipMode(contentFormat) == producer.ModeMyth
-}
-
-// mythVerdict / mythSource ส่งค่าจากแถวคลังต่อให้ชั้นเรนเดอร์ ทนกับ nil เพราะคลิป
-// โหมดอื่นเดินผ่านโค้ดเส้นเดียวกัน
-func mythVerdict(b *models.MythBelief) string {
-	if b == nil {
-		return ""
-	}
-	return b.Verdict
-}
-
-func mythSource(b *models.MythBelief) string {
-	if b == nil {
-		return ""
-	}
-	return b.SourceLabel
 }
 
 // mythGateFailure คือครึ่ง deterministic ของตะแกรงข้อเท็จจริง คืนเหตุผลที่อ่านออก
@@ -138,13 +128,21 @@ func (o *Orchestrator) ProduceMyth(ctx context.Context) error {
 
 	o.tracker.SetTotalClips(1)
 	o.tracker.StartClip(1, belief.BeliefTH)
-	if err := o.produceMythClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, belief); err != nil {
+	err = o.produceMythClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, belief)
+
+	// นับใช้+พักแถวนี้ทั้งกรณีสำเร็จ และกรณีตกตะแกรงเนื้อหา — ถ้าไม่นับกรณีตกตะแกรง
+	// แถวเดิมจะยังเป็น "แถวที่ใช้น้อยสุด" พรุ่งนี้ แล้วช่อง 09:00 จะได้คลิปที่ค้าง
+	// needs_review ทุกวันโดยที่แถวอื่นไม่ได้คิวเลย (ช่องตายเงียบแบบมีคลิปแต่ไม่เผยแพร่)
+	// error อื่น (kie ล่ม, DB พัง) ไม่นับ เพราะหัวข้อยังไม่ได้ถูกใช้จริง
+	if err == nil || errors.Is(err, ErrContentGateBlocked) {
+		if mErr := o.mythBeliefsRepo.MarkUsed(ctx, belief.ID); mErr != nil {
+			log.Printf("myth: MarkUsed failed (non-fatal): %v", mErr)
+		}
+	}
+	if err != nil {
 		o.tracker.AddErrorLog(fmt.Sprintf("myth clip failed: %v", err))
 		o.nudgeRetry()
 		return err
-	}
-	if mErr := o.mythBeliefsRepo.MarkUsed(ctx, belief.ID); mErr != nil {
-		log.Printf("myth: MarkUsed failed (non-fatal): %v", mErr)
 	}
 	o.tracker.CompleteStep("complete")
 	log.Println("myth production complete")

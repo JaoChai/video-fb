@@ -27,7 +27,7 @@ func mythParams() ScenesParams {
 			mk(4, "proof", SceneContent{Title: "BM ให้ความเป็นเจ้าของ ไม่ใช่ภูมิคุ้มกัน",
 				Rows:   []ContentRow{{Text: "สิทธิ์ทีมและ pixel อยู่กับธุรกิจ"}},
 				Source: "โมเดลแต่งเอง"}),
-			mk(5, "tip", SceneContent{Title: "ส่วนที่จริงคือ", Rows: []ContentRow{{Text: "ความเป็นเจ้าของสินทรัพย์"}}}),
+			mk(5, "tip", SceneContent{Pill: "ส่วนที่จริง", Rows: []ContentRow{{Text: "ความเป็นเจ้าของสินทรัพย์"}}}),
 			mk(6, "cta", SceneContent{Title: "ปิดท้าย", CTA: "ทักมาเช็ค", Brand: "ADS VANCE"}),
 		},
 		Segments: []TranscriptSegment{{Text: "เปิด BM", Start: 0, End: 2}},

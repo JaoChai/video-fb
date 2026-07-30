@@ -6,7 +6,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jaochai/video-fb/internal/handler"
 	"github.com/jaochai/video-fb/internal/producer"
 	"github.com/jaochai/video-fb/internal/progress"
@@ -14,6 +13,7 @@ import (
 	"github.com/jaochai/video-fb/internal/rag"
 	"github.com/jaochai/video-fb/internal/repository"
 	"github.com/jaochai/video-fb/internal/scoreboard"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *progress.Tracker, pub *publisher.Publisher, scheduleReload func(), prod *producer.Producer) *chi.Mux {
@@ -22,10 +22,10 @@ func New(pool *pgxpool.Pool, apiKey string, ragEngine *rag.Engine, tracker *prog
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
-		MaxAge:         300,
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		MaxAge:           300,
 	}))
 	r.Use(handler.APIKeyAuth(apiKey))
 

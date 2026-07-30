@@ -648,6 +648,21 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		}
 	}
 
+	// ตะแกรงข้อเท็จจริงต้องครอบ title/description ของ YouTube ด้วย: สองอันนี้
+	// เผยแพร่จริงและเป็นสิ่งแรกที่คนอ่าน ตัวเลขที่แต่งขึ้นใน title เสียเครดิตช่อง
+	// เท่ากับตัวเลขบนจอ — ตะแกรงก่อนหน้าเห็นแค่ scenes
+	if myth != nil {
+		metaAsScene := []agent.GeneratedScene{{
+			SceneNumber:  0,
+			VoiceText:    script.YoutubeTitle,
+			OnScreenText: script.YoutubeDescription,
+			Content:      []byte("{}"),
+		}}
+		if msg := mythGateFailure(metaAsScene, myth); msg != "" {
+			return o.blockForReview(ctx, clipID, "myth metadata", msg)
+		}
+	}
+
 	// Metadata from the validated script.
 	o.clipsRepo.UpsertMetadata(ctx, models.ClipMetadata{
 		ClipID:       clipID,
@@ -1103,7 +1118,7 @@ func (o *Orchestrator) blockForReview(ctx context.Context, clipID, gate, msg str
 	log.Printf("%s gate blocked clip %s: %s", gate, clipID, msg)
 	reviewStatus := "needs_review"
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
-	return fmt.Errorf("%s gate: %s", gate, msg)
+	return fmt.Errorf("%s gate: %s: %w", gate, msg, ErrContentGateBlocked)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
