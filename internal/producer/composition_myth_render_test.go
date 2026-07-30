@@ -49,8 +49,8 @@ func TestRenderMythFormat(t *testing.T) {
 		"เปิด BM แล้วบัญชีแข็งกว่าบัญชีส่วนตัว",
 		"เพราะเอเจนซีทุกที่ใช้ BM",
 		"BM ให้ความเป็นเจ้าของ ไม่ใช่ภูมิคุ้มกัน",
-		".mb-card",   // CSS ของการ์ดต้องอยู่ในไฟล์ที่ส่งออก
-		".mb-meter",  // มิเตอร์ 3 ระดับ
+		".mb-card",  // CSS ของการ์ดต้องอยู่ในไฟล์ที่ส่งออก
+		".mb-meter", // มิเตอร์ 3 ระดับ
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("HTML โหมด myth ขาด %q", want)

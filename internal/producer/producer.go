@@ -446,6 +446,8 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		Motion:          preset.Motion,
 		Format:          fi.Mode,
 		CaseNumber:      fi.CaseNumber,
+		MythVerdict:     fi.MythVerdict,
+		MythSource:      fi.MythSource,
 	}
 
 	params.MotionV2 = SceneMotionV2Enabled()

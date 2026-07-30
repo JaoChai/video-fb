@@ -78,8 +78,14 @@ const (
 // FormatInfo carries the per-clip content mode down the producer path.
 // Zero value = classic format (byte-identical to today's output).
 type FormatInfo struct {
-	Mode       string // "" | "case" | "tutorial"
+	Mode       string // "" | "case" | "tutorial" | "chat" | "warroom" | "myth"
 	CaseNumber int    // case mode only; 0 = unknown, template omits the number
+
+	// myth mode only (spec 2026-07-30): คำตัดสินและชื่อแหล่งอ้างจากแถวคลัง
+	// เดินทางมาที่ชั้นเรนเดอร์ทางนี้ เพื่อให้ทั้งเส้นทางผลิตปกติและเส้นทาง
+	// resume-at-render ได้ค่าชุดเดียวกันโดยไม่ต้องส่งแถวคลังไปทั้งดุ้น
+	MythVerdict string
+	MythSource  string
 }
 
 func (f FormatInfo) IsCase() bool     { return f.Mode == ModeCase }

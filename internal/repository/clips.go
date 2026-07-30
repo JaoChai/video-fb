@@ -358,3 +358,23 @@ func (r *ClipsRepo) GetMetadata(ctx context.Context, clipID string) (*models.Cli
 	}
 	return &m, nil
 }
+
+// RecentTitlesByMythBelief คืนชื่อคลิปล่าสุดที่ทำความเชื่อเดียวกัน ใช้กันเปิดซ้ำมุมเดิม
+// เมื่อคลังหมุนกลับมาที่หัวข้อเดียวกันอีกครั้งหลังพ้นช่วงพัก
+func (r *ClipsRepo) RecentTitlesByMythBelief(ctx context.Context, key string, limit int) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT title FROM clips WHERE myth_belief = $1 ORDER BY created_at DESC LIMIT $2`, key, limit)
+	if err != nil {
+		return nil, fmt.Errorf("recent titles by myth belief: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

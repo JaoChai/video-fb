@@ -40,6 +40,8 @@ func clipMode(contentFormat string) string {
 		return producer.ModeTutorial
 	case tutorialFormatName:
 		return producer.ModeWarRoom
+	case mythFormatName:
+		return producer.ModeMyth
 	case "qa", "tips":
 		return producer.ModeChat
 	default:
@@ -238,7 +240,7 @@ func (o *Orchestrator) produceCatalogClip(ctx context.Context, level, formatName
 	o.tracker.SetTotalClips(1)
 	o.tracker.StartClip(1, feat.DisplayNameTH)
 	if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format,
-		persona, archetype, "reach", feat); err != nil {
+		persona, archetype, "reach", feat, nil); err != nil {
 		o.tracker.AddErrorLog(fmt.Sprintf("%s clip failed: %v", label, err))
 		o.nudgeRetry()
 		return err
