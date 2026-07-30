@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -50,13 +51,22 @@ var factNumberRe = regexp.MustCompile(`\d[\d,\.]*`)
 
 // ordinalPrefixes คือคำที่อยู่หน้าตัวเลขแล้วทำให้เลขนั้นเป็นลำดับ ไม่ใช่ข้อเท็จจริง
 // (สเปก §7.2) — "ข้อ 2" / "ขั้นที่ 3" ไม่ต้องมีในแถวคลัง
-var ordinalPrefixes = []string{"ข้อ", "ขั้นที่", "ขั้น", "อย่างที่", "ที่", "แบบที่", "ข้อที่"}
+//
+// ห้ามใส่ "ที่" เดี่ยว — มันกว้างเกินไป จะจับ "งบที่ 40000" ซึ่งไม่ใช่ลำดับ ทำให้ตัวเลข
+// หลุดตะแกรง (fix รอบ 1) ใช้เฉพาะรูปเต็มที่จริงๆ บอกลำดับเท่านั้น
+var ordinalPrefixes = []string{"ข้อ", "ข้อที่", "ขั้น", "ขั้นที่", "อย่างที่", "แบบที่", "ครั้งที่", "อันดับที่", "วิธีที่"}
 
-// normalizeNumber ตัดคอมมาและศูนย์ท้ายทศนิยมออก เพื่อให้ "40,000" กับ "40000"
-// นับเป็นตัวเลขเดียวกัน
+// normalizeNumber ทำให้ตัวเลขที่เขียนต่างรูปแต่ค่าเท่ากันเทียบกันได้: ตัดคอมมา
+// ("40,000" = "40000") และตัดศูนย์ท้ายทศนิยม ("3.0" = "3")
+//
+// การตัดศูนย์ท้ายทศนิยมสำคัญกับทิศทางที่ผิดพลาดแล้วเสียแรงคน: ถ้าคลังเขียน "3 วัน"
+// แล้วโมเดลพูด "3.0" ตะแกรงจะตีคลิปที่ถูกต้องเข้า needs_review โดยไม่มีใครผิด
 func normalizeNumber(s string) string {
 	s = strings.ReplaceAll(s, ",", "")
-	s = strings.TrimSuffix(s, ".")
+	if strings.Contains(s, ".") {
+		s = strings.TrimRight(s, "0")
+		s = strings.TrimSuffix(s, ".")
+	}
 	return s
 }
 
@@ -69,6 +79,39 @@ func catalogNumbers(b *models.MythBelief) map[string]bool {
 		}
 	}
 	return allowed
+}
+
+// scanField ผูก label ของช่องทางข้อความ (voice_text/on_screen_text/content) เข้ากับ
+// ข้อความที่จะสแกนหาตัวเลข — content อาจมีหลาย string เลยใช้ slice ไม่ใช่ map
+type scanField struct{ label, text string }
+
+// contentStrings สกัดทุกค่า string ออกจาก Content ของซีนแบบ recursive (เดิน map/slice/string)
+// เพราะ DOM ของเทมเพลตเอา content.title/sub/rows[].t ฯลฯ มาแสดงบนจอเหมือนกัน
+// คืน nil เมื่อ Content ไม่ใช่ JSON ที่ parse ได้ — ไม่ panic ไม่คืน error
+// (เพราะ scene ของโหมดอื่นอาจมี content ที่ไม่ใช่ object)
+func contentStrings(raw json.RawMessage) []string {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil
+	}
+	var out []string
+	var walk func(x any)
+	walk = func(x any) {
+		switch t := x.(type) {
+		case string:
+			out = append(out, t)
+		case map[string]any:
+			for _, val := range t {
+				walk(val)
+			}
+		case []any:
+			for _, val := range t {
+				walk(val)
+			}
+		}
+	}
+	walk(v)
+	return out
 }
 
 // isOrdinalAt บอกว่าตัวเลขที่ตำแหน่ง idx ถูกนำหน้าด้วยคำบอกลำดับหรือไม่
@@ -85,8 +128,8 @@ func isOrdinalAt(text string, idx int) bool {
 // FactNumberViolations คือครึ่ง deterministic ของตะแกรงข้อเท็จจริง: คืนรายการตำหนิ
 // เมื่อซีนพูดตัวเลขที่แถวคลังไม่ได้ให้มา คืน nil เมื่อ b == nil (คลิปโหมดอื่น)
 //
-// ตรวจทั้ง voice_text (สิ่งที่คนดูได้ยิน) และ on_screen_text (สิ่งที่คนดูเห็น)
-// เพราะตัวเลขที่แต่งขึ้นเสียหายเท่ากันทั้งสองทาง
+// ตรวจทั้ง voice_text (สิ่งที่คนดูได้ยิน) on_screen_text (สิ่งที่คนดูเห็น) และ content.*
+// (สิ่งที่เทมเพลตเอาขึ้น DOM) เพราะตัวเลขที่แต่งขึ้นเสียหายเท่ากันทุกช่องทาง
 func FactNumberViolations(scenes []GeneratedScene, b *models.MythBelief) []string {
 	if b == nil {
 		return nil
@@ -95,14 +138,21 @@ func FactNumberViolations(scenes []GeneratedScene, b *models.MythBelief) []strin
 
 	var out []string
 	for _, s := range scenes {
-		for field, text := range map[string]string{"voice_text": s.VoiceText, "on_screen_text": s.OnScreenText} {
-			for _, loc := range factNumberRe.FindAllStringIndex(text, -1) {
-				num := text[loc[0]:loc[1]]
-				if isOrdinalAt(text, loc[0]) || allowed[normalizeNumber(num)] {
+		fields := []scanField{
+			{"voice_text", s.VoiceText},
+			{"on_screen_text", s.OnScreenText},
+		}
+		for _, str := range contentStrings(s.Content) {
+			fields = append(fields, scanField{"content", str})
+		}
+		for _, f := range fields {
+			for _, loc := range factNumberRe.FindAllStringIndex(f.text, -1) {
+				num := f.text[loc[0]:loc[1]]
+				if isOrdinalAt(f.text, loc[0]) || allowed[normalizeNumber(num)] {
 					continue
 				}
 				out = append(out, fmt.Sprintf("scene %d %s: ตัวเลข %q ไม่มีในแถวคลัง %s",
-					s.SceneNumber, field, num, b.BeliefKey))
+					s.SceneNumber, f.label, num, b.BeliefKey))
 			}
 		}
 	}
@@ -121,9 +171,18 @@ func DisallowedClaimViolations(scenes []GeneratedScene, b *models.MythBelief) []
 	}
 	var out []string
 	for _, s := range scenes {
-		hay := strings.ToLower(s.VoiceText + " " + s.OnScreenText)
+		// คำห้ามที่แต่งขึ้นอาจอยู่ใน content.* ได้เหมือนคำพูด — รวมเข้าไปใน haystack
+		var hay strings.Builder
+		hay.WriteString(s.VoiceText)
+		hay.WriteString(" ")
+		hay.WriteString(s.OnScreenText)
+		for _, str := range contentStrings(s.Content) {
+			hay.WriteString(" ")
+			hay.WriteString(str)
+		}
+		low := strings.ToLower(hay.String())
 		for _, term := range unsourcedClaimTerms {
-			if strings.Contains(hay, term) {
+			if strings.Contains(low, term) {
 				out = append(out, fmt.Sprintf("scene %d: อ้าง %q แต่แถวคลัง %s ไม่มี source_url",
 					s.SceneNumber, term, b.BeliefKey))
 			}
