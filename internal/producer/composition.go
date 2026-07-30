@@ -123,12 +123,18 @@ func RenderCompositionScenes(p ScenesParams) ([]byte, error) {
 				// โดยไม่มีตรายาง = กราฟิกที่คนดูแปลไม่ได้ในคลิปที่เผยแพร่แล้ว
 				if models.ValidMythVerdict(p.MythVerdict) {
 					contents[i].Meter = p.MythVerdict
-					contents[i].Stamp = agent.MythVerdictLabelTH(p.MythVerdict)
+					// GuardLoanWords ต้องเรียกที่นี่ด้วย: guardSceneContent ทำงานตอน
+					// buildSceneContent ซึ่งจบไปก่อนการฉีดค่านี้ ⇒ ข้อความที่ Go เขียน
+					// ทับทีหลังจะไม่ได้ตัวประกบคำทับศัพท์เลย (บั๊กตัดคำกลางคำไทย
+					// ยังเปิดอยู่บน prod)
+					contents[i].Stamp = GuardLoanWords(agent.MythVerdictLabelTH(p.MythVerdict))
 				} else {
 					contents[i].Meter, contents[i].Stamp = "", ""
 				}
 			case "proof":
-				contents[i].Source = p.MythSource
+				// ชื่อแหล่งอ้างในคลังมีทั้งไทยล้วนและไทยผสมทับศัพท์
+				// ("ผลสำรวจ organic reach 2024") จึงต้องผ่านตัวประกบเหมือนข้อความอื่น
+				contents[i].Source = GuardLoanWords(p.MythSource)
 			default:
 				contents[i].Meter, contents[i].Source = "", ""
 			}

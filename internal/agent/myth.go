@@ -85,6 +85,20 @@ func catalogNumbers(b *models.MythBelief) map[string]bool {
 // ข้อความที่จะสแกนหาตัวเลข — content อาจมีหลาย string เลยใช้ slice ไม่ใช่ map
 type scanField struct{ label, text string }
 
+// sceneScanFields รวม "ช่องทางไหนของซีนที่ต้องถูกตรวจ" ไว้ที่เดียว — ตะแกรงตัวเลข
+// กับตะแกรงคำอ้างลอยต้องเห็นข้อความชุดเดียวกันเสมอ ถ้าแยกกันเขียน การเพิ่มช่องทาง
+// ที่สี่แล้วลืมจุดใดจุดหนึ่งจะทำให้ตะแกรงหนึ่งเข้มกว่าอีกตะแกรงโดยไม่มีใครรู้ตัว
+func sceneScanFields(s GeneratedScene) []scanField {
+	fields := []scanField{
+		{"voice_text", s.VoiceText},
+		{"on_screen_text", s.OnScreenText},
+	}
+	for _, str := range contentStrings(s.Content) {
+		fields = append(fields, scanField{"content", str})
+	}
+	return fields
+}
+
 // contentStrings สกัดทุกค่า string ออกจาก Content ของซีนแบบ recursive (เดิน map/slice/string)
 // เพราะ DOM ของเทมเพลตเอา content.title/sub/rows[].t ฯลฯ มาแสดงบนจอเหมือนกัน
 // คืน nil เมื่อ Content ไม่ใช่ JSON ที่ parse ได้ — ไม่ panic ไม่คืน error
@@ -138,14 +152,7 @@ func FactNumberViolations(scenes []GeneratedScene, b *models.MythBelief) []strin
 
 	var out []string
 	for _, s := range scenes {
-		fields := []scanField{
-			{"voice_text", s.VoiceText},
-			{"on_screen_text", s.OnScreenText},
-		}
-		for _, str := range contentStrings(s.Content) {
-			fields = append(fields, scanField{"content", str})
-		}
-		for _, f := range fields {
+		for _, f := range sceneScanFields(s) {
 			for _, loc := range factNumberRe.FindAllStringIndex(f.text, -1) {
 				num := f.text[loc[0]:loc[1]]
 				if isOrdinalAt(f.text, loc[0]) || allowed[normalizeNumber(num)] {
@@ -171,14 +178,12 @@ func DisallowedClaimViolations(scenes []GeneratedScene, b *models.MythBelief) []
 	}
 	var out []string
 	for _, s := range scenes {
-		// คำห้ามที่แต่งขึ้นอาจอยู่ใน content.* ได้เหมือนคำพูด — รวมเข้าไปใน haystack
+		// คำห้ามที่แต่งขึ้นอาจอยู่ใน content.* ได้เหมือนคำพูด — ใช้รายการช่องทาง
+		// ชุดเดียวกับตะแกรงตัวเลข เพื่อให้สองตะแกรงเห็นข้อความชุดเดียวกันเสมอ
 		var hay strings.Builder
-		hay.WriteString(s.VoiceText)
-		hay.WriteString(" ")
-		hay.WriteString(s.OnScreenText)
-		for _, str := range contentStrings(s.Content) {
+		for _, f := range sceneScanFields(s) {
+			hay.WriteString(f.text)
 			hay.WriteString(" ")
-			hay.WriteString(str)
 		}
 		low := strings.ToLower(hay.String())
 		for _, term := range unsourcedClaimTerms {

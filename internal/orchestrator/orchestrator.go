@@ -667,20 +667,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	// of rendering. Not failClip: the content is wrong, not the infrastructure, so
 	// a blind retry would just burn another LLM run on the same bad output.
 	if msg := tutorialGateFailure(scenes, feat); msg != "" {
-		log.Printf("tutorial gate blocked clip %s: %s", clipID, msg)
-		reviewStatus := "needs_review"
-		o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
-		return fmt.Errorf("tutorial gate: %s", msg)
+		return o.blockForReview(ctx, clipID, "tutorial", msg)
 	}
 
 	// ตะแกรงข้อเท็จจริงสไตรก์ที่ 2 (หลัง critic ซึ่งแก้ voice_text ได้): ยังผิดอยู่
 	// = ส่งเข้า needs_review ไม่ใช่ทิ้งคลิป — เนื้อหาผิด ไม่ใช่ระบบพัง การ retry
 	// แบบไม่มีคนดูจะเผา LLM รอบใหม่กับ output เดิม
 	if msg := mythGateFailure(scenes, myth); msg != "" {
-		log.Printf("myth gate blocked clip %s: %s", clipID, msg)
-		reviewStatus := "needs_review"
-		o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
-		return fmt.Errorf("myth gate: %s", msg)
+		return o.blockForReview(ctx, clipID, "myth", msg)
 	}
 
 	return o.renderAndFinalize(ctx, clipID, q, scenes, preset, narration)
@@ -1097,6 +1091,19 @@ func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, pre
 		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
 	return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: n}
+}
+
+// blockForReview ส่งคลิปเข้าคิวคนตรวจแทนการทิ้ง ใช้ร่วมกันโดยทุกตะแกรง deterministic
+// ที่ทำงานแทนคนตรวจก่อนเรนเดอร์ (ui_vocab ของคลิปสอน, ข้อเท็จจริงของคลิป myth)
+//
+// จงใจไม่ใช่ failClip: เนื้อหาผิด ไม่ใช่ระบบพัง การ retry แบบไม่มีคนดูจะเผา LLM
+// รอบใหม่กับ output เดิม · เขียนที่เดียวเพื่อให้ตะแกรงที่เพิ่มมาทีหลังไม่หลุดสถานะ
+// หรือรูปแบบข้อความ error ไปจากกันเงียบๆ
+func (o *Orchestrator) blockForReview(ctx context.Context, clipID, gate, msg string) error {
+	log.Printf("%s gate blocked clip %s: %s", gate, clipID, msg)
+	reviewStatus := "needs_review"
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
+	return fmt.Errorf("%s gate: %s", gate, msg)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {

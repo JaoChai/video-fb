@@ -118,3 +118,23 @@ func TestMythUnknownVerdictRendersNoMeter(t *testing.T) {
 		t.Error("builder ไม่มี guard sc.meter — payload ที่หลุดมาจากทางอื่นจะวาดมิเตอร์เปล่า")
 	}
 }
+
+// ค่าที่ Go ฉีดทีหลัง (Stamp/Source) ต้องผ่านตัวประกบคำทับศัพท์ด้วย — guardSceneContent
+// ทำงานจบไปก่อนการฉีดค่าเหล่านี้ ถ้าไม่ประกบซ้ำที่จุดฉีด ชื่อแหล่งอ้างที่มีคำทับศัพท์
+// จะถูกเบราว์เซอร์หั่นกลางคำบนคลิปที่เผยแพร่ (บั๊กตระกูลนี้ยังเปิดอยู่บน prod)
+func TestMythInjectedTextIsWordBreakGuarded(t *testing.T) {
+	p := mythParams()
+	p.MythSource = "รายงานรีชของเมต้า"
+	out, err := RenderCompositionScenes(p)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	guarded := GuardLoanWords("รายงานรีชของเมต้า")
+	if guarded == "รายงานรีชของเมต้า" {
+		t.Skip("ตัวประกบไม่แตะข้อความนี้ — เทสต์นี้ไม่มีอะไรยืนยัน")
+	}
+	if !strings.Contains(html, guarded) {
+		t.Error("ชื่อแหล่งอ้างในผลลัพธ์ไม่ได้ผ่าน GuardLoanWords")
+	}
+}
