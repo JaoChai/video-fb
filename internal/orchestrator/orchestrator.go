@@ -90,6 +90,9 @@ type Orchestrator struct {
 	researchAgent        *agent.ResearchAgent
 	tutorialVerifier     *agent.TutorialVerifier
 
+	// myth format (spec 2026-07-30): คลังความเชื่อผิดของช่อง 09:00
+	mythBeliefsRepo *repository.MythBeliefsRepo
+
 	tracker *progress.Tracker
 }
 
@@ -118,6 +121,7 @@ func New(
 	topicCategories *repository.TopicCategoriesRepo,
 	titleArchetypes *repository.TitleArchetypesRepo,
 	tutorialFeatures *repository.TutorialFeaturesRepo,
+	mythBeliefs *repository.MythBeliefsRepo,
 	research *agent.ResearchAgent,
 	tutorialVerifier *agent.TutorialVerifier,
 	tracker *progress.Tracker,
@@ -130,7 +134,8 @@ func New(
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
 		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
 		tutorialFeaturesRepo: tutorialFeatures, researchAgent: research, tutorialVerifier: tutorialVerifier,
-		tracker: tracker,
+		mythBeliefsRepo: mythBeliefs,
+		tracker:         tracker,
 	}
 }
 
@@ -371,7 +376,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int, allowed []s
 		}
 		log.Printf("[%d/%d] Processing: %s", i+1, len(questions), q.Question)
 		o.tracker.StartClip(i+1, q.Question)
-		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, nil); err != nil {
+		if err := o.produceClip(ctx, q, theme, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, nil, nil); err != nil {
 			errMsg := fmt.Sprintf("Clip %d failed: %v", i+1, err)
 			log.Print(errMsg)
 			o.tracker.AddErrorLog(errMsg)
@@ -388,7 +393,7 @@ func (o *Orchestrator) ProduceWeekly(ctx context.Context, count int, allowed []s
 	return nil
 }
 
-func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
+func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestion, theme *models.BrandTheme, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature, myth *models.MythBelief) error {
 	preset := presetFor(format.FormatName)
 
 	featKey := ""
@@ -415,7 +420,7 @@ func (o *Orchestrator) produceClip(ctx context.Context, q agent.GeneratedQuestio
 	status := "producing"
 	o.clipsRepo.Update(ctx, clip.ID, models.UpdateClipRequest{Status: &status, StylePreset: &preset.Key})
 
-	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, feat)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, preset, scriptCfg, imageCfg, brandAliases, format, persona, archetype, role, feat, myth)
 }
 
 // Target shape for the multi-scene explainer (design: 60–90 s, 6–10 scenes).
@@ -490,13 +495,15 @@ func applyGeneratedMetadata(script *agent.GeneratedScript, md *agent.GeneratedMe
 	return true
 }
 
-func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature) error {
+func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q agent.GeneratedQuestion, theme *models.BrandTheme, preset producer.StylePreset, scriptCfg, imageCfg *models.AgentConfig, brandAliases map[string]string, format *models.ContentFormat, persona string, archetype models.TitleArchetype, role string, feat *models.TutorialFeature, myth *models.MythBelief) error {
 	// Derive a per-clip theme so text agents describe the same colors that get
 	// rendered.
 	clipTheme := preset.AsTheme(theme)
 
 	o.tracker.StartStep("script")
-	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), agent.TutorialBrief(feat)+o.tutorialAvoidRepeat(ctx, feat), scriptCfg)
+	catalogBrief := agent.TutorialBrief(feat) + o.tutorialAvoidRepeat(ctx, feat) +
+		agent.MythBrief(myth) + o.mythAvoidRepeatBlock(ctx, myth)
+	script, err := o.generateScript(ctx, clipID, q, format, persona, archetype.Instruction, RoleInstruction(role), catalogBrief, scriptCfg)
 	if err != nil {
 		o.tracker.FailStep("script", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("script: %w", err))
@@ -515,13 +522,31 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	sceneCount, durationSec := targetSceneCount, targetDurationSec
 	if feat != nil {
 		sceneCount, durationSec = tutorialSceneShape(len(feat.Steps))
+	} else if myth != nil {
+		sceneCount, durationSec = mythSceneShape()
 	}
-	scenes, err := o.sceneAgent.Generate(ctx, narration, sceneCount, durationSec, clipTheme, agent.TutorialBrief(feat), sceneCfg)
+	sceneBrief := agent.TutorialBrief(feat) + agent.MythBrief(myth)
+	scenes, err := o.sceneAgent.Generate(ctx, narration, sceneCount, durationSec, clipTheme, sceneBrief, sceneCfg)
 	if err != nil {
 		o.tracker.FailStep("scene", err)
 		return o.failClip(ctx, clipID, fmt.Errorf("scene breakdown: %w", err))
 	}
 	o.tracker.CompleteStep("scene")
+
+	// ตะแกรงข้อเท็จจริงสไตรก์ที่ 1: ให้ scene agent ทำใหม่หนึ่งครั้งพร้อมบอกว่าผิดตรงไหน
+	// สองสไตรก์ก่อนตัดสินคือรูปแบบที่ลด false positive ลงครึ่งหนึ่งใน visual QA แล้ว
+	if msg := mythGateFailure(scenes, myth); msg != "" {
+		log.Printf("myth gate strike 1 on clip %s: %s — regenerating scenes once", clipID, msg)
+		retryBrief := sceneBrief +
+			"\n## รอบนี้ถูกตีตกเพราะ: " + msg +
+			"\nห้ามพูดตัวเลขหรือข้ออ้างที่ไม่มีในบล็อกข้อมูลข้างบนเด็ดขาด\n"
+		if regen, rErr := o.sceneAgent.Generate(ctx, narration, sceneCount, durationSec,
+			clipTheme, retryBrief, sceneCfg); rErr != nil {
+			log.Printf("myth gate: regenerate failed (%v) — เก็บซีนเดิมไว้ให้ตะแกรงสไตรก์ที่ 2 ตัดสิน", rErr)
+		} else {
+			scenes = regen
+		}
+	}
 
 	// ── Content Critic: review + revise content before render. Optional gate;
 	//    on disable/error/anomaly it returns the original content unchanged. ──
@@ -623,6 +648,21 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 		}
 	}
 
+	// ตะแกรงข้อเท็จจริงต้องครอบ title/description ของ YouTube ด้วย: สองอันนี้
+	// เผยแพร่จริงและเป็นสิ่งแรกที่คนอ่าน ตัวเลขที่แต่งขึ้นใน title เสียเครดิตช่อง
+	// เท่ากับตัวเลขบนจอ — ตะแกรงก่อนหน้าเห็นแค่ scenes
+	if myth != nil {
+		metaAsScene := []agent.GeneratedScene{{
+			SceneNumber:  0,
+			VoiceText:    script.YoutubeTitle,
+			OnScreenText: script.YoutubeDescription,
+			Content:      []byte("{}"),
+		}}
+		if msg := mythTextGateFailure(metaAsScene, myth); msg != "" {
+			return o.blockForReview(ctx, clipID, "myth metadata", msg)
+		}
+	}
+
 	// Metadata from the validated script.
 	o.clipsRepo.UpsertMetadata(ctx, models.ClipMetadata{
 		ClipID:       clipID,
@@ -642,10 +682,14 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 	// of rendering. Not failClip: the content is wrong, not the infrastructure, so
 	// a blind retry would just burn another LLM run on the same bad output.
 	if msg := tutorialGateFailure(scenes, feat); msg != "" {
-		log.Printf("tutorial gate blocked clip %s: %s", clipID, msg)
-		reviewStatus := "needs_review"
-		o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
-		return fmt.Errorf("tutorial gate: %s", msg)
+		return o.blockForReview(ctx, clipID, "tutorial", msg)
+	}
+
+	// ตะแกรงข้อเท็จจริงสไตรก์ที่ 2 (หลัง critic ซึ่งแก้ voice_text ได้): ยังผิดอยู่
+	// = ส่งเข้า needs_review ไม่ใช่ทิ้งคลิป — เนื้อหาผิด ไม่ใช่ระบบพัง การ retry
+	// แบบไม่มีคนดูจะเผา LLM รอบใหม่กับ output เดิม
+	if msg := mythGateFailure(scenes, myth); msg != "" {
+		return o.blockForReview(ctx, clipID, "myth", msg)
 	}
 
 	return o.renderAndFinalize(ctx, clipID, q, scenes, preset, narration)
@@ -921,6 +965,20 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 		}
 		feat = f
 	}
+
+	// คลิป myth ก็ต้องโหลดแถวคลังกลับเหมือนคลิปสอน — ไม่มีแถว = ตะแกรงข้อเท็จจริง
+	// ปิดเงียบแล้วคลิปที่แต่งตัวเลขเองจะ auto-publish (retryFull วิ่งทุก 15 นาที)
+	var myth *models.MythBelief
+	if needsMythBelief(clip.ContentFormat) {
+		if clip.MythBelief == "" {
+			return o.failClip(ctx, clip.ID, fmt.Errorf("คลิป myth ไม่มี myth_belief บันทึกไว้ — สร้างใหม่ไม่ปลอดภัย"))
+		}
+		b, bErr := o.mythBeliefsRepo.GetByKey(ctx, clip.MythBelief)
+		if bErr != nil {
+			return o.failClip(ctx, clip.ID, fmt.Errorf("load myth belief %s: %w", clip.MythBelief, bErr))
+		}
+		myth = b
+	}
 	persona, _ := o.settingsRepo.Get(ctx, "audience_persona")
 
 	// A full rebuild regenerates ALL content with the CURRENT mode's prompts
@@ -930,7 +988,7 @@ func (o *Orchestrator) retryFull(ctx context.Context, clip *models.Clip) error {
 	// Resume-at-render keeps the stored identity instead because it reuses the
 	// stored scenes.
 	retryPreset := presetFor(clip.ContentFormat)
-	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "", feat)
+	return o.produceClipWithID(ctx, clip.ID, q, theme, retryPreset, scriptCfg, imageCfg, brandAliases, format, persona, models.TitleArchetype{}, "", feat, myth)
 }
 
 func scenesToGenerated(scenes []models.Scene) []agent.GeneratedScene {
@@ -992,6 +1050,8 @@ func presetFor(contentFormat string) producer.StylePreset {
 		return producer.TutorialPreset
 	case producer.ModeWarRoom:
 		return producer.WarRoomPreset
+	case producer.ModeMyth:
+		return producer.MythPreset
 	case producer.ModeChat:
 		return producer.ChatPreset
 	default:
@@ -1010,6 +1070,24 @@ func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, pre
 		return producer.FormatInfo{Mode: producer.ModeChat}
 	case producer.WarRoomPreset.Key:
 		return producer.FormatInfo{Mode: producer.ModeWarRoom}
+	case producer.MythPreset.Key:
+		// คำตัดสิน + แหล่งอ้างของโหมด myth โหลดจากคลังที่นี่ที่เดียว เหมือน CaseNumber
+		// ข้างล่าง — เส้นทาง resume-at-render ก็เดินผ่านฟังก์ชันนี้และไม่มีแถวคลังในมือ
+		// ถ้าไปรับค่าจากผู้เรียกแทน คลิปที่ render ซ้ำจะได้มิเตอร์เปล่าเงียบๆ
+		// fail-open ทุกทาง: อ่านไม่ได้ = คลิปเรนเดอร์โดยไม่มีมิเตอร์ ดีกว่าบล็อกการผลิต
+		fi := producer.FormatInfo{Mode: producer.ModeMyth}
+		clip, err := o.clipsRepo.GetByID(ctx, clipID)
+		if err != nil || clip.MythBelief == "" {
+			log.Printf("myth: อ่าน myth_belief ของคลิป %s ไม่ได้ (fail-open, ไม่มีมิเตอร์): %v", clipID, err)
+			return fi
+		}
+		b, bErr := o.mythBeliefsRepo.GetByKey(ctx, clip.MythBelief)
+		if bErr != nil {
+			log.Printf("myth: โหลดแถวคลัง %s ไม่ได้ (fail-open, ไม่มีมิเตอร์): %v", clip.MythBelief, bErr)
+			return fi
+		}
+		fi.MythVerdict, fi.MythSource = b.Verdict, b.SourceLabel
+		return fi
 	}
 	if preset.Key != producer.CaseFilePreset.Key {
 		return producer.FormatInfo{}
@@ -1028,6 +1106,19 @@ func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, pre
 		return producer.FormatInfo{Mode: producer.ModeCase}
 	}
 	return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: n}
+}
+
+// blockForReview ส่งคลิปเข้าคิวคนตรวจแทนการทิ้ง ใช้ร่วมกันโดยทุกตะแกรง deterministic
+// ที่ทำงานแทนคนตรวจก่อนเรนเดอร์ (ui_vocab ของคลิปสอน, ข้อเท็จจริงของคลิป myth)
+//
+// จงใจไม่ใช่ failClip: เนื้อหาผิด ไม่ใช่ระบบพัง การ retry แบบไม่มีคนดูจะเผา LLM
+// รอบใหม่กับ output เดิม · เขียนที่เดียวเพื่อให้ตะแกรงที่เพิ่มมาทีหลังไม่หลุดสถานะ
+// หรือรูปแบบข้อความ error ไปจากกันเงียบๆ
+func (o *Orchestrator) blockForReview(ctx context.Context, clipID, gate, msg string) error {
+	log.Printf("%s gate blocked clip %s: %s", gate, clipID, msg)
+	reviewStatus := "needs_review"
+	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
+	return fmt.Errorf("%s gate: %s: %w", gate, msg, ErrContentGateBlocked)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {

@@ -16,6 +16,7 @@ type CreateClipRequest struct {
 	// Empty for every other format. Persisted so a retry can re-fetch the same
 	// catalog row and re-run the ui_vocab gate against it.
 	TutorialFeature string `json:"tutorial_feature"`
+	MythBelief      string `json:"myth_belief"`
 }
 
 type UpdateClipRequest struct {

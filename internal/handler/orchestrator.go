@@ -82,6 +82,27 @@ func (h *OrchestratorHandler) TriggerTutorial(w http.ResponseWriter, r *http.Req
 	}()
 }
 
+// TriggerMyth ผลิตคลิปจับความเชื่อผิดหนึ่งตัวจากคลังตามคำสั่ง (ใช้ทดสอบก่อนเปิด
+// schedule) เหมือน TriggerBasic: หัวข้อคือแถวคลัง จึงหนึ่งคลิปต่อครั้ง ไม่มี count
+func (h *OrchestratorHandler) TriggerMyth(w http.ResponseWriter, r *http.Request) {
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, models.APIResponse{
+		Message: "Myth production started in background",
+	})
+
+	go func() {
+		// ProduceMyth ถือ production gate และการลงทะเบียนยกเลิกเอง handler จึงแค่จุดชนวน
+		if err := h.orch.ProduceMyth(context.Background()); err != nil {
+			log.Printf("Myth production failed: %v", err)
+			h.tracker.AddErrorLog(err.Error())
+		}
+	}()
+}
+
 // TriggerBasic produces ONE basic (beginner) clip from the catalog on demand.
 // Mirrors TriggerTutorial: the topic is a catalog row, so one clip per run is the
 // shape the basic path is built around — no count.

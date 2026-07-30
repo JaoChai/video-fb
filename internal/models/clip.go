@@ -28,7 +28,8 @@ type Clip struct {
 	ContentFormat    string    `json:"content_format"`
 	ProductionStage  string    `json:"production_stage"`
 	CaseNumber       *int      `json:"case_number,omitempty"` // case-file format running number (nil = classic clip)
-	TutorialFeature  string    `json:"tutorial_feature"`     // tutorial_features.feature_key ("" = not a tutorial clip)
+	TutorialFeature  string    `json:"tutorial_feature"`      // tutorial_features.feature_key ("" = not a tutorial clip)
+	MythBelief       string    `json:"myth_belief"`           // myth_beliefs.belief_key ("" = ไม่ใช่คลิป myth)
 }
 
 type Scene struct {

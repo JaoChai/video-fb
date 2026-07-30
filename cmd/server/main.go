@@ -131,7 +131,8 @@ func main() {
 	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, metadataAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, scriptJudgeAgent, prod,
 		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, scriptDebatesRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
 		repository.NewTopicCategoriesRepo(pool), repository.NewTitleArchetypesRepo(pool),
-		repository.NewTutorialFeaturesRepo(pool), researchAgent, agent.NewTutorialVerifier(llm), tracker)
+		repository.NewTutorialFeaturesRepo(pool), repository.NewMythBeliefsRepo(pool),
+		researchAgent, agent.NewTutorialVerifier(llm), tracker)
 
 	zernio := publisher.NewZernioClient(cfg.ZernioAPIKey, pool)
 	pub := publisher.NewPublisher(zernio, pool, clipsRepo, analyticsRepo)

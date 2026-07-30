@@ -79,6 +79,12 @@ type SceneContent struct {
 	Msgs    []ContentMessage `json:"msgs,omitempty"`
 	Asker   string           `json:"asker,omitempty"`
 	Verdict string           `json:"verdict,omitempty"`
+
+	// myth format (spec 2026-07-30). ทั้งสองค่าเป็น Go-injected เหมือน CaseNo:
+	// Meter คือ verdict จากแถวคลัง (false|half_true|outdated) และ Source คือชื่อ
+	// แหล่งอ้าง — LLM ตัดสินความเชื่อหรือแต่งชื่อแหล่งเองไม่ได้
+	Meter  string `json:"meter,omitempty"`
+	Source string `json:"source,omitempty"`
 }
 
 // ContentRow is one bullet row. Bad=true tints it red (problem/❌ replacement).
@@ -186,4 +192,9 @@ type ScenesParams struct {
 	// casefile/verdict scenes. Zero values = classic format, byte-identical output.
 	Format     string
 	CaseNumber int
+
+	// myth format (spec 2026-07-30). MythVerdict/MythSource มาจากแถวคลังโดยตรง
+	// และถูกฉีดทับค่าที่ LLM ส่งมาใน RenderCompositionScenes
+	MythVerdict string
+	MythSource  string
 }

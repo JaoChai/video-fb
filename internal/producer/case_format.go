@@ -56,6 +56,8 @@ func promptForScene(s agent.GeneratedScene, preset StylePreset, clipToken, mode 
 		return buildChatCoverPrompt(s.ImagePrompt, preset, clipToken)
 	case ModeWarRoom:
 		return buildWarRoomCoverPrompt(s.ImagePrompt, preset, clipToken)
+	case ModeMyth:
+		return buildMythCoverPrompt(s.ImagePrompt, preset, clipToken)
 	default:
 		return buildScenePrompt(s.ImagePrompt, "9:16", preset, clipToken)
 	}
@@ -70,13 +72,20 @@ const (
 	ModeTutorial = "tutorial"
 	ModeChat     = "chat"
 	ModeWarRoom  = "warroom"
+	ModeMyth     = "myth"
 )
 
 // FormatInfo carries the per-clip content mode down the producer path.
 // Zero value = classic format (byte-identical to today's output).
 type FormatInfo struct {
-	Mode       string // "" | "case" | "tutorial"
+	Mode       string // "" | "case" | "tutorial" | "chat" | "warroom" | "myth"
 	CaseNumber int    // case mode only; 0 = unknown, template omits the number
+
+	// myth mode only (spec 2026-07-30): คำตัดสินและชื่อแหล่งอ้างจากแถวคลัง
+	// เดินทางมาที่ชั้นเรนเดอร์ทางนี้ เพื่อให้ทั้งเส้นทางผลิตปกติและเส้นทาง
+	// resume-at-render ได้ค่าชุดเดียวกันโดยไม่ต้องส่งแถวคลังไปทั้งดุ้น
+	MythVerdict string
+	MythSource  string
 }
 
 func (f FormatInfo) IsCase() bool     { return f.Mode == ModeCase }
@@ -100,7 +109,7 @@ func imageScenesForMode(scenes []agent.GeneratedScene, mode string) map[int]bool
 			}
 		}
 		return allowed
-	case ModeTutorial, ModeChat, ModeWarRoom:
+	case ModeTutorial, ModeChat, ModeWarRoom, ModeMyth:
 		for _, s := range scenes {
 			if strings.TrimSpace(s.ImagePrompt) != "" {
 				return map[int]bool{s.SceneNumber: true}

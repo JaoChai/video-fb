@@ -161,6 +161,11 @@ func (s *Scheduler) produceBasic(ctx context.Context) error {
 	return s.produceTick(ctx, "the daily basic clip", s.orchestrator.ProduceBasic)
 }
 
+// produceMyth ผลิตคลิปจับความเชื่อผิดประจำวันจากคลัง (ช่อง 09:00)
+func (s *Scheduler) produceMyth(ctx context.Context) error {
+	return s.produceTick(ctx, "the daily myth-buster clip", s.orchestrator.ProduceMyth)
+}
+
 func (s *Scheduler) produceTick(ctx context.Context, what string, produce func(context.Context) error) error {
 	check := preflight.Run(ctx, s.pool)
 	if !check.OK {
@@ -247,6 +252,8 @@ func (s *Scheduler) handlerFor(action string) func(context.Context) error {
 		return s.produceTutorial
 	case "produce_basic":
 		return s.produceBasic
+	case "produce_myth":
+		return s.produceMyth
 	case "analyze_and_improve":
 		return s.analyzer.AnalyzeAndImprove
 	case "fetch_analytics":

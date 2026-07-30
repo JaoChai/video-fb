@@ -40,6 +40,8 @@ func PresetByKey(key string) StylePreset {
 		return ChatPreset
 	case WarRoomPreset.Key:
 		return WarRoomPreset
+	case MythPreset.Key:
+		return MythPreset
 	}
 	return CaseFilePreset
 }
