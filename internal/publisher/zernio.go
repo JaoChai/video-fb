@@ -55,8 +55,9 @@ type PlatformTarget struct {
 }
 
 // YouTubeOptions คือ platformSpecificData ของ Zernio ฝั่ง YouTube
-// FirstComment: Zernio โพสต์ข้อความนี้เป็นคอมเมนต์ใต้คลิปและปักหมุดให้หลังอัปโหลดเสร็จ
-// (สูงสุด 10,000 ตัวอักษร) — เราจึงไม่ต้องมี OAuth ของ YouTube เอง
+// FirstComment: Zernio โพสต์ข้อความนี้เป็นคอมเมนต์ใต้คลิปให้ (เอกสารบอกว่าปักหมุดด้วย แต่
+// live test 2026-07-31 พบว่าไม่ปัก — ถ้าอยากได้หมุดต้องปักเองใน YouTube Studio, สูงสุด
+// 10,000 ตัวอักษร) — เราจึงไม่ต้องมี OAuth ของ YouTube เอง
 // Title/Visibility ส่งซ้ำกับระดับบนโดยตั้งใจ: ไม่รู้ว่า Zernio รวมค่าสองระดับยังไง
 // ถ้ามันให้บล็อกนี้ชนะแล้วเราส่งมาแค่ firstComment คลิปอาจขึ้นแบบไม่มีชื่อหรือเป็น private
 type YouTubeOptions struct {
