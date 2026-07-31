@@ -3,6 +3,7 @@ package publisher
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,5 +91,70 @@ func TestGetYouTubeDailyViews_ScopeMissing(t *testing.T) {
 	_, err := z.GetYouTubeDailyViews(context.Background(), "abc", "acc1")
 	if !errors.Is(err, ErrYouTubeScopeMissing) {
 		t.Fatalf("expected ErrYouTubeScopeMissing, got %v", err)
+	}
+}
+
+// captureBody รัน Post กับ httptest server แล้วคืน JSON ดิบที่ยิงออกไป
+func captureBody(t *testing.T, req PostRequest) string {
+	t.Helper()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		body = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"post":{"_id":"P1"}}`))
+	}))
+	defer srv.Close()
+
+	z := newTestZernioClient(srv.URL, "test_key")
+	if _, err := z.Post(context.Background(), req); err != nil {
+		t.Fatalf("Post err: %v", err)
+	}
+	return body
+}
+
+func TestPost_SendsFirstCommentInPlatformSpecificData(t *testing.T) {
+	body := captureBody(t, PostRequest{
+		Title:   "หัวข้อคลิป",
+		Content: "หัวข้อคลิป\n\nคำอธิบาย",
+		Platforms: []PlatformTarget{{
+			Platform:  "youtube",
+			AccountID: "acc1",
+			PlatformSpecificData: &YouTubeOptions{
+				Title:        "หัวข้อคลิป",
+				Visibility:   VisibilityPublic,
+				FirstComment: "ติดต่อทีมงานได้ที่ LINE id : @adsvance",
+			},
+		}},
+		Visibility: VisibilityPublic,
+		PublishNow: true,
+	})
+
+	for _, want := range []string{
+		`"platformSpecificData"`,
+		`"firstComment"`,
+		`LINE id : @adsvance`,
+		`"visibility":"public"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestPost_OmitsPlatformSpecificDataWhenUnset(t *testing.T) {
+	body := captureBody(t, PostRequest{
+		Title:      "หัวข้อคลิป",
+		Content:    "หัวข้อคลิป",
+		Platforms:  []PlatformTarget{{Platform: "youtube", AccountID: "acc1"}},
+		Visibility: VisibilityPublic,
+		PublishNow: true,
+	})
+
+	if strings.Contains(body, "platformSpecificData") {
+		t.Fatalf("expected no platformSpecificData key when unset, got %s", body)
 	}
 }

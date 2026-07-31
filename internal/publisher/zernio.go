@@ -49,6 +49,20 @@ func (z *ZernioClient) getAPIKey(ctx context.Context) string {
 type PlatformTarget struct {
 	Platform  string `json:"platform"`
 	AccountID string `json:"accountId"`
+	// PlatformSpecificData ต้องเป็น pointer + omitempty เพื่อให้ "ไม่ตั้งค่า" แปลว่า
+	// คีย์นี้หายไปจาก JSON ทั้งอัน ไม่ใช่ส่ง object ว่างซึ่งอาจไปทับค่า default ของ Zernio
+	PlatformSpecificData *YouTubeOptions `json:"platformSpecificData,omitempty"`
+}
+
+// YouTubeOptions คือ platformSpecificData ของ Zernio ฝั่ง YouTube
+// FirstComment: Zernio โพสต์ข้อความนี้เป็นคอมเมนต์ใต้คลิปและปักหมุดให้หลังอัปโหลดเสร็จ
+// (สูงสุด 10,000 ตัวอักษร) — เราจึงไม่ต้องมี OAuth ของ YouTube เอง
+// Title/Visibility ส่งซ้ำกับระดับบนโดยตั้งใจ: ไม่รู้ว่า Zernio รวมค่าสองระดับยังไง
+// ถ้ามันให้บล็อกนี้ชนะแล้วเราส่งมาแค่ firstComment คลิปอาจขึ้นแบบไม่มีชื่อหรือเป็น private
+type YouTubeOptions struct {
+	Title        string `json:"title,omitempty"`
+	Visibility   string `json:"visibility,omitempty"`
+	FirstComment string `json:"firstComment,omitempty"`
 }
 
 type MediaItem struct {
@@ -189,7 +203,9 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		return nil, fmt.Errorf("marshal post: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", zernioAPI+"/posts", bytes.NewReader(body))
+	// ใช้ z.baseURL (ค่าเดียวกับ zernioAPI เมื่อสร้างผ่าน NewZernioClient) เพื่อให้เทสต์
+	// ชี้ไป httptest server แล้วตรวจ JSON ที่ยิงจริงได้ — GetAnalytics ทำแบบนี้อยู่แล้ว
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", z.baseURL+"/posts", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
