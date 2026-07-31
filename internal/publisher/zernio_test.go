@@ -2,6 +2,7 @@ package publisher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -142,6 +143,36 @@ func TestPost_SendsFirstCommentInPlatformSpecificData(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected body to contain %s, got %s", want, body)
 		}
+	}
+
+	// ตรวจซ้ำด้วย unmarshal เจาะจง nesting: substring match ข้างบนจะผ่านแม้ title/
+	// visibility/firstComment ถูก serialize ผิดระดับ (เช่นหลุดไปอยู่ platforms[0] ตรงๆ)
+	// เพราะ "visibility":"public" แมตช์ฟิลด์บนสุดได้เหมือนกัน ต้องยืนยันว่าค่าทั้งสามอยู่
+	// ใน platformSpecificData จริง ไม่ใช่แค่มีอยู่ที่ไหนสักแห่งใน body
+	var parsed struct {
+		Platforms []struct {
+			PlatformSpecificData *struct {
+				Title        string `json:"title"`
+				Visibility   string `json:"visibility"`
+				FirstComment string `json:"firstComment"`
+			} `json:"platformSpecificData"`
+		} `json:"platforms"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v (body=%s)", err, body)
+	}
+	if len(parsed.Platforms) != 1 || parsed.Platforms[0].PlatformSpecificData == nil {
+		t.Fatalf("expected 1 platform with platformSpecificData, got %+v", parsed.Platforms)
+	}
+	psd := parsed.Platforms[0].PlatformSpecificData
+	if psd.Title != "หัวข้อคลิป" {
+		t.Fatalf("expected nested title %q, got %q", "หัวข้อคลิป", psd.Title)
+	}
+	if psd.Visibility != VisibilityPublic {
+		t.Fatalf("expected nested visibility %q, got %q", VisibilityPublic, psd.Visibility)
+	}
+	if psd.FirstComment != "ติดต่อทีมงานได้ที่ LINE id : @adsvance" {
+		t.Fatalf("expected nested firstComment %q, got %q", "ติดต่อทีมงานได้ที่ LINE id : @adsvance", psd.FirstComment)
 	}
 }
 
