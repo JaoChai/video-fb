@@ -8,14 +8,12 @@ func TestYoutubePlatforms(t *testing.T) {
 		title        string
 		firstComment string
 		wantOptions  bool
-		wantTitle    string
 	}{
 		{
 			name:         "มีข้อความ ⇒ แนบ platformSpecificData",
 			title:        "แอดโดนแบนทำไง",
 			firstComment: "ติดต่อทีมงานได้ที่ LINE id : @adsvance",
 			wantOptions:  true,
-			wantTitle:    "แอดโดนแบนทำไง",
 		},
 		{
 			name:         "ค่าว่าง ⇒ ไม่แนบอะไรเลย",
@@ -28,7 +26,6 @@ func TestYoutubePlatforms(t *testing.T) {
 			title:        "แอดโดนแบนทำไง #Shorts",
 			firstComment: "ติดต่อทีมงานได้ที่ LINE id : @adsvance",
 			wantOptions:  true,
-			wantTitle:    "แอดโดนแบนทำไง #Shorts",
 		},
 	}
 
@@ -54,8 +51,8 @@ func TestYoutubePlatforms(t *testing.T) {
 			if opts.FirstComment != tt.firstComment {
 				t.Fatalf("expected firstComment %q, got %q", tt.firstComment, opts.FirstComment)
 			}
-			if opts.Title != tt.wantTitle {
-				t.Fatalf("expected title %q, got %q", tt.wantTitle, opts.Title)
+			if opts.Title != tt.title {
+				t.Fatalf("expected title %q, got %q", tt.title, opts.Title)
 			}
 			if opts.Visibility != VisibilityPublic {
 				t.Fatalf("expected visibility %q, got %q", VisibilityPublic, opts.Visibility)
