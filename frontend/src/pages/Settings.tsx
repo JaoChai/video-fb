@@ -104,6 +104,20 @@ function ContentSettingsCard({ form, dirty, onSave, saving, saved, onChange }: C
         </div>
         <div>
           <label className="block text-xs text-muted-foreground uppercase tracking-wide mb-1.5">
+            คอมเมนต์ติดต่อทีมงาน (YouTube)
+          </label>
+          <Textarea
+            value={form['youtube_first_comment'] ?? ''}
+            onChange={e => onChange('youtube_first_comment', e.target.value)}
+            placeholder="ข้อความคอมเมนต์ที่จะโพสต์ใต้คลิป YouTube ทุกคลิป..."
+            className="min-h-[100px]"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            เว้นว่างไว้ = ปิดฟีเจอร์นี้ทันที ไม่ต้อง deploy
+          </p>
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground uppercase tracking-wide mb-1.5">
             TikTok Account ID (Zernio)
           </label>
           <Input

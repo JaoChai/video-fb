@@ -2,7 +2,9 @@ package publisher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,5 +92,100 @@ func TestGetYouTubeDailyViews_ScopeMissing(t *testing.T) {
 	_, err := z.GetYouTubeDailyViews(context.Background(), "abc", "acc1")
 	if !errors.Is(err, ErrYouTubeScopeMissing) {
 		t.Fatalf("expected ErrYouTubeScopeMissing, got %v", err)
+	}
+}
+
+// captureBody รัน Post กับ httptest server แล้วคืน JSON ดิบที่ยิงออกไป
+func captureBody(t *testing.T, req PostRequest) string {
+	t.Helper()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		body = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"post":{"_id":"P1"}}`))
+	}))
+	defer srv.Close()
+
+	z := newTestZernioClient(srv.URL, "test_key")
+	if _, err := z.Post(context.Background(), req); err != nil {
+		t.Fatalf("Post err: %v", err)
+	}
+	return body
+}
+
+func TestPost_SendsFirstCommentInPlatformSpecificData(t *testing.T) {
+	body := captureBody(t, PostRequest{
+		Title:   "หัวข้อคลิป",
+		Content: "หัวข้อคลิป\n\nคำอธิบาย",
+		Platforms: []PlatformTarget{{
+			Platform:  "youtube",
+			AccountID: "acc1",
+			PlatformSpecificData: &YouTubeOptions{
+				Title:        "หัวข้อคลิป",
+				Visibility:   VisibilityPublic,
+				FirstComment: "ติดต่อทีมงานได้ที่ LINE id : @adsvance",
+			},
+		}},
+		Visibility: VisibilityPublic,
+		PublishNow: true,
+	})
+
+	for _, want := range []string{
+		`"platformSpecificData"`,
+		`"firstComment"`,
+		`LINE id : @adsvance`,
+		`"visibility":"public"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected body to contain %s, got %s", want, body)
+		}
+	}
+
+	// ตรวจซ้ำด้วย unmarshal เจาะจง nesting: substring match ข้างบนจะผ่านแม้ title/
+	// visibility/firstComment ถูก serialize ผิดระดับ (เช่นหลุดไปอยู่ platforms[0] ตรงๆ)
+	// เพราะ "visibility":"public" แมตช์ฟิลด์บนสุดได้เหมือนกัน ต้องยืนยันว่าค่าทั้งสามอยู่
+	// ใน platformSpecificData จริง ไม่ใช่แค่มีอยู่ที่ไหนสักแห่งใน body
+	var parsed struct {
+		Platforms []struct {
+			PlatformSpecificData *struct {
+				Title        string `json:"title"`
+				Visibility   string `json:"visibility"`
+				FirstComment string `json:"firstComment"`
+			} `json:"platformSpecificData"`
+		} `json:"platforms"`
+	}
+	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
+		t.Fatalf("unmarshal body: %v (body=%s)", err, body)
+	}
+	if len(parsed.Platforms) != 1 || parsed.Platforms[0].PlatformSpecificData == nil {
+		t.Fatalf("expected 1 platform with platformSpecificData, got %+v", parsed.Platforms)
+	}
+	psd := parsed.Platforms[0].PlatformSpecificData
+	if psd.Title != "หัวข้อคลิป" {
+		t.Fatalf("expected nested title %q, got %q", "หัวข้อคลิป", psd.Title)
+	}
+	if psd.Visibility != VisibilityPublic {
+		t.Fatalf("expected nested visibility %q, got %q", VisibilityPublic, psd.Visibility)
+	}
+	if psd.FirstComment != "ติดต่อทีมงานได้ที่ LINE id : @adsvance" {
+		t.Fatalf("expected nested firstComment %q, got %q", "ติดต่อทีมงานได้ที่ LINE id : @adsvance", psd.FirstComment)
+	}
+}
+
+func TestPost_OmitsPlatformSpecificDataWhenUnset(t *testing.T) {
+	body := captureBody(t, PostRequest{
+		Title:      "หัวข้อคลิป",
+		Content:    "หัวข้อคลิป",
+		Platforms:  []PlatformTarget{{Platform: "youtube", AccountID: "acc1"}},
+		Visibility: VisibilityPublic,
+		PublishNow: true,
+	})
+
+	if strings.Contains(body, "platformSpecificData") {
+		t.Fatalf("expected no platformSpecificData key when unset, got %s", body)
 	}
 }
