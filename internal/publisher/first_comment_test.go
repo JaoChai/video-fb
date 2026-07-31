@@ -31,7 +31,7 @@ func TestYoutubePlatforms(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := youtubePlatforms("acc1", tt.title, tt.firstComment)
+			got := youtubePlatforms("acc1", tt.title, tt.firstComment, VisibilityPublic)
 			if len(got) != 1 {
 				t.Fatalf("expected 1 platform target, got %d", len(got))
 			}

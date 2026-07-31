@@ -53,16 +53,18 @@ func cleanTikTokHook(title string) string {
 }
 
 // youtubePlatforms ประกอบเป้าหมายโพสต์ฝั่ง YouTube ของคำขอ Zernio
-// เมื่อ firstComment ไม่ว่าง มันจะไปกับ platformSpecificData แล้ว Zernio โพสต์คอมเมนต์
-// ใต้คลิปพร้อมปักหมุดให้เอง · ค่าว่าง = ไม่แนบบล็อกนี้เลย คำขอเหมือนก่อนมีฟีเจอร์นี้เป๊ะ
+// เมื่อ firstComment ไม่ว่าง มันจะไปกับ platformSpecificData แล้ว Zernio โพสต์คอมเมนต์ให้
+// (เอกสารบอกว่าปักหมุดด้วย แต่ live test 2026-07-31 พบว่าไม่ปัก — ถ้าอยากได้หมุดต้องปักเองใน
+// YouTube Studio) · ค่าว่าง = ไม่แนบบล็อกนี้เลย คำขอเหมือนก่อนมีฟีเจอร์นี้เป๊ะ
 // รับ title เข้ามาเพราะโพสต์ 16:9 กับ 9:16 ใช้ชื่อคนละอัน (Shorts ตัดที่ 60 ตัวอักษร
-// แล้วต่อท้าย #Shorts) — ส่ง target ตัวเดียวร่วมกันไม่ได้
-func youtubePlatforms(accountID, title, firstComment string) []PlatformTarget {
+// แล้วต่อท้าย #Shorts) — ส่ง target ตัวเดียวร่วมกันไม่ได้ · รับ visibility เข้ามาแทนที่จะ
+// hardcode ในนี้ เพื่อให้ค่าเดียวกันป้อนทั้งระดับบนกับ platformSpecificData เสมอ
+func youtubePlatforms(accountID, title, firstComment, visibility string) []PlatformTarget {
 	target := PlatformTarget{Platform: platformYouTube, AccountID: accountID}
 	if firstComment != "" {
 		target.PlatformSpecificData = &YouTubeOptions{
 			Title:        title,
-			Visibility:   VisibilityPublic,
+			Visibility:   visibility,
 			FirstComment: firstComment,
 		}
 	}
@@ -125,11 +127,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	var ytAccountID string
 	p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&ytAccountID)
 
-	// คอมเมนต์ปักหมุดใต้คลิป · อ่านครั้งเดียวต่อรอบเหมือน ytAccountID
+	// คอมเมนต์ติดต่อทีมงานใต้คลิป (ไม่ปักหมุด ดูเหตุผลที่ youtubePlatforms) · อ่านครั้งเดียวต่อรอบเหมือน ytAccountID
 	// ค่าว่าง (หรือไม่มีแถวนี้) = ปิดฟีเจอร์ ไม่ต้อง deploy — Scan ที่ error จะทิ้ง
 	// firstComment ไว้เป็น "" ซึ่งคือสถานะปิดพอดี จึงไม่ต้องจัดการ error แยก
 	var firstComment string
 	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'youtube_first_comment'`).Scan(&firstComment)
+	firstComment = strings.TrimSpace(firstComment)
 
 	for rows.Next() {
 		var clipID, title string
@@ -167,7 +170,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			result169, err := p.zernio.Post(ctx, PostRequest{
 				Title:      title,
 				Content:    title + "\n\n" + desc,
-				Platforms:  youtubePlatforms(ytAccountID, title, firstComment),
+				Platforms:  youtubePlatforms(ytAccountID, title, firstComment, VisibilityPublic),
 				MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 				Visibility: VisibilityPublic,
 				PublishNow: true,
@@ -192,7 +195,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			result916, err := p.zernio.Post(ctx, PostRequest{
 				Title:      shortsTitle,
 				Content:    shortsTitle + "\n\n" + desc,
-				Platforms:  youtubePlatforms(ytAccountID, shortsTitle, firstComment),
+				Platforms:  youtubePlatforms(ytAccountID, shortsTitle, firstComment, VisibilityPublic),
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				Visibility: VisibilityPublic,
 				PublishNow: true,
