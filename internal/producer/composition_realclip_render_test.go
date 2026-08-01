@@ -126,7 +126,7 @@ func TestInspectRealTutorialClip(t *testing.T) {
 	}
 	t.Logf("project dir: %s", dir)
 
-	if err := NewHyperframesRenderer().Inspect(context.Background(), dir); err != nil {
+	if _, err := NewHyperframesRenderer().Inspect(context.Background(), dir); err != nil {
 		t.Errorf("inspect flagged the layout (this is the reproduction):\n%v", err)
 	}
 }

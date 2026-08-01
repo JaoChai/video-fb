@@ -76,6 +76,7 @@ type Orchestrator struct {
 	critiquesRepo       *repository.CritiquesRepo
 	visualQARepo        *repository.VisualQARepo
 	autoReviewsRepo     *repository.AutoReviewsRepo
+	renderChecksRepo    *repository.RenderChecksRepo
 	scriptDebatesRepo   *repository.ScriptDebatesRepo
 	themesRepo          *repository.ThemesRepo
 	agentsRepo          *repository.AgentsRepo
@@ -112,6 +113,7 @@ func New(
 	critiques *repository.CritiquesRepo,
 	visualqa *repository.VisualQARepo,
 	autoreviews *repository.AutoReviewsRepo,
+	renderChecks *repository.RenderChecksRepo,
 	scriptDebates *repository.ScriptDebatesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
@@ -130,7 +132,7 @@ func New(
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		metadataAgent: ma, sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
-		autoReviewsRepo: autoreviews, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
+		autoReviewsRepo: autoreviews, renderChecksRepo: renderChecks, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
 		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
 		tutorialFeaturesRepo: tutorialFeatures, researchAgent: research, tutorialVerifier: tutorialVerifier,
@@ -702,6 +704,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
 	fi := o.resolveFormatInfo(ctx, clipID, preset)
 	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
+	// บันทึกผลด่านตรวจก่อนตัดสินอะไรทั้งสิ้น — เส้นทางล้มเหลวก็ต้องทิ้งข้อมูลไว้
+	o.persistRenderChecks(ctx, clipID, result)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -822,7 +826,9 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		AnswerScript:    &narration,
 		ProductionStage: &renderedStage,
 	})
-	o.clipsRepo.ClearFailReason(ctx, clipID)
+	if shouldClearFailReason(status) {
+		o.clipsRepo.ClearFailReason(ctx, clipID)
+	}
 	if status == "ready" {
 		log.Printf("Clip ready (hyperframes): %s", clipID)
 	}
@@ -1317,6 +1323,26 @@ func downgradeIfReady(status *string, cond bool, format string, args ...any) {
 		log.Printf(format, args...)
 	}
 }
+
+// persistRenderChecks บันทึกผลด่านตรวจทุกด่านของคลิปหนึ่งตัว (เฟส 1 spec 2026-08-01).
+// ต้องเรียกทันทีหลังการผลิตจบ ก่อนทางออกฉุกเฉินทุกทาง — ไม่งั้นคลิปที่เรนเดอร์พัง
+// หรือถูก gate ตีตกจะไม่มีข้อมูลเลย ทั้งที่เป็นคลิปที่อยากรู้สาเหตุมากที่สุด.
+// nil-safe และ non-fatal: ตารางสถิติต้องไม่ทำให้คลิปตก
+func (o *Orchestrator) persistRenderChecks(ctx context.Context, clipID string, result *producer.ProduceResult) {
+	if result == nil {
+		return
+	}
+	for _, c := range result.Checks {
+		if err := o.renderChecksRepo.Create(ctx, clipID, c.Stage, c.Passed, c.DurationMS, c.FindingsJSON()); err != nil {
+			log.Printf("render_checks: persist %s for clip %s failed (non-fatal): %v", c.Stage, clipID, err)
+		}
+	}
+}
+
+// shouldClearFailReason: ล้าง fail_reason เฉพาะเมื่อคลิปจบรอบนี้แบบไม่มีปัญหา
+// คลิปที่ถูกกัก (needs_review) ต้องเก็บเหตุผลไว้ ไม่งั้นคนถัดไปต้องเรนเดอร์ซ้ำ
+// เพื่อหาว่าอะไรพัง (บทเรียนจาก 2026-07-25)
+func shouldClearFailReason(status string) bool { return status == "ready" }
 
 // auto_review tuning: approve threshold matches AutoReviewAgent's normalization
 // default; retryCap bounds how many auto-triggered re-renders a clip gets before

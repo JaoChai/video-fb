@@ -118,6 +118,7 @@ func main() {
 	critiquesRepo := repository.NewCritiquesRepo(pool)
 	visualQARepo := repository.NewVisualQARepo(pool)
 	autoReviewsRepo := repository.NewAutoReviewsRepo(pool)
+	renderChecksRepo := repository.NewRenderChecksRepo(pool)
 	scriptDebatesRepo := repository.NewScriptDebatesRepo(pool)
 	scriptJudgeAgent := agent.NewScriptJudgeAgent(llm)
 	skillRevisionsRepo := repository.NewSkillRevisionsRepo(pool)
@@ -129,7 +130,7 @@ func main() {
 	formatsRepo := repository.NewFormatsRepo(pool)
 
 	orch := orchestrator.New(questionAgent, scriptAgent, imageAgent, metadataAgent, sceneAgent, criticAgent, visualQAAgent, autoReviewAgent, scriptJudgeAgent, prod,
-		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, scriptDebatesRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
+		clipsRepo, scenesRepo, critiquesRepo, visualQARepo, autoReviewsRepo, renderChecksRepo, scriptDebatesRepo, themesRepo, agentsRepo, analyticsRepo, settingsRepo, formatsRepo,
 		repository.NewTopicCategoriesRepo(pool), repository.NewTitleArchetypesRepo(pool),
 		repository.NewTutorialFeaturesRepo(pool), repository.NewMythBeliefsRepo(pool),
 		researchAgent, agent.NewTutorialVerifier(llm), tracker)

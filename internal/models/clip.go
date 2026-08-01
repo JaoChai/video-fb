@@ -84,6 +84,18 @@ type VisualQAStats struct {
 	Blocked int `json:"blocked"`
 }
 
+// RenderCheck คือผลของด่านตรวจ Hyperframes หนึ่งด่านของคลิปหนึ่งตัว
+// (lint | inspect | render). เก็บแบบ append-only — 3 แถวต่อคลิป.
+type RenderCheck struct {
+	ID         string          `json:"id"`
+	ClipID     string          `json:"clip_id"`
+	Stage      string          `json:"stage"`
+	Passed     bool            `json:"passed"`
+	DurationMS int             `json:"duration_ms"`
+	Findings   json.RawMessage `json:"findings"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
 type ClipMetadata struct {
 	ClipID             string   `json:"clip_id"`
 	YoutubeTitle       *string  `json:"youtube_title"`
