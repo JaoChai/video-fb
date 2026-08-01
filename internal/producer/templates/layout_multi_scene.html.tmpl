@@ -891,6 +891,11 @@
         const sceneEl=document.getElementById("scene-"+sc.scene);
         if(!sceneEl)return;
         const isFirst=idx===0, isLast=idx===SCENES.length-1;
+        // seam needs room: entry [start, start+SEAM_DUR] and exit
+        // [end-SEAM_DUR, end] both tween x on this wrapper — a shorter scene
+        // would overlap them (conflicting tweens), so it falls back to plain
+        // fades. Nothing upstream guards minimum scene duration.
+        const seamRoom=(sc.end-sc.start)>=SEAM_DUR*2;
         const inAt=sc.start;   // no pre-roll — the first tween lines up with data-start exactly
         const content=sceneEl.querySelector(".scene-content");
         const bg=sceneEl.querySelector(".scene-bg");
@@ -921,8 +926,10 @@
           // previous scene's power4.in exit.
           if(isFirst){
             tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:0.5,ease:ENTRANCE_EASE},inAt);
-          }else{
+          }else if(seamRoom){
             tl.fromTo(sceneEl,{x:SEAM_DX,opacity:0.35},{x:0,opacity:1,duration:SEAM_DUR,ease:"power4.out"},inAt);
+          }else{
+            tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:0.3,ease:"power2.out"},inAt);
           }
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
@@ -986,7 +993,7 @@
         // exactly at the cut, so something is always moving across the seam.
         // MOTION_UP-only so the seam pair stays whole — the matching entry
         // lives in the MOTION_UP branch above; legacy keeps its fade world.
-        if(MOTION_UP && !isLast){
+        if(MOTION_UP && !isLast && seamRoom){
           tl.to(sceneEl,{x:-SEAM_DX,duration:SEAM_DUR,ease:"power4.in"},sc.end-SEAM_DUR);
           tl.to(sceneEl,{opacity:0,duration:0.3,ease:"power2.in"},sc.end-0.3);
         }
