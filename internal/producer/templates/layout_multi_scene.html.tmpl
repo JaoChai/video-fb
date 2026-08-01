@@ -815,6 +815,8 @@
       // A1 entrance pacing factors (multiply base entrance durations):
       // fast = snappy hook, slow = premium hero/stat reveal, absent = normal (1.0).
       const SPEED_FACTORS={fast:0.7,slow:1.35};
+      // cut-the-curve partial travel: ~12% of frame width, leftward current.
+      const SEAM_DX=Math.round({{.Width}}*0.12);
       // contentEntrance returns the from/to vars for a scene's content entrance.
       // MOTION_V2 off → the legacy rise (y-based). MOTION_V2 on → per-scene
       // geometry from sc.entrance (punch/rise/slide); slide always enters from
@@ -866,7 +868,7 @@
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
         if(!sceneEl)return;
-        const inAt=idx===0?0:Math.max(0,sc.start-0.35);
+        const inAt=idx===0?0:sc.start;
         const content=sceneEl.querySelector(".scene-content");
         const bg=sceneEl.querySelector(".scene-bg");
         const span=Math.max(0.4,sc.end-inAt);
@@ -890,9 +892,16 @@
         {{- else -}}
         if (MOTION_UP) {
         {{- end}}
-          // Upgraded: incoming scene slides up + scales in while fading; bg ken-burns.
+          // Scene 0 fades up from black; later scenes take a cut-the-curve
+          // hand-off: the slab picks up mid-fade (opacity .35) already moving
+          // leftward, decelerating into place — velocity-matched to the
+          // previous scene's power4.in exit.
           const durIn=ENTRANCE_DUR*SPEED_FACTOR;
-          tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:idx===0?0.5:durIn,ease:ENTRANCE_EASE},inAt);
+          if(idx===0){
+            tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:0.5,ease:ENTRANCE_EASE},0);
+          }else{
+            tl.fromTo(sceneEl,{x:SEAM_DX,opacity:0.35},{x:0,opacity:1,duration:0.4,ease:"power4.out"},inAt);
+          }
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
             const ce=contentEntrance(sc,true);
@@ -946,7 +955,13 @@
               onUpdate:function(){ numEl.textContent = formatStat(proxy.v, meta); }},sc.start+0.3);
           }
         }
-        tl.set(sceneEl,{opacity:0},sc.end);
+        // cut-the-curve exit: the slab accelerates leftward and the fade dies
+        // exactly at the cut, so something is always moving across the seam.
+        if(idx<SCENES.length-1){
+          tl.to(sceneEl,{x:-SEAM_DX,duration:0.33,ease:"power4.in"},sc.end-0.33);
+          tl.to(sceneEl,{opacity:0,duration:0.3,ease:"power2.in"},sc.end-0.3);
+        }
+        tl.set(sceneEl,{opacity:0,x:0},sc.end);
       });
 
       // ── captions (phrase fade + key-word amber) ──

@@ -481,3 +481,23 @@ func TestRenderScenes_NoIdleDrift(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderScenes_CutTheCurveSeam pins the new scene seam: no pre-start
+// animation window (data-start must equal the first visible tween time — the
+// old sc.start-0.35 ran while the framework still hid the clip), and the
+// velocity-matched leftward exit/entry pair must be present.
+func TestRenderScenes_CutTheCurveSeam(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if strings.Contains(html, "sc.start-0.35") {
+		t.Errorf("pre-start entrance window still present (runs while clip is hidden)")
+	}
+	for _, want := range []string{"SEAM_DX", `"power4.in"`, `"power4.out"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("emitted JS missing %q (cut-the-curve seam not wired)", want)
+		}
+	}
+}
