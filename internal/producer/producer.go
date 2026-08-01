@@ -492,11 +492,11 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		return nil, fmt.Errorf("build scenes: %w", err)
 	}
 	inspectFlagged, inspectDetail := false, ""
-	if err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
+	if _, err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
 		inspectFlagged, inspectDetail = true, err.Error()
 		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, err)
 	}
-	renderIssues, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
+	renderRes, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
@@ -507,7 +507,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		inspectFlagged: inspectFlagged,
 		inspectDetail:  inspectDetail,
 		audioFlagged:   audioFlagged,
-		renderFlagged:  len(renderIssues) > 0,
+		renderFlagged:  len(renderRes.Findings) > 0,
 	}, nil
 }
 

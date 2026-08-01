@@ -101,11 +101,11 @@ func TestRenderSampleA1A4(t *testing.T) {
 	r := NewHyperframesRenderer()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := r.Lint(ctx, dir); err != nil {
+	if _, err := r.Lint(ctx, dir); err != nil {
 		t.Fatalf("lint: %v", err)
 	}
 	// Inspect guards A2 repositioning against text overflow / caption collision.
-	if err := r.Inspect(ctx, dir); err != nil {
+	if _, err := r.Inspect(ctx, dir); err != nil {
 		t.Fatalf("inspect (overflow/clip): %v", err)
 	}
 	if _, err := r.Render(ctx, dir, out); err != nil {

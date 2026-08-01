@@ -2,6 +2,8 @@ package producer
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +14,48 @@ import (
 
 // hyperframesVersion pins the CLI so renders are reproducible across machines.
 const hyperframesVersion = "0.6.70"
+
+// CheckResult คือผลของด่านตรวจหนึ่งด่านในรูปที่บันทึกลง render_checks ได้
+// มันเป็นข้อมูลสังเกตการณ์ล้วน — การตัดสินใจทุกอย่างยังอิง error ที่คืนคู่กันมา
+type CheckResult struct {
+	Stage      string
+	Passed     bool
+	DurationMS int
+	Findings   []string
+}
+
+// FindingsJSON encode Findings สำหรับคอลัมน์ jsonb — คืน "[]" เสมอเมื่อไม่มี
+// finding เพื่อไม่ให้คอลัมน์เก็บ null (คิวรีสถิติจะได้ไม่ต้องเผื่อ null)
+func (c CheckResult) FindingsJSON() []byte {
+	if len(c.Findings) == 0 {
+		return []byte("[]")
+	}
+	b, err := json.Marshal(c.Findings)
+	if err != nil {
+		return []byte("[]")
+	}
+	return b
+}
+
+// lintTimeout ให้ lint แยกจาก HyperframesRenderer.timeout (20 นาที ซึ่งตั้งไว้
+// สำหรับการเรนเดอร์). lint เป็น static analysis ไม่เปิดเบราว์เซอร์ — ด่านที่ไม่มี
+// สิทธิ์บล็อกอะไรเลยต้องไม่มีสิทธิ์หน่วงสายการผลิตด้วย
+const lintTimeout = 2 * time.Minute
+
+// classifyRunError แยก "CLI รันแล้วบอกว่าไม่ผ่าน" (exit != 0 = finding จริงของ
+// เทมเพลต) ออกจาก "รัน CLI ไม่ได้เลย" (binary หาย / timeout / npx ล้ม) โดยติด
+// คำนำหน้า runner_error: ให้กรณีหลัง เฟส 2 จะเปิด gate จาก finding จริงเท่านั้น
+// — ไม่งั้นคลิปจะถูกบล็อกเพราะ npx ล่ม ซึ่งคนละเรื่องกับเทมเพลตพัง
+func classifyRunError(err error, args []string) []string {
+	if err == nil {
+		return nil
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return []string{fmt.Sprintf("failed: hyperframes %v exited non-zero", args)}
+	}
+	return []string{fmt.Sprintf("runner_error: hyperframes %v could not run: %v", args, err)}
+}
 
 // HyperframesRenderer shells out to the Hyperframes CLI to lint and render a
 // composition project directory (the dir must contain index.html, package.json,
@@ -54,25 +98,36 @@ func RenderGateDecision(flagged, gateEnabled bool, retryCount int) RenderGateAct
 	return RenderGateReview
 }
 
-func (h *HyperframesRenderer) run(ctx context.Context, dir string, args ...string) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, h.timeout)
+// runCheck รันคำสั่ง CLI หนึ่งคำสั่งแล้วคืนทั้งผลที่บันทึกได้ (CheckResult) และ
+// error แบบเดิมเป๊ะ — ผู้เรียกทุกรายยังตัดสินใจจาก error เหมือนก่อนหน้านี้
+func (h *HyperframesRenderer) runCheck(ctx context.Context, stage string, timeout time.Duration, dir string, args ...string) (CheckResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	started := time.Now()
 	cmd := hyperframesCmd(ctx, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
+	res := CheckResult{
+		Stage:      stage,
+		Passed:     err == nil,
+		DurationMS: int(time.Since(started).Milliseconds()),
+	}
+
 	// A render can exit 0 while the page silently failed (e.g. a JS exception
 	// froze every animation, producing a static video). Hyperframes prints those
 	// as "[Browser:PAGEERROR]" / CDN-fetch warnings — surface them either way so
 	// a "successful" but broken render is never invisible.
 	issues := scanBrowserIssues(out)
+	res.Findings = append(res.Findings, issues...)
 	if len(issues) > 0 {
 		log.Printf("hyperframes %v browser issues:\n%s", args, strings.Join(issues, "\n"))
 	}
 	if err != nil {
-		return issues, fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
+		res.Findings = append(res.Findings, classifyRunError(err, args)...)
+		return res, fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
 	}
-	return issues, nil
+	return res, nil
 }
 
 // scanBrowserIssues pulls the lines that signal a silent in-page failure (a JS
@@ -101,19 +156,17 @@ func hyperframesCmd(ctx context.Context, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "npx", full...)
 }
 
-// Lint runs lint+validate+inspect; use it as a guardrail before Render so a
-// broken composition can fall back to a simpler layout instead of producing junk.
-func (h *HyperframesRenderer) Lint(ctx context.Context, dir string) error {
-	_, err := h.run(ctx, dir, "lint")
-	return err
+// Lint runs the static composition linter. เฟส 1 เรียกแบบ shadow — ผู้เรียก
+// บันทึกผลแล้วไปต่อเสมอ ไม่ว่าจะผ่านหรือไม่ (ดู spec 2026-08-01)
+func (h *HyperframesRenderer) Lint(ctx context.Context, dir string) (CheckResult, error) {
+	return h.runCheck(ctx, "lint", lintTimeout, dir, "lint")
 }
 
 // Inspect runs Hyperframes' collision/overflow auditor (canvas_overflow,
-// container_overflow, clipped_text) in headless Chrome. Use it as a gate after
-// Lint so a layout with overlapping or clipped elements is caught before render.
-func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
-	_, err := h.run(ctx, dir, "inspect")
-	return err
+// container_overflow, clipped_text) in headless Chrome. A flagged result routes
+// the clip to needs_review (orchestrator), it does not stop the render.
+func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) (CheckResult, error) {
+	return h.runCheck(ctx, "inspect", h.timeout, dir, "inspect")
 }
 
 // renderWorkers parallelizes frame capture across Chrome instances on the ~8GB /
@@ -126,12 +179,12 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) error {
 // only if the container's CPU is actually raised.
 const renderWorkers = "3"
 
-// Render produces an MP4 at outputPath from the composition in dir. It returns
-// any browser-error lines the render emitted (a render can exit 0 while a JS
-// exception froze every animation into a static video). Quality is standard/24fps
-// so the memory-heavy multi-scene render fits the ~8GB container without OOM.
-func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) ([]string, error) {
-	return h.run(ctx, dir, "render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
+// Render produces an MP4 at outputPath from the composition in dir. Quality is
+// standard/24fps so the memory-heavy multi-scene render fits the ~8GB container
+// without OOM.
+func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) (CheckResult, error) {
+	return h.runCheck(ctx, "render", h.timeout, dir,
+		"render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
 }
 
 func lastBytes(b []byte, n int) string {
