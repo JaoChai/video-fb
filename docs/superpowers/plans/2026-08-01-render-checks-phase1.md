@@ -739,6 +739,224 @@ git commit -m "docs(qa): คิวรีสถิติ render_checks สำห�
 
 ---
 
+### Task 6: อุดรูที่พบตอนตรวจ — บันทึกให้ครบทุกเส้นทาง + ให้ passed หมายถึง "ด่านผ่านจริง"
+
+พบระหว่างตรวจงาน Task 1-5 (2026-08-01) ว่าเฟส 1 ยังพลาดข้อมูลที่สำคัญที่สุด 3 ทาง:
+
+1. **คลิปที่เรนเดอร์ล้มเหลวไม่มีข้อมูลเลย** — `AssembleHyperframes916` เก็บ `checks` ครบ 3 ด่านแล้ว
+   แต่ `return nil, fmt.Errorf("render: %w", err)` ทิ้งทั้งก้อน ทั้งที่คลิปที่พังคือคลิปที่อยากรู้สาเหตุที่สุด
+2. **`passed` ของด่าน render ไม่ได้แปลว่าคลิปดี** — `Passed: err == nil` คือ exit code ของ CLI เท่านั้น
+   render ที่ค้างจะ exit 0 พร้อม `[Browser:PAGEERROR]` แล้วถูกบันทึกเป็น `passed=true`
+   คิวรีสถิติจะรายงาน "render ไม่เคยพัง" ทั้งที่คลิปจอแข็งหลุดออกไป
+3. **เปิด gate เมื่อไรข้อมูลหายเมื่อนั้น** — `orchestrator.go` เขียน `render_checks` หลังด่าน
+   `RenderFlagged` ซึ่ง `return o.failClip(...)` ออกไปก่อนเมื่อ `RENDER_ERROR_GATE_ENABLED=true`
+
+ข้อ 1 และ 3 มีต้นตอเดียวกัน: จุดเขียน DB อยู่หลังทางออกฉุกเฉินหลายทาง แก้ด้วยการย้ายไปจุดเดียว
+ทันทีหลังผลิตเสร็จ ก่อนทุก `return`
+
+**Files:**
+- Modify: `internal/producer/hyperframes.go` (เพิ่ม `checkPassed`, ใช้ใน `runCheck`)
+- Modify: `internal/producer/hyperframes_check_test.go` (เพิ่มเทสต์ `checkPassed`)
+- Modify: `internal/producer/producer.go` (`AssembleHyperframes916` + `ProduceHyperframes916` คืน checks แม้ล้มเหลว)
+- Modify: `internal/orchestrator/orchestrator.go` (เมธอด `persistRenderChecks` + ย้ายจุดเรียก)
+- Modify: `internal/orchestrator/status_gate_test.go` (เทสต์ nil-safety)
+- Modify: `docs/superpowers/reports/2026-08-01-render-checks-queries.md` (อธิบายความหมาย `passed` ใหม่)
+
+**Interfaces:**
+- Consumes: `producer.CheckResult`, `ProduceResult.Checks`, `repository.RenderChecksRepo.Create` (Task 1-4)
+- Produces:
+  - `producer.checkPassed(err error, issues []string) bool`
+  - `(*Orchestrator).persistRenderChecks(ctx context.Context, clipID string, result *producer.ProduceResult)`
+
+- [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน (ฝั่ง producer)**
+
+เพิ่มท้าย `internal/producer/hyperframes_check_test.go`:
+
+```go
+// ด่านผ่าน = CLI จบดี และไม่มีสัญญาณพังในหน้าเพจ. render ที่ค้างจะ exit 0
+// พร้อม [Browser:PAGEERROR] — ถ้านับว่า passed สถิติจะบอกว่า render ไม่เคยพัง
+func TestCheckPassed(t *testing.T) {
+	if !checkPassed(nil, nil) {
+		t.Error("ไม่มี error ไม่มี issue ต้องผ่าน")
+	}
+	if checkPassed(nil, []string{"[Browser:PAGEERROR] boom"}) {
+		t.Error("exit 0 แต่มี browser issue = เรนเดอร์ค้าง ต้องไม่ผ่าน")
+	}
+	if checkPassed(errors.New("boom"), nil) {
+		t.Error("มี error ต้องไม่ผ่าน")
+	}
+}
+```
+
+- [ ] **Step 2: รันเทสต์ให้เห็นว่าไม่ผ่าน**
+
+Run: `go test ./internal/producer/ -run TestCheckPassed -v`
+Expected: FAIL — `undefined: checkPassed`
+
+- [ ] **Step 3: เพิ่ม `checkPassed` และใช้ใน `runCheck`**
+
+ใน `internal/producer/hyperframes.go` เพิ่มฟังก์ชันนี้ต่อจาก `classifyRunError`:
+
+```go
+// checkPassed: ด่านผ่านก็ต่อเมื่อ CLI จบดี **และ** ไม่มีสัญญาณพังในหน้าเพจ
+// แยกออกมาเป็นฟังก์ชันเพราะเป็นนิยามของคำว่า "ผ่าน" ที่คิวรีสถิติทั้งหมดอิงอยู่
+func checkPassed(err error, issues []string) bool {
+	return err == nil && len(issues) == 0
+}
+```
+
+แล้วใน `runCheck` ย้ายการกำหนด `Passed` ไปหลังบรรทัดที่หา `issues` — โครงใหม่ของบล็อกนี้:
+
+```go
+	out, err := cmd.CombinedOutput()
+
+	// A render can exit 0 while the page silently failed (e.g. a JS exception
+	// froze every animation, producing a static video). Hyperframes prints those
+	// as "[Browser:PAGEERROR]" / CDN-fetch warnings — surface them either way so
+	// a "successful" but broken render is never invisible.
+	issues := scanBrowserIssues(out)
+
+	res := CheckResult{
+		Stage:      stage,
+		Passed:     checkPassed(err, issues),
+		DurationMS: int(time.Since(started).Milliseconds()),
+	}
+	res.Findings = append(res.Findings, issues...)
+	if len(issues) > 0 {
+		log.Printf("hyperframes %v browser issues:\n%s", args, strings.Join(issues, "\n"))
+	}
+	if err != nil {
+		res.Findings = append(res.Findings, classifyRunError(err, args)...)
+		return res, fmt.Errorf("hyperframes %v failed: %w\n%s", args, err, lastBytes(out, 600))
+	}
+	return res, nil
+```
+
+- [ ] **Step 4: รันเทสต์ให้ผ่าน**
+
+Run: `go test ./internal/producer/ -run 'TestCheckPassed|TestFindingsJSON|TestClassifyRunError' -v`
+Expected: PASS ทุกตัว
+
+- [ ] **Step 5: ให้ producer คืน checks แม้เรนเดอร์ล้มเหลว**
+
+ใน `internal/producer/producer.go` ฟังก์ชัน `AssembleHyperframes916` เปลี่ยนเฉพาะบล็อกหลัง `Render`:
+
+```go
+	renderRes, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
+	checks = append(checks, renderRes)
+	if err != nil {
+		// คืน checks ไปด้วยแม้เรนเดอร์พัง — คลิปที่พังคือคลิปที่อยากรู้สาเหตุที่สุด
+		// ผู้เรียกต้องเช็ค error ก่อนใช้ฟิลด์อื่นเสมอ (mp4Path ว่างในเส้นทางนี้)
+		return &assembleOutput{checks: checks}, fmt.Errorf("render: %w", err)
+	}
+```
+
+แล้วในฟังก์ชัน `ProduceHyperframes916` เปลี่ยนบล็อกที่รับผลจาก `AssembleHyperframes916`:
+
+```go
+	out, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset, fi)
+	if err != nil {
+		p.tracker.FailStep("assembly", err)
+		// พก checks ที่เก็บได้ก่อนพังกลับไปด้วย เพื่อให้ orchestrator บันทึกลง
+		// render_checks ได้ — ผู้เรียกยังต้องถือว่าคลิปนี้ล้มเหลวเพราะ error ไม่ nil
+		var checks []CheckResult
+		if out != nil {
+			checks = out.checks
+		}
+		return &ProduceResult{Checks: checks}, fmt.Errorf("assemble hyperframes: %w", err)
+	}
+```
+
+- [ ] **Step 6: เขียนเทสต์ nil-safety ฝั่ง orchestrator**
+
+เพิ่มท้าย `internal/orchestrator/status_gate_test.go`:
+
+```go
+// persistRenderChecks ถูกเรียกในเส้นทางที่คลิปล้มเหลวด้วย ซึ่ง result อาจเป็น nil
+// การ panic ตรงนั้นจะทำให้ทั้ง goroutine การผลิตตาย — ตารางสถิติต้องไม่ทำคลิปตก
+func TestPersistRenderChecks_NilResultIsNoop(t *testing.T) {
+	o := &Orchestrator{} // renderChecksRepo เป็น nil โดยตั้งใจ: ต้องไม่ถูกแตะ
+	o.persistRenderChecks(context.Background(), "clip-id", nil)
+	o.persistRenderChecks(context.Background(), "clip-id", &producer.ProduceResult{})
+}
+```
+
+เพิ่ม import ที่ไฟล์นี้ยังไม่มี: `"context"` และ `"github.com/jaochai/video-fb/internal/producer"`
+
+- [ ] **Step 7: รันเทสต์ให้เห็นว่าไม่ผ่าน**
+
+Run: `go test ./internal/orchestrator/ -run TestPersistRenderChecks -v`
+Expected: FAIL — `o.persistRenderChecks undefined`
+
+- [ ] **Step 8: เพิ่มเมธอด `persistRenderChecks` และย้ายจุดเรียก**
+
+ใน `internal/orchestrator/orchestrator.go` เพิ่มเมธอดนี้ไว้ใกล้ `downgradeIfReady`:
+
+```go
+// persistRenderChecks บันทึกผลด่านตรวจทุกด่านของคลิปหนึ่งตัว (เฟส 1 spec 2026-08-01).
+// ต้องเรียกทันทีหลังการผลิตจบ ก่อนทางออกฉุกเฉินทุกทาง — ไม่งั้นคลิปที่เรนเดอร์พัง
+// หรือถูก gate ตีตกจะไม่มีข้อมูลเลย ทั้งที่เป็นคลิปที่อยากรู้สาเหตุมากที่สุด.
+// nil-safe และ non-fatal: ตารางสถิติต้องไม่ทำให้คลิปตก
+func (o *Orchestrator) persistRenderChecks(ctx context.Context, clipID string, result *producer.ProduceResult) {
+	if result == nil {
+		return
+	}
+	for _, c := range result.Checks {
+		if err := o.renderChecksRepo.Create(ctx, clipID, c.Stage, c.Passed, c.DurationMS, c.FindingsJSON()); err != nil {
+			log.Printf("render_checks: persist %s for clip %s failed (non-fatal): %v", c.Stage, clipID, err)
+		}
+	}
+}
+```
+
+ลบบล็อก `for _, c := range result.Checks { ... }` ที่อยู่ก่อนคอมเมนต์
+`// A hyperframes layout-inspector flag means visible overflow/clip` ออกทั้งก้อน
+(รวมคอมเมนต์ 3 บรรทัดเหนือมันที่ขึ้นต้นด้วย `// เฟส 1 (spec 2026-08-01): บันทึกผลทุกด่านไว้ก่อน`)
+
+แล้วในฟังก์ชัน `renderAndFinalize` ให้เรียกเมธอดใหม่ทันทีหลังการผลิต — บล็อกเดิมคือ:
+
+```go
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
+	if err != nil {
+		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
+	}
+```
+
+เปลี่ยนเป็น:
+
+```go
+	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
+	// บันทึกผลด่านตรวจก่อนตัดสินอะไรทั้งสิ้น — เส้นทางล้มเหลวก็ต้องทิ้งข้อมูลไว้
+	o.persistRenderChecks(ctx, clipID, result)
+	if err != nil {
+		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
+	}
+```
+
+- [ ] **Step 9: รันเทสต์และ build ทั้งโปรเจกต์**
+
+Run: `go build ./... && go test ./internal/producer/ ./internal/orchestrator/ ./internal/repository/`
+Expected: PASS ทั้งหมด
+
+- [ ] **Step 10: แก้เอกสารคิวรีให้ตรงกับความหมายใหม่ของ passed**
+
+ใน `docs/superpowers/reports/2026-08-01-render-checks-queries.md` แทรกย่อหน้านี้ใต้หัวข้อ
+`## 1. แต่ละด่าน fail กี่เปอร์เซ็นต์` (ก่อนบล็อก SQL):
+
+```markdown
+`passed = false` หมายถึงด่านนั้นไม่ผ่านจริง — รวมกรณีที่ CLI จบด้วย exit 0 แต่หน้าเพจ
+มีสัญญาณพัง (`[Browser:PAGEERROR]` = เรนเดอร์ค้างเป็นภาพนิ่ง) ไม่ใช่แค่ exit code
+```
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add internal/producer/hyperframes.go internal/producer/hyperframes_check_test.go internal/producer/producer.go internal/orchestrator/orchestrator.go internal/orchestrator/status_gate_test.go docs/superpowers/reports/2026-08-01-render-checks-queries.md
+git commit -m "fix(qa): บันทึก render_checks ให้ครบทุกเส้นทาง + passed หมายถึงด่านผ่านจริง"
+```
+
+---
+
 ## หลัง merge — สิ่งที่ต้องรู้
 
 - migration 079 จะรันอัตโนมัติตอน deploy (`cmd/server/main.go:54` เรียก `RunMigrations`)
