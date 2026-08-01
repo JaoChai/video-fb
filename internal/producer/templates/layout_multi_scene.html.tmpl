@@ -817,13 +817,14 @@
       const SPEED_FACTORS={fast:0.7,slow:1.35};
       // contentEntrance returns the from/to vars for a scene's content entrance.
       // MOTION_V2 off → the legacy rise (y-based). MOTION_V2 on → per-scene
-      // geometry from sc.entrance (punch/rise/slide); slide alternates direction.
+      // geometry from sc.entrance (punch/rise/slide); slide always enters from
+      // the right — one directional current per clip, never ping-pong.
       function contentEntrance(sc, motionUp){
         const base = motionUp ? 60 : 46;
         const rise = {from:{y:base,opacity:0}, to:{y:0,opacity:1}};
         if(!MOTION_V2) return rise;
         const v = sc.entrance || "rise";
-        if(v==="slide"){ const dx = (sc.scene % 2 === 0) ? -80 : 80; return {from:{x:dx,opacity:0}, to:{x:0,opacity:1}}; }
+        if(v==="slide"){ return {from:{x:80,opacity:0}, to:{x:0,opacity:1}}; }
         if(v==="punch"){ return {from:{scale:0.9,opacity:0}, to:{scale:1,opacity:1}}; }
         return rise;
       }

@@ -453,3 +453,21 @@ func TestRenderScenes_BackgroundIsWrappedInClippingLayer(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderScenes_SlideDirectionIsConstant pins the motion-doctrine "current":
+// the slide entrance must always come from the right (+x) — never alternate
+// per scene parity (ping-pong reads as amateur per the motion doctrine).
+func TestRenderScenes_SlideDirectionIsConstant(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if strings.Contains(html, "sc.scene % 2") {
+		t.Errorf("slide entrance still alternates direction by scene parity (ping-pong)")
+	}
+	slideRe := regexp.MustCompile(`v==="slide".*x:\s*80`)
+	if !slideRe.MatchString(html) {
+		t.Errorf("slide entrance is not the constant +80 (enter from the right)")
+	}
+}
