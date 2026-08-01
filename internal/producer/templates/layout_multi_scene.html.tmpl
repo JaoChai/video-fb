@@ -815,8 +815,10 @@
       // A1 entrance pacing factors (multiply base entrance durations):
       // fast = snappy hook, slow = premium hero/stat reveal, absent = normal (1.0).
       const SPEED_FACTORS={fast:0.7,slow:1.35};
-      // cut-the-curve partial travel: ~12% of frame width, leftward current.
-      const SEAM_DX=Math.round({{.Width}}*0.12);
+      // cut-the-curve seam: partial travel ~12% of frame width, leftward
+      // current. One duration on both sides of the cut — with the mirrored
+      // power4 pair this makes the velocity match exact by construction.
+      const SEAM_DX=Math.round({{.Width}}*0.12), SEAM_DUR=0.36;
       // contentEntrance returns the from/to vars for a scene's content entrance.
       // MOTION_V2 off → the legacy rise (y-based). MOTION_V2 on → per-scene
       // geometry from sc.entrance (punch/rise/slide); slide always enters from
@@ -865,41 +867,31 @@
         });
       }
       // springEase — damped-spring position curve baked into a seek-safe GSAP
-      // ease. Deterministic: fixed-step scan, no Math.random / Date.now.
-      // response ≈ seconds per oscillation; dampingFraction 1 = no overshoot,
-      // 0.85 ≈ iOS register (~1% overshoot, felt not seen). Overshooting eases
-      // go on transforms only — never opacity (it would push past 1).
-      function springEase(opts){
-        const response=(opts&&opts.response)||0.5;
-        const z=(opts&&opts.dampingFraction!=null)?opts.dampingFraction:1;
+      // ease (underdamped closed form, z<1 — the only register this template
+      // uses). Deterministic: fixed-step scan, no Math.random / Date.now.
+      // response ≈ seconds per oscillation; z 0.85 ≈ the iOS register (~1%
+      // overshoot, felt not seen). Overshooting eases go on transforms only —
+      // never opacity (it would push past 1).
+      function springEase(response, z){
         const w=(2*Math.PI)/response;
-        let pos;
-        if(z<1){
-          const wd=w*Math.sqrt(1-z*z);
-          pos=function(t){return 1-Math.exp(-z*w*t)*(Math.cos(wd*t)+((z*w)/wd)*Math.sin(wd*t));};
-        }else if(z>1){
-          const wo=w*Math.sqrt(z*z-1);
-          pos=function(t){return 1-Math.exp(-z*w*t)*(Math.cosh(wo*t)+((z*w)/wo)*Math.sinh(wo*t));};
-        }else{
-          pos=function(t){return 1-Math.exp(-w*t)*(1+w*t);};
-        }
-        const EPS=0.001;
-        const rate=z<=1?z*w:(z-Math.sqrt(z*z-1))*w;
-        const SCAN=12/rate, N=4800;
+        const wd=w*Math.sqrt(1-z*z);
+        const pos=function(t){return 1-Math.exp(-z*w*t)*(Math.cos(wd*t)+((z*w)/wd)*Math.sin(wd*t));};
+        const SCAN=12/(z*w), N=4800;
         let T=SCAN;
         for(let i=N;i>=0;i--){
           const t=(i/N)*SCAN;
-          if(Math.abs(1-pos(t))>EPS){T=((i+1)/N)*SCAN;break;}
+          if(Math.abs(1-pos(t))>0.001){T=((i+1)/N)*SCAN;break;}
         }
         const xT=pos(T);
         return {duration:T,ease:function(p){return pos(p*T)+p*(1-xT);}};
       }
-      const STAT_SETTLE=springEase({response:0.35,dampingFraction:0.85});
+      const STAT_SETTLE=springEase(0.35,0.85);
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
         if(!sceneEl)return;
-        const inAt=idx===0?0:sc.start;
+        const isFirst=idx===0, isLast=idx===SCENES.length-1;
+        const inAt=sc.start;   // no pre-roll — the first tween lines up with data-start exactly
         const content=sceneEl.querySelector(".scene-content");
         const bg=sceneEl.querySelector(".scene-bg");
         const span=Math.max(0.4,sc.end-inAt);
@@ -927,21 +919,23 @@
           // hand-off: the slab picks up mid-fade (opacity .35) already moving
           // leftward, decelerating into place — velocity-matched to the
           // previous scene's power4.in exit.
-          const durIn=ENTRANCE_DUR*SPEED_FACTOR;
-          if(idx===0){
-            tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:0.5,ease:ENTRANCE_EASE},0);
+          if(isFirst){
+            tl.fromTo(sceneEl,{opacity:0,scale:1.04},{opacity:1,scale:1,duration:0.5,ease:ENTRANCE_EASE},inAt);
           }else{
-            tl.fromTo(sceneEl,{x:SEAM_DX,opacity:0.35},{x:0,opacity:1,duration:0.4,ease:"power4.out"},inAt);
+            tl.fromTo(sceneEl,{x:SEAM_DX,opacity:0.35},{x:0,opacity:1,duration:SEAM_DUR,ease:"power4.out"},inAt);
           }
           if(bg) tl.fromTo(bg,{scale:1.04},{scale:BG_ZOOM_TO,duration:span,ease:"none"},inAt);
           if(content){
+            // seam timing is speed-invariant by design (velocity match at the
+            // cut); only the content entrance scales with the scene's speed.
+            const durIn=ENTRANCE_DUR*SPEED_FACTOR;
             const ce=contentEntrance(sc,true);
             tl.fromTo(content,ce.from,Object.assign({},ce.to,{duration:durIn,ease:ENTRANCE_EASE}),sc.start+0.08);
           }
         } else {
           // Current behavior, now speed-scaled per scene.
           const contentDurIn=0.6*SPEED_FACTOR;
-          tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:idx===0?0.5:0.55*SPEED_FACTOR,ease:"power2.out"},inAt);
+          tl.fromTo(sceneEl,{opacity:0},{opacity:1,duration:isFirst?0.5:0.55*SPEED_FACTOR,ease:"power2.out"},inAt);
           if(bg) tl.fromTo(bg,{scale:1.0},{scale:1.06,duration:span,ease:"none"},inAt);
           if(content){
             const ce=contentEntrance(sc,false);
@@ -953,11 +947,12 @@
           const kids=content.children;
           for(let j=0;j<kids.length;j++){
             const isStat=kids[j].querySelector&&kids[j].querySelector(".stat");
+            const at=sc.start+(isStat?0.28+j*0.08:0.26+j*0.09);
             if(isStat){
-              tl.fromTo(kids[j],{scale:0.78},{scale:1,duration:STAT_SETTLE.duration,ease:STAT_SETTLE.ease},sc.start+0.28+j*0.08);
-              tl.fromTo(kids[j],{opacity:0},{opacity:1,duration:0.3,ease:"power2.out"},sc.start+0.28+j*0.08);
+              tl.fromTo(kids[j],{scale:0.78},{scale:1,duration:STAT_SETTLE.duration,ease:STAT_SETTLE.ease},at);
+              tl.fromTo(kids[j],{opacity:0},{opacity:1,duration:0.3,ease:"power2.out"},at);
             }else{
-              tl.fromTo(kids[j],{opacity:0,y:18},{opacity:1,y:0,duration:0.42,ease:"power3.out"},sc.start+0.26+j*0.09);
+              tl.fromTo(kids[j],{opacity:0,y:18},{opacity:1,y:0,duration:0.42,ease:"power3.out"},at);
             }
           }
         }
@@ -989,10 +984,14 @@
         }
         // cut-the-curve exit: the slab accelerates leftward and the fade dies
         // exactly at the cut, so something is always moving across the seam.
-        if(idx<SCENES.length-1){
-          tl.to(sceneEl,{x:-SEAM_DX,duration:0.33,ease:"power4.in"},sc.end-0.33);
+        // MOTION_UP-only so the seam pair stays whole — the matching entry
+        // lives in the MOTION_UP branch above; legacy keeps its fade world.
+        if(MOTION_UP && !isLast){
+          tl.to(sceneEl,{x:-SEAM_DX,duration:SEAM_DUR,ease:"power4.in"},sc.end-SEAM_DUR);
           tl.to(sceneEl,{opacity:0,duration:0.3,ease:"power2.in"},sc.end-0.3);
         }
+        // last-scene guard (and x reset for seam scenes) — the exit tweens
+        // already land at these values for every other scene.
         tl.set(sceneEl,{opacity:0,x:0},sc.end);
       });
 

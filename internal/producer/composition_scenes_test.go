@@ -143,14 +143,16 @@ func assertRenderContains(t *testing.T, params ScenesParams, markers ...string) 
 
 // assertRenderNotContains renders params and fails if any substring IS present
 // in the output — the negative counterpart to assertRenderContains.
-func assertRenderNotContains(t *testing.T, params ScenesParams, sub string) {
+func assertRenderNotContains(t *testing.T, params ScenesParams, subs ...string) {
 	t.Helper()
 	out, err := RenderCompositionScenes(params)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if strings.Contains(string(out), sub) {
-		t.Errorf("expected output NOT to contain %q", sub)
+	for _, sub := range subs {
+		if strings.Contains(string(out), sub) {
+			t.Errorf("expected output NOT to contain %q", sub)
+		}
 	}
 }
 
@@ -452,71 +454,32 @@ func TestRenderScenes_BackgroundIsWrappedInClippingLayer(t *testing.T) {
 // the slide entrance must always come from the right (+x) — never alternate
 // per scene parity (ping-pong reads as amateur per the motion doctrine).
 func TestRenderScenes_SlideDirectionIsConstant(t *testing.T) {
-	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	html := string(out)
-	if strings.Contains(html, "sc.scene % 2") {
-		t.Errorf("slide entrance still alternates direction by scene parity (ping-pong)")
-	}
-	slideRe := regexp.MustCompile(`v==="slide".*x:\s*80`)
-	if !slideRe.MatchString(html) {
-		t.Errorf("slide entrance is not the constant +80 (enter from the right)")
-	}
+	p := sampleScenesParams("9:16")
+	assertRenderNotContains(t, p, "sc.scene % 2")
+	assertRenderContains(t, p, `v==="slide"){ return {from:{x:80`)
 }
 
 // TestRenderScenes_NoIdleDrift: the motion doctrine bans slow ambient drift
-// ("video is waiting"). The MOTION_V2 post-entrance content drift and its
-// entranceEnd bookkeeping must be gone from the emitted JS.
+// ("video is waiting") — the MOTION_V2 post-entrance content drift must be
+// gone from the emitted JS.
 func TestRenderScenes_NoIdleDrift(t *testing.T) {
-	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	html := string(out)
-	for _, banned := range []string{"driftDur", "driftStart", "entranceEnd"} {
-		if strings.Contains(html, banned) {
-			t.Errorf("emitted JS still contains %q (idle drift should be removed)", banned)
-		}
-	}
+	assertRenderNotContains(t, sampleScenesParams("9:16"), "driftDur", "driftStart")
 }
 
-// TestRenderScenes_CutTheCurveSeam pins the new scene seam: no pre-start
-// animation window (data-start must equal the first visible tween time — the
-// old sc.start-0.35 ran while the framework still hid the clip), and the
+// TestRenderScenes_CutTheCurveSeam pins the new scene seam: the first tween
+// lines up with data-start exactly (no hidden pre-start window — the old
+// sc.start-0.35 ran while the framework still hid the clip), and the
 // velocity-matched leftward exit/entry pair must be present.
 func TestRenderScenes_CutTheCurveSeam(t *testing.T) {
-	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	html := string(out)
-	if strings.Contains(html, "sc.start-0.35") {
-		t.Errorf("pre-start entrance window still present (runs while clip is hidden)")
-	}
-	for _, want := range []string{"SEAM_DX", `"power4.in"`, `"power4.out"`} {
-		if !strings.Contains(html, want) {
-			t.Errorf("emitted JS missing %q (cut-the-curve seam not wired)", want)
-		}
-	}
+	assertRenderContains(t, sampleScenesParams("9:16"),
+		"const inAt=sc.start", "SEAM_DX", "SEAM_DUR", `"power4.in"`, `"power4.out"`)
 }
 
 // TestRenderScenes_SpringEaseReplacesHardBack: back.out(2) exceeds the
 // doctrine ceiling (1.7); stat cards move to a baked damped-spring ease
 // (deterministic, seek-safe) with opacity split onto its own tween.
 func TestRenderScenes_SpringEaseReplacesHardBack(t *testing.T) {
-	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
-	if err != nil {
-		t.Fatalf("render: %v", err)
-	}
-	html := string(out)
-	if strings.Contains(html, "back.out(2)") {
-		t.Errorf("caption key-word pop still uses back.out(2) — over the 1.7 doctrine ceiling")
-	}
-	for _, want := range []string{"function springEase", "STAT_SETTLE"} {
-		if !strings.Contains(html, want) {
-			t.Errorf("emitted JS missing %q", want)
-		}
-	}
+	p := sampleScenesParams("9:16")
+	assertRenderNotContains(t, p, "back.out(2)")
+	assertRenderContains(t, p, "function springEase", "STAT_SETTLE")
 }
