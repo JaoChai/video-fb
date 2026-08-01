@@ -26,3 +26,17 @@ func TestDowngradeIfReady(t *testing.T) {
 		}
 	}
 }
+
+// fail_reason ของคลิป needs_review คือคำอธิบายเดียวที่เหลือว่าทำไมมันถูกกัก
+// (log หายภายในไม่กี่ชั่วโมง). ก่อนหน้านี้ ClearFailReason ถูกเรียกแบบไม่มี
+// เงื่อนไขทุกครั้ง จึงล้างเหตุผลที่เพิ่งเขียนไป 20 บรรทัดก่อนหน้าเสมอ
+func TestShouldClearFailReason(t *testing.T) {
+	if !shouldClearFailReason("ready") {
+		t.Error(`shouldClearFailReason("ready") = false, want true — คลิปที่กลับมาดีต้องล้างเหตุผลเก่า`)
+	}
+	for _, s := range []string{"needs_review", "failed"} {
+		if shouldClearFailReason(s) {
+			t.Errorf("shouldClearFailReason(%q) = true, want false — เหตุผลต้องอยู่ให้คนอ่าน", s)
+		}
+	}
+}

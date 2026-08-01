@@ -76,6 +76,7 @@ type Orchestrator struct {
 	critiquesRepo       *repository.CritiquesRepo
 	visualQARepo        *repository.VisualQARepo
 	autoReviewsRepo     *repository.AutoReviewsRepo
+	renderChecksRepo    *repository.RenderChecksRepo
 	scriptDebatesRepo   *repository.ScriptDebatesRepo
 	themesRepo          *repository.ThemesRepo
 	agentsRepo          *repository.AgentsRepo
@@ -112,6 +113,7 @@ func New(
 	critiques *repository.CritiquesRepo,
 	visualqa *repository.VisualQARepo,
 	autoreviews *repository.AutoReviewsRepo,
+	renderChecks *repository.RenderChecksRepo,
 	scriptDebates *repository.ScriptDebatesRepo,
 	themes *repository.ThemesRepo,
 	agents *repository.AgentsRepo,
@@ -130,7 +132,7 @@ func New(
 		settingsRepo: settings, formatsRepo: formats, questionAgent: qa, scriptAgent: sa, imageAgent: ia,
 		metadataAgent: ma, sceneAgent: sca, criticAgent: ca, visualQAAgent: vqa, autoReviewAgent: ara,
 		producer: prod, clipsRepo: clips, scenesRepo: scenes, critiquesRepo: critiques, visualQARepo: visualqa,
-		autoReviewsRepo: autoreviews, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
+		autoReviewsRepo: autoreviews, renderChecksRepo: renderChecks, scriptJudgeAgent: sja, scriptDebatesRepo: scriptDebates,
 		themesRepo: themes, agentsRepo: agents, analyticsRepo: analytics,
 		topicCategoriesRepo: topicCategories, titleArchetypesRepo: titleArchetypes,
 		tutorialFeaturesRepo: tutorialFeatures, researchAgent: research, tutorialVerifier: tutorialVerifier,
@@ -794,6 +796,15 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 			"visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
 	}
 
+	// เฟส 1 (spec 2026-08-01): บันทึกผลทุกด่านไว้ก่อน — ตัวเลขชุดนี้คือสิ่งที่จะ
+	// ตัดสินว่าเฟส 2/3 ควรทำอย่างไร. เขียนไม่สำเร็จถือเป็น non-fatal เหมือน
+	// visualQARepo.Create — คลิปต้องไม่ตกเพราะตารางสถิติ
+	for _, c := range result.Checks {
+		if err := o.renderChecksRepo.Create(ctx, clipID, c.Stage, c.Passed, c.DurationMS, c.FindingsJSON()); err != nil {
+			log.Printf("render_checks: persist %s for clip %s failed (non-fatal): %v", c.Stage, clipID, err)
+		}
+	}
+
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
 	// even if the vision QA gate passed or was disabled (fail-open QA can't catch it).
 	wasReady := status == "ready"
@@ -822,7 +833,9 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 		AnswerScript:    &narration,
 		ProductionStage: &renderedStage,
 	})
-	o.clipsRepo.ClearFailReason(ctx, clipID)
+	if shouldClearFailReason(status) {
+		o.clipsRepo.ClearFailReason(ctx, clipID)
+	}
 	if status == "ready" {
 		log.Printf("Clip ready (hyperframes): %s", clipID)
 	}
@@ -1317,6 +1330,11 @@ func downgradeIfReady(status *string, cond bool, format string, args ...any) {
 		log.Printf(format, args...)
 	}
 }
+
+// shouldClearFailReason: ล้าง fail_reason เฉพาะเมื่อคลิปจบรอบนี้แบบไม่มีปัญหา
+// คลิปที่ถูกกัก (needs_review) ต้องเก็บเหตุผลไว้ ไม่งั้นคนถัดไปต้องเรนเดอร์ซ้ำ
+// เพื่อหาว่าอะไรพัง (บทเรียนจาก 2026-07-25)
+func shouldClearFailReason(status string) bool { return status == "ready" }
 
 // auto_review tuning: approve threshold matches AutoReviewAgent's normalization
 // default; retryCap bounds how many auto-triggered re-renders a clip gets before
