@@ -89,6 +89,9 @@ type ProduceResult struct {
 	// RenderFlagged is true when the render emitted browser errors (a silently
 	// frozen render). The orchestrator retries once, then routes to needs_review.
 	RenderFlagged bool
+	// Checks คือผลดิบของด่าน lint / inspect / render สำหรับบันทึกลง render_checks
+	// (เฟส 1 = สังเกตการณ์ล้วน). ว่างสำหรับสายการผลิตแบบ static Produce
+	Checks []CheckResult
 }
 
 // FFmpeg exposes the assembler so callers (Visual QA) can extract frames from a
@@ -307,6 +310,9 @@ type assembleOutput struct {
 	inspectDetail  string
 	audioFlagged   bool
 	renderFlagged  bool // populated by the render browser-error gate
+	// checks คือผลของทุกด่านที่รันจริง เรียงตามลำดับ (lint, inspect, render)
+	// เฟส 1 ใช้เพื่อบันทึกอย่างเดียว ไม่มีด่านไหนเปลี่ยนเส้นทางของคลิป
+	checks []CheckResult
 }
 
 // generateSceneImagesParallel is the PIPELINE_FAST_ENABLED variant of the
@@ -491,12 +497,27 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	if _, err := p.hf.builder.BuildScenes(params, clipID, projectDir, voicePath, bgPaths); err != nil {
 		return nil, fmt.Errorf("build scenes: %w", err)
 	}
-	inspectFlagged, inspectDetail := false, ""
-	if _, err := p.hf.renderer.Inspect(ctx, projectDir); err != nil {
-		inspectFlagged, inspectDetail = true, err.Error()
-		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, err)
+	var checks []CheckResult
+
+	// เฟส 1 (spec 2026-08-01): lint เป็นด่านสังเกตการณ์ — บันทึกผลแล้วไปต่อเสมอ
+	// เราไม่เคยรัน lint กับเทมเพลตนี้มาก่อน จึงยังไม่รู้ว่ามันจะฟ้องอะไรบ้าง
+	// การให้มันบล็อกคลิปตั้งแต่วันแรกจึงเสี่ยงเกินไป
+	lintRes, lintErr := p.hf.renderer.Lint(ctx, projectDir)
+	checks = append(checks, lintRes)
+	if lintErr != nil {
+		log.Printf("hyperframes lint (shadow, ไม่บล็อก) clip %s: %v", clipID, lintErr)
 	}
+
+	inspectFlagged, inspectDetail := false, ""
+	inspectRes, inspectErr := p.hf.renderer.Inspect(ctx, projectDir)
+	checks = append(checks, inspectRes)
+	if inspectErr != nil {
+		inspectFlagged, inspectDetail = true, inspectErr.Error()
+		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, inspectErr)
+	}
+
 	renderRes, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
+	checks = append(checks, renderRes)
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
@@ -508,6 +529,7 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 		inspectDetail:  inspectDetail,
 		audioFlagged:   audioFlagged,
 		renderFlagged:  len(renderRes.Findings) > 0,
+		checks:         checks,
 	}, nil
 }
 
@@ -580,5 +602,6 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 		InspectDetail:     out.inspectDetail,
 		AudioFlagged:      out.audioFlagged,
 		RenderFlagged:     out.renderFlagged,
+		Checks:            out.checks,
 	}, nil
 }
