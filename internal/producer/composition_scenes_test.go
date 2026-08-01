@@ -501,3 +501,22 @@ func TestRenderScenes_CutTheCurveSeam(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderScenes_SpringEaseReplacesHardBack: back.out(2) exceeds the
+// doctrine ceiling (1.7); stat cards move to a baked damped-spring ease
+// (deterministic, seek-safe) with opacity split onto its own tween.
+func TestRenderScenes_SpringEaseReplacesHardBack(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	if strings.Contains(html, "back.out(2)") {
+		t.Errorf("caption key-word pop still uses back.out(2) — over the 1.7 doctrine ceiling")
+	}
+	for _, want := range []string{"function springEase", "STAT_SETTLE"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("emitted JS missing %q", want)
+		}
+	}
+}

@@ -864,6 +864,37 @@
             onUpdate:function(){nEl.textContent=pre+formatStat(proxy.v,meta)+post;}},at);
         });
       }
+      // springEase — damped-spring position curve baked into a seek-safe GSAP
+      // ease. Deterministic: fixed-step scan, no Math.random / Date.now.
+      // response ≈ seconds per oscillation; dampingFraction 1 = no overshoot,
+      // 0.85 ≈ iOS register (~1% overshoot, felt not seen). Overshooting eases
+      // go on transforms only — never opacity (it would push past 1).
+      function springEase(opts){
+        const response=(opts&&opts.response)||0.5;
+        const z=(opts&&opts.dampingFraction!=null)?opts.dampingFraction:1;
+        const w=(2*Math.PI)/response;
+        let pos;
+        if(z<1){
+          const wd=w*Math.sqrt(1-z*z);
+          pos=function(t){return 1-Math.exp(-z*w*t)*(Math.cos(wd*t)+((z*w)/wd)*Math.sin(wd*t));};
+        }else if(z>1){
+          const wo=w*Math.sqrt(z*z-1);
+          pos=function(t){return 1-Math.exp(-z*w*t)*(Math.cosh(wo*t)+((z*w)/wo)*Math.sinh(wo*t));};
+        }else{
+          pos=function(t){return 1-Math.exp(-w*t)*(1+w*t);};
+        }
+        const EPS=0.001;
+        const rate=z<=1?z*w:(z-Math.sqrt(z*z-1))*w;
+        const SCAN=12/rate, N=4800;
+        let T=SCAN;
+        for(let i=N;i>=0;i--){
+          const t=(i/N)*SCAN;
+          if(Math.abs(1-pos(t))>EPS){T=((i+1)/N)*SCAN;break;}
+        }
+        const xT=pos(T);
+        return {duration:T,ease:function(p){return pos(p*T)+p*(1-xT);}};
+      }
+      const STAT_SETTLE=springEase({response:0.35,dampingFraction:0.85});
       // ── per-scene: ONE entrance per element, no conflicting tweens ──
       SCENES.forEach((sc,idx)=>{
         const sceneEl=document.getElementById("scene-"+sc.scene);
@@ -923,7 +954,8 @@
           for(let j=0;j<kids.length;j++){
             const isStat=kids[j].querySelector&&kids[j].querySelector(".stat");
             if(isStat){
-              tl.fromTo(kids[j],{scale:0.78,opacity:0},{scale:1,opacity:1,duration:0.5,ease:"back.out(1.7)"},sc.start+0.28+j*0.08);
+              tl.fromTo(kids[j],{scale:0.78},{scale:1,duration:STAT_SETTLE.duration,ease:STAT_SETTLE.ease},sc.start+0.28+j*0.08);
+              tl.fromTo(kids[j],{opacity:0},{opacity:1,duration:0.3,ease:"power2.out"},sc.start+0.28+j*0.08);
             }else{
               tl.fromTo(kids[j],{opacity:0,y:18},{opacity:1,y:0,duration:0.42,ease:"power3.out"},sc.start+0.26+j*0.09);
             }
@@ -995,7 +1027,7 @@
         // 8-digit hex alpha (E6≈.9, 66≈.4, 00=0) keeps the color palette-driven.
         if(keyEl){
           tl.fromTo(keyEl,{scale:1,textShadow:"0 0 0px "+KEY_ACCENT+"00"},
-            {scale:1.14,textShadow:"0 0 20px "+KEY_ACCENT+"E6",duration:0.24,ease:"back.out(2)"},inAt+0.10);
+            {scale:1.14,textShadow:"0 0 20px "+KEY_ACCENT+"E6",duration:0.24,ease:"back.out(1.7)"},inAt+0.10);
           tl.to(keyEl,{scale:1,textShadow:"0 0 8px "+KEY_ACCENT+"66",duration:0.30,ease:"power2.out"},inAt+0.38);
         }
         tl.to(p,{opacity:0,y:-12,duration:0.22,ease:"power2.in"},Math.max(inAt+0.4,outAt-0.2));
