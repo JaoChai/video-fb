@@ -256,12 +256,6 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	assertRenderNotContains(t, off, `COVER && idx===0 && sc.type==="stat"`)
 }
 
-func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
-	p := sampleScenesParams("9:16")
-	p.MotionV2 = true
-	assertRenderContains(t, p, "MOTION_V2 && content", "y:-12")
-}
-
 func TestRenderCompositionScenes_CountUp(t *testing.T) {
 	p := sampleScenesParams("9:16")
 	p.MotionV2 = true
@@ -469,5 +463,21 @@ func TestRenderScenes_SlideDirectionIsConstant(t *testing.T) {
 	slideRe := regexp.MustCompile(`v==="slide".*x:\s*80`)
 	if !slideRe.MatchString(html) {
 		t.Errorf("slide entrance is not the constant +80 (enter from the right)")
+	}
+}
+
+// TestRenderScenes_NoIdleDrift: the motion doctrine bans slow ambient drift
+// ("video is waiting"). The MOTION_V2 post-entrance content drift and its
+// entranceEnd bookkeeping must be gone from the emitted JS.
+func TestRenderScenes_NoIdleDrift(t *testing.T) {
+	out, err := RenderCompositionScenes(sampleScenesParams("9:16"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	html := string(out)
+	for _, banned := range []string{"driftDur", "driftStart", "entranceEnd"} {
+		if strings.Contains(html, banned) {
+			t.Errorf("emitted JS still contains %q (idle drift should be removed)", banned)
+		}
 	}
 }
