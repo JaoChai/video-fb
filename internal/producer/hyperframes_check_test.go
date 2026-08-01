@@ -49,3 +49,17 @@ func TestClassifyRunError_NilIsEmpty(t *testing.T) {
 		t.Fatalf("classifyRunError(nil) = %v, want empty", got)
 	}
 }
+
+// ด่านผ่าน = CLI จบดี และไม่มีสัญญาณพังในหน้าเพจ. render ที่ค้างจะ exit 0
+// พร้อม [Browser:PAGEERROR] — ถ้านับว่า passed สถิติจะบอกว่า render ไม่เคยพัง
+func TestCheckPassed(t *testing.T) {
+	if !checkPassed(nil, nil) {
+		t.Error("ไม่มี error ไม่มี issue ต้องผ่าน")
+	}
+	if checkPassed(nil, []string{"[Browser:PAGEERROR] boom"}) {
+		t.Error("exit 0 แต่มี browser issue = เรนเดอร์ค้าง ต้องไม่ผ่าน")
+	}
+	if checkPassed(errors.New("boom"), nil) {
+		t.Error("มี error ต้องไม่ผ่าน")
+	}
+}

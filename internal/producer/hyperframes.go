@@ -57,6 +57,12 @@ func classifyRunError(err error, args []string) []string {
 	return []string{fmt.Sprintf("runner_error: hyperframes %v could not run: %v", args, err)}
 }
 
+// checkPassed: ด่านผ่านก็ต่อเมื่อ CLI จบดี **และ** ไม่มีสัญญาณพังในหน้าเพจ
+// แยกออกมาเป็นฟังก์ชันเพราะเป็นนิยามของคำว่า "ผ่าน" ที่คิวรีสถิติทั้งหมดอิงอยู่
+func checkPassed(err error, issues []string) bool {
+	return err == nil && len(issues) == 0
+}
+
 // HyperframesRenderer shells out to the Hyperframes CLI to lint and render a
 // composition project directory (the dir must contain index.html, package.json,
 // meta.json, hyperframes.json and assets/).
@@ -108,17 +114,18 @@ func (h *HyperframesRenderer) runCheck(ctx context.Context, stage string, timeou
 	cmd := hyperframesCmd(ctx, args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
-	res := CheckResult{
-		Stage:      stage,
-		Passed:     err == nil,
-		DurationMS: int(time.Since(started).Milliseconds()),
-	}
 
 	// A render can exit 0 while the page silently failed (e.g. a JS exception
 	// froze every animation, producing a static video). Hyperframes prints those
 	// as "[Browser:PAGEERROR]" / CDN-fetch warnings — surface them either way so
 	// a "successful" but broken render is never invisible.
 	issues := scanBrowserIssues(out)
+
+	res := CheckResult{
+		Stage:      stage,
+		Passed:     checkPassed(err, issues),
+		DurationMS: int(time.Since(started).Milliseconds()),
+	}
 	res.Findings = append(res.Findings, issues...)
 	if len(issues) > 0 {
 		log.Printf("hyperframes %v browser issues:\n%s", args, strings.Join(issues, "\n"))

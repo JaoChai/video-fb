@@ -1,6 +1,11 @@
 package orchestrator
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/jaochai/video-fb/internal/producer"
+)
 
 // downgradeIfReady centralizes every render gate's "first gate to fire wins"
 // invariant: it only ever moves ready → needs_review and never clobbers any
@@ -39,4 +44,12 @@ func TestShouldClearFailReason(t *testing.T) {
 			t.Errorf("shouldClearFailReason(%q) = true, want false — เหตุผลต้องอยู่ให้คนอ่าน", s)
 		}
 	}
+}
+
+// persistRenderChecks ถูกเรียกในเส้นทางที่คลิปล้มเหลวด้วย ซึ่ง result อาจเป็น nil
+// การ panic ตรงนั้นจะทำให้ทั้ง goroutine การผลิตตาย — ตารางสถิติต้องไม่ทำคลิปตก
+func TestPersistRenderChecks_NilResultIsNoop(t *testing.T) {
+	o := &Orchestrator{} // renderChecksRepo เป็น nil โดยตั้งใจ: ต้องไม่ถูกแตะ
+	o.persistRenderChecks(context.Background(), "clip-id", nil)
+	o.persistRenderChecks(context.Background(), "clip-id", &producer.ProduceResult{})
 }

@@ -7,6 +7,9 @@
 
 ## 1. แต่ละด่าน fail กี่เปอร์เซ็นต์
 
+`passed = false` หมายถึงด่านนั้นไม่ผ่านจริง — รวมกรณีที่ CLI จบด้วย exit 0 แต่หน้าเพจ
+มีสัญญาณพัง (`[Browser:PAGEERROR]` = เรนเดอร์ค้างเป็นภาพนิ่ง) ไม่ใช่แค่ exit code
+
 ```sql
 SELECT stage,
        count(*) AS runs,

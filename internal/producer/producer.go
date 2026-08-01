@@ -519,7 +519,9 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 	renderRes, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
 	checks = append(checks, renderRes)
 	if err != nil {
-		return nil, fmt.Errorf("render: %w", err)
+		// คืน checks ไปด้วยแม้เรนเดอร์พัง — คลิปที่พังคือคลิปที่อยากรู้สาเหตุที่สุด
+		// ผู้เรียกต้องเช็ค error ก่อนใช้ฟิลด์อื่นเสมอ (mp4Path ว่างในเส้นทางนี้)
+		return &assembleOutput{checks: checks}, fmt.Errorf("render: %w", err)
 	}
 	audioFlagged := probeVoiceSilent(voicePath)
 	return &assembleOutput{
@@ -568,7 +570,13 @@ func (p *Producer) ProduceHyperframes916(ctx context.Context, clipID string, sce
 	out, err := p.AssembleHyperframes916(ctx, clipID, scenes, preset, fi)
 	if err != nil {
 		p.tracker.FailStep("assembly", err)
-		return nil, fmt.Errorf("assemble hyperframes: %w", err)
+		// พก checks ที่เก็บได้ก่อนพังกลับไปด้วย เพื่อให้ orchestrator บันทึกลง
+		// render_checks ได้ — ผู้เรียกยังต้องถือว่าคลิปนี้ล้มเหลวเพราะ error ไม่ nil
+		var checks []CheckResult
+		if out != nil {
+			checks = out.checks
+		}
+		return &ProduceResult{Checks: checks}, fmt.Errorf("assemble hyperframes: %w", err)
 	}
 	mp4Path := out.mp4Path
 	p.tracker.CompleteStep("assembly")

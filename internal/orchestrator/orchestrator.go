@@ -704,6 +704,8 @@ func (o *Orchestrator) produceClipWithID(ctx context.Context, clipID string, q a
 func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q agent.GeneratedQuestion, scenes []agent.GeneratedScene, preset producer.StylePreset, narration string) error {
 	fi := o.resolveFormatInfo(ctx, clipID, preset)
 	result, err := o.producer.ProduceHyperframes916(ctx, clipID, scenes, preset, fi)
+	// บันทึกผลด่านตรวจก่อนตัดสินอะไรทั้งสิ้น — เส้นทางล้มเหลวก็ต้องทิ้งข้อมูลไว้
+	o.persistRenderChecks(ctx, clipID, result)
 	if err != nil {
 		return o.failClip(ctx, clipID, fmt.Errorf("produce hyperframes: %w", err))
 	}
@@ -794,15 +796,6 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 	} else if qErr != nil {
 		downgradeIfReady(&status, producer.QAFailClosedEnabled(),
 			"visualqa: clip %s config unavailable (%v) — fail-closed → needs_review", clipID, qErr)
-	}
-
-	// เฟส 1 (spec 2026-08-01): บันทึกผลทุกด่านไว้ก่อน — ตัวเลขชุดนี้คือสิ่งที่จะ
-	// ตัดสินว่าเฟส 2/3 ควรทำอย่างไร. เขียนไม่สำเร็จถือเป็น non-fatal เหมือน
-	// visualQARepo.Create — คลิปต้องไม่ตกเพราะตารางสถิติ
-	for _, c := range result.Checks {
-		if err := o.renderChecksRepo.Create(ctx, clipID, c.Stage, c.Passed, c.DurationMS, c.FindingsJSON()); err != nil {
-			log.Printf("render_checks: persist %s for clip %s failed (non-fatal): %v", c.Stage, clipID, err)
-		}
 	}
 
 	// A hyperframes layout-inspector flag means visible overflow/clip — block publish
@@ -1328,6 +1321,21 @@ func downgradeIfReady(status *string, cond bool, format string, args ...any) {
 	if cond && *status == "ready" {
 		*status = "needs_review"
 		log.Printf(format, args...)
+	}
+}
+
+// persistRenderChecks บันทึกผลด่านตรวจทุกด่านของคลิปหนึ่งตัว (เฟส 1 spec 2026-08-01).
+// ต้องเรียกทันทีหลังการผลิตจบ ก่อนทางออกฉุกเฉินทุกทาง — ไม่งั้นคลิปที่เรนเดอร์พัง
+// หรือถูก gate ตีตกจะไม่มีข้อมูลเลย ทั้งที่เป็นคลิปที่อยากรู้สาเหตุมากที่สุด.
+// nil-safe และ non-fatal: ตารางสถิติต้องไม่ทำให้คลิปตก
+func (o *Orchestrator) persistRenderChecks(ctx context.Context, clipID string, result *producer.ProduceResult) {
+	if result == nil {
+		return
+	}
+	for _, c := range result.Checks {
+		if err := o.renderChecksRepo.Create(ctx, clipID, c.Stage, c.Passed, c.DurationMS, c.FindingsJSON()); err != nil {
+			log.Printf("render_checks: persist %s for clip %s failed (non-fatal): %v", c.Stage, clipID, err)
+		}
 	}
 }
 
