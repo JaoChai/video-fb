@@ -143,14 +143,16 @@ func assertRenderContains(t *testing.T, params ScenesParams, markers ...string) 
 
 // assertRenderNotContains renders params and fails if any substring IS present
 // in the output — the negative counterpart to assertRenderContains.
-func assertRenderNotContains(t *testing.T, params ScenesParams, sub string) {
+func assertRenderNotContains(t *testing.T, params ScenesParams, subs ...string) {
 	t.Helper()
 	out, err := RenderCompositionScenes(params)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if strings.Contains(string(out), sub) {
-		t.Errorf("expected output NOT to contain %q", sub)
+	for _, sub := range subs {
+		if strings.Contains(string(out), sub) {
+			t.Errorf("expected output NOT to contain %q", sub)
+		}
 	}
 }
 
@@ -254,12 +256,6 @@ func TestRenderCompositionScenes_Cover(t *testing.T) {
 	// with no 0→final count-up tween (poster-frame flash guard).
 	assertRenderContains(t, on, `COVER && idx===0 && sc.type==="stat"`)
 	assertRenderNotContains(t, off, `COVER && idx===0 && sc.type==="stat"`)
-}
-
-func TestRenderCompositionScenes_ParallaxDrift(t *testing.T) {
-	p := sampleScenesParams("9:16")
-	p.MotionV2 = true
-	assertRenderContains(t, p, "MOTION_V2 && content", "y:-12")
 }
 
 func TestRenderCompositionScenes_CountUp(t *testing.T) {
@@ -452,4 +448,38 @@ func TestRenderScenes_BackgroundIsWrappedInClippingLayer(t *testing.T) {
 			t.Errorf("scene background markup missing %q", want)
 		}
 	}
+}
+
+// TestRenderScenes_SlideDirectionIsConstant pins the motion-doctrine "current":
+// the slide entrance must always come from the right (+x) — never alternate
+// per scene parity (ping-pong reads as amateur per the motion doctrine).
+func TestRenderScenes_SlideDirectionIsConstant(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	assertRenderNotContains(t, p, "sc.scene % 2")
+	assertRenderContains(t, p, `v==="slide"){ return {from:{x:80`)
+}
+
+// TestRenderScenes_NoIdleDrift: the motion doctrine bans slow ambient drift
+// ("video is waiting") — the MOTION_V2 post-entrance content drift must be
+// gone from the emitted JS.
+func TestRenderScenes_NoIdleDrift(t *testing.T) {
+	assertRenderNotContains(t, sampleScenesParams("9:16"), "driftDur", "driftStart")
+}
+
+// TestRenderScenes_CutTheCurveSeam pins the new scene seam: the first tween
+// lines up with data-start exactly (no hidden pre-start window — the old
+// sc.start-0.35 ran while the framework still hid the clip), and the
+// velocity-matched leftward exit/entry pair must be present.
+func TestRenderScenes_CutTheCurveSeam(t *testing.T) {
+	assertRenderContains(t, sampleScenesParams("9:16"),
+		"const inAt=sc.start", "SEAM_DX", "SEAM_DUR", `"power4.in"`, `"power4.out"`)
+}
+
+// TestRenderScenes_SpringEaseReplacesHardBack: back.out(2) exceeds the
+// doctrine ceiling (1.7); stat cards move to a baked damped-spring ease
+// (deterministic, seek-safe) with opacity split onto its own tween.
+func TestRenderScenes_SpringEaseReplacesHardBack(t *testing.T) {
+	p := sampleScenesParams("9:16")
+	assertRenderNotContains(t, p, "back.out(2)")
+	assertRenderContains(t, p, "function springEase", "STAT_SETTLE")
 }
