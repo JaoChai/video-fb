@@ -304,6 +304,20 @@ func (r *ClipsRepo) ClearFailReason(ctx context.Context, id string) error {
 	return nil
 }
 
+// ClearFailReasonPrefixed ล้าง fail_reason เฉพาะเมื่อข้อความขึ้นต้นด้วย prefix ที่ระบุ ·
+// ช่องนี้มีหลายด่านเขียนลงไป (layout inspector, รอบส่ง) การล้างแบบเหมารวมเคยกลืนเหตุผล
+// ของด่านอื่นทิ้งมาแล้ว (04e3510) เจ้าของข้อความเท่านั้นที่ล้างของตัวเองได้
+// ใช้ starts_with() แทน LIKE เพราะ prefix อาจมีอักขระพิเศษของ LIKE (% _) ปนมา
+func (r *ClipsRepo) ClearFailReasonPrefixed(ctx context.Context, id, prefix string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET fail_reason = NULL
+		 WHERE id = $1 AND starts_with(fail_reason, $2)`, id, prefix)
+	if err != nil {
+		return fmt.Errorf("clear fail_reason (prefix %q) for clip %s: %w", prefix, id, err)
+	}
+	return nil
+}
+
 func (r *ClipsRepo) DeleteOldFailed(ctx context.Context, maxRetries int) (int, error) {
 	result, err := r.pool.Exec(ctx,
 		`DELETE FROM clips WHERE status = 'failed' AND retry_count >= $1
