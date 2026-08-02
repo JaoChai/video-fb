@@ -239,7 +239,9 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 	if result.Error != "" {
-		return nil, fmt.Errorf("zernio error: %s", result.Error)
+		// แนบ body ดิบมาด้วย เพราะ result.Error สรุปรวมเป็น "All platforms failed" ซึ่งบอก
+		// ไม่ได้ว่าแพลตฟอร์มไหนล้มเพราะอะไร — ตอนสืบเคส 2026-08-02 ต้องไปไล่ GET /posts เอง
+		return nil, fmt.Errorf("zernio error: %s (response: %s)", result.Error, string(respBody[:min(len(respBody), 300)]))
 	}
 	if result.Post.ID == "" {
 		return nil, fmt.Errorf("zernio returned empty post ID (response: %s)", string(respBody[:min(len(respBody), 300)]))
