@@ -52,6 +52,18 @@ func cleanTikTokHook(title string) string {
 	return title
 }
 
+// YouTube ตีตกทั้งการอัปโหลดถ้าชื่อหรือคำอธิบายมี '<' หรือ '>' ("Video description
+// is invalid") เพราะกันโค้ด HTML — และ Zernio รายงานกลับมาแค่ "All platforms failed"
+// ทำให้คลิปค้าง ready เงียบๆ ไม่มีใครรู้สาเหตุ (เกิดจริง 2026-08-02 คลิป e6973467)
+// คลิปสอนเขียนเส้นทางเมนู "Columns > Customise columns" เป็นปกติ จึงต้องแปลงก่อนส่ง
+// ทุกครั้ง · แทนด้วย ‹ › ที่หน้าตาเกือบเหมือนกันแทนการลบทิ้ง เพื่อให้ทั้งเส้นทางเมนูและ
+// เครื่องหมายมากกว่า/น้อยกว่ายังอ่านรู้เรื่องบนหน้าคลิป
+var youtubeAngleBrackets = strings.NewReplacer("<", "‹", ">", "›")
+
+func sanitizeYouTubeText(s string) string {
+	return youtubeAngleBrackets.Replace(s)
+}
+
 // youtubePlatforms ประกอบเป้าหมายโพสต์ฝั่ง YouTube ของคำขอ Zernio
 // เมื่อ firstComment ไม่ว่าง มันจะไปกับ platformSpecificData แล้ว Zernio โพสต์คอมเมนต์ให้
 // (เอกสารบอกว่าปักหมุดด้วย แต่ live test 2026-07-31 พบว่าไม่ปัก — ถ้าอยากได้หมุดต้องปักเองใน
@@ -155,6 +167,10 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			desc = *description
 		}
 
+		// แปลงครั้งเดียวตรงนี้ให้ครอบทั้งโพสต์ 16:9 และ 9:16 (shortsTitle ต่อยอดจาก title)
+		title = sanitizeYouTubeText(title)
+		desc = sanitizeYouTubeText(desc)
+
 		if ytAccountID == "" {
 			log.Printf("No Zernio accounts configured, skipping clip %s", clipID)
 			continue
@@ -164,6 +180,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		// produces 9:16 only; the legacy pipeline produced 16:9 (+ a 9:16 Short).
 		// Publish each format that exists rather than requiring 16:9.
 		var mainPostID, shortsPostID string
+		var postErr error
 
 		// 16:9 (YouTube regular), if present. Zernio uses Content's first line as the title.
 		if video169 != nil && *video169 != "" {
@@ -177,6 +194,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			})
 			if err != nil {
 				log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
+				p.recordPublishFailure(ctx, clipID, err)
 				continue
 			}
 			log.Printf("Posted 16:9 public for clip %s → %s", clipID, result169.Post.ID)
@@ -202,6 +220,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			})
 			if err != nil {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
+				postErr = err
 			} else {
 				log.Printf("Posted 9:16 Shorts public for clip %s → %s", clipID, result916.Post.ID)
 				shortsPostID = result916.Post.ID
@@ -212,6 +231,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		// 'ready' so a later run retries it instead of marking an empty publish.
 		if mainPostID == "" && shortsPostID == "" {
 			log.Printf("No video published for clip %s, leaving as ready", clipID)
+			if postErr != nil {
+				p.recordPublishFailure(ctx, clipID, postErr)
+			}
 			continue
 		}
 
@@ -234,6 +256,16 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 // recordPublished marks the clip 'published' and records its Zernio post ids in a
 // single transaction, so a partial write can't leave the clip 'published' without
 // ids (orphaned from analytics) or 'ready' with ids (re-posted next run).
+// recordPublishFailure เขียนเหตุผลลง fail_reason ให้เห็นบนหน้าคลิป · คลิปที่ส่งไม่ผ่าน
+// ยังคาสถานะ 'ready' แล้ววนใหม่ทุกชั่วโมง ถ้าไม่บันทึกไว้ อาการที่คนใช้เห็นคือ "กด publish
+// แล้วไม่มีอะไรเกิดขึ้น" ต้องไปไล่ log บน Railway ถึงจะรู้สาเหตุ (เกิดจริง 2026-08-02)
+// เขียนไม่สำเร็จก็แค่ log ต่อ — การส่งคลิปสำคัญกว่าการบันทึกเหตุผล
+func (p *Publisher) recordPublishFailure(ctx context.Context, clipID string, cause error) {
+	if err := p.clipsRepo.SetFailReason(ctx, clipID, "publish: "+cause.Error()); err != nil {
+		log.Printf("บันทึก fail_reason ของคลิป %s ไม่สำเร็จ: %v", clipID, err)
+	}
+}
+
 func (p *Publisher) recordPublished(ctx context.Context, clipID, mainPostID, shortsPostID string) error {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
