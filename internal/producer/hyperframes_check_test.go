@@ -3,6 +3,7 @@ package producer
 import (
 	"errors"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -61,5 +62,31 @@ func TestCheckPassed(t *testing.T) {
 	}
 	if checkPassed(errors.New("boom"), nil) {
 		t.Error("มี error ต้องไม่ผ่าน")
+	}
+}
+
+func TestWithDetail(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		err  error
+		want []string
+	}{
+		{"ไม่มี error ⇒ ไม่แตะ findings", []string{"a"}, nil, []string{"a"}},
+		{
+			"ต่อข้อความเต็มท้าย finding เดิม",
+			[]string{"failed: hyperframes [inspect] exited non-zero"},
+			errors.New("canvas_overflow: #cta ล้นกรอบฉาก 3"),
+			[]string{"failed: hyperframes [inspect] exited non-zero", "detail: canvas_overflow: #cta ล้นกรอบฉาก 3"},
+		},
+		{"findings ว่างก็ยังได้ detail", nil, errors.New("boom"), []string{"detail: boom"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := withDetail(CheckResult{Stage: "inspect", Findings: c.in}, c.err).Findings
+			if !slices.Equal(got, c.want) {
+				t.Errorf("findings = %v, want %v", got, c.want)
+			}
+		})
 	}
 }

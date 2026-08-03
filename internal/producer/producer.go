@@ -510,11 +510,11 @@ func (p *Producer) AssembleHyperframes916(ctx context.Context, clipID string, sc
 
 	inspectFlagged, inspectDetail := false, ""
 	inspectRes, inspectErr := p.hf.renderer.Inspect(ctx, projectDir)
-	checks = append(checks, inspectRes)
 	if inspectErr != nil {
 		inspectFlagged, inspectDetail = true, inspectErr.Error()
 		log.Printf("hyperframes inspect flagged layout issues for clip %s: %v", clipID, inspectErr)
 	}
+	checks = append(checks, withDetail(inspectRes, inspectErr))
 
 	renderRes, err := p.hf.renderer.Render(ctx, projectDir, "output.mp4")
 	checks = append(checks, renderRes)
