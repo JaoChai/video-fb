@@ -57,6 +57,18 @@ func classifyRunError(err error, args []string) []string {
 	return []string{fmt.Sprintf("runner_error: hyperframes %v could not run: %v", args, err)}
 }
 
+// withDetail แนบข้อความเต็มของด่านที่ล้มไว้ใน findings · classifyRunError คืนแค่
+// "exited non-zero" ซึ่งบอกไม่ได้ว่าอะไรพัง ส่วนข้อความเต็มเดิมไปอยู่ที่ clips.fail_reason
+// ช่องเดียว ซึ่งรอบส่งเขียนทับได้ → รายละเอียดหายถาวร เก็บลง render_checks ด้วยจึงเป็น
+// สำเนาถาวรชุดเดียวที่ไม่มีใครทับ
+func withDetail(res CheckResult, err error) CheckResult {
+	if err == nil {
+		return res
+	}
+	res.Findings = append(res.Findings, "detail: "+err.Error())
+	return res
+}
+
 // checkPassed: ด่านผ่านก็ต่อเมื่อ CLI จบดี **และ** ไม่มีสัญญาณพังในหน้าเพจ
 // แยกออกมาเป็นฟังก์ชันเพราะเป็นนิยามของคำว่า "ผ่าน" ที่คิวรีสถิติทั้งหมดอิงอยู่
 func checkPassed(err error, issues []string) bool {
