@@ -18,6 +18,10 @@ import (
 const platformYouTube = "youtube"
 const platformTikTok = "tiktok"
 
+// publishFailPrefix นำหน้าเหตุผลทุกข้อความที่รอบส่งเขียนลง fail_reason — เป็นตัวเดียวกับที่
+// ใช้ล้างตอนส่งสำเร็จ จึงล้างได้เฉพาะข้อความของรอบส่ง ไม่แตะเหตุผลจากด่านอื่น
+const publishFailPrefix = "publish: "
+
 func isContactInfo(title string) bool {
 	lower := strings.ToLower(title)
 	return strings.Contains(lower, "line id") ||
@@ -245,6 +249,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 			continue
 		}
 
+		// เงื่อนไข postErr == nil: คลิปที่มีทั้ง 16:9 และ 9:16 อาจขึ้นได้แค่รูปแบบเดียว
+		// อีกตัวเพิ่งล้มไป — เหตุผลนั้นยังใหม่อยู่ ห้ามล้างทิ้ง
+		if postErr == nil {
+			p.clearPublishFailure(ctx, clipID)
+		}
+
 		log.Printf("Published clip %s via Zernio (main=%q shorts=%q)", clipID, mainPostID, shortsPostID)
 	}
 	if err := rows.Err(); err != nil {
@@ -261,8 +271,17 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 // แล้วไม่มีอะไรเกิดขึ้น" ต้องไปไล่ log บน Railway ถึงจะรู้สาเหตุ (เกิดจริง 2026-08-02)
 // เขียนไม่สำเร็จก็แค่ log ต่อ — การส่งคลิปสำคัญกว่าการบันทึกเหตุผล
 func (p *Publisher) recordPublishFailure(ctx context.Context, clipID string, cause error) {
-	if err := p.clipsRepo.SetFailReason(ctx, clipID, "publish: "+cause.Error()); err != nil {
+	if err := p.clipsRepo.SetFailReason(ctx, clipID, publishFailPrefix+cause.Error()); err != nil {
 		log.Printf("บันทึก fail_reason ของคลิป %s ไม่สำเร็จ: %v", clipID, err)
+	}
+}
+
+// clearPublishFailure ล้างเหตุผลของรอบส่งเมื่อคลิปขึ้นสำเร็จแล้ว เพื่อไม่ให้ข้อความล้มเหลว
+// ของรอบก่อนค้างโชว์อยู่บนคลิปที่ขึ้นไปแล้ว · ล้างเฉพาะข้อความที่ขึ้นต้นด้วย publishFailPrefix
+// เหตุผลจากด่านอื่น (เช่น "layout inspector: ...") ต้องอยู่ต่อ คนถัดไปยังต้องใช้
+func (p *Publisher) clearPublishFailure(ctx context.Context, clipID string) {
+	if err := p.clipsRepo.ClearFailReasonPrefixed(ctx, clipID, publishFailPrefix); err != nil {
+		log.Printf("ล้าง fail_reason ของคลิป %s ไม่สำเร็จ: %v", clipID, err)
 	}
 }
 
