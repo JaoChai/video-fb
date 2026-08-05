@@ -171,8 +171,12 @@ func main() {
 	anlz := analyzer.New(pool, llm, agentsRepo, formulaScoresRepo)
 	scoreboardSvc := scoreboard.NewService(formulaScoresRepo, settingsRepo, time.Now)
 	sched := scheduler.New(pool, pub, anlz, orch, schedRepo, clipsRepo, learnerSvc, scoreboardSvc)
-	if err := sched.Start(ctx); err != nil {
-		log.Printf("Warning: scheduler start failed: %v", err)
+	if cfg.SchedulerEnabled {
+		if err := sched.Start(ctx); err != nil {
+			log.Printf("Warning: scheduler start failed: %v", err)
+		}
+	} else {
+		log.Printf("SCHEDULER_ENABLED=false — ไม่สตาร์ท cron (ผลิต/ส่ง/รีทราย จะไม่ยิงจากอินสแตนซ์นี้)")
 	}
 
 	r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub, func() {
