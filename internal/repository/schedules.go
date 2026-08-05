@@ -37,9 +37,13 @@ func (r *SchedulesRepo) List(ctx context.Context) ([]models.Schedule, error) {
 	return schedules, nil
 }
 
-func (r *SchedulesRepo) Update(ctx context.Context, id, cron, action string, enabled bool) error {
+func (r *SchedulesRepo) Update(ctx context.Context, id string, cron, action *string, enabled *bool) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE schedules SET cron_expression=$2, action=$3, enabled=$4 WHERE id=$1`,
+		`UPDATE schedules SET
+		   cron_expression = COALESCE($2, cron_expression),
+		   action          = COALESCE($3, action),
+		   enabled         = COALESCE($4, enabled)
+		 WHERE id=$1`,
 		id, cron, action, enabled)
 	if err != nil {
 		return fmt.Errorf("update schedule %s: %w", id, err)
