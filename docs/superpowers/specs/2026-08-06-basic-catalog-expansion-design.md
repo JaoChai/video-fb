@@ -91,10 +91,18 @@ WebFetch อ่านหน้าเหล่านี้ไม่ได้ (SPA
 สองส่วนในไฟล์เดียว ครอบด้วย `BEGIN`/`COMMIT` เอง (RunMigrations ไม่หุ้ม transaction ให้)
 
 **ส่วนที่ 1 — ขยายเมนู pain_point** ของ `topic_categories` แถว `beginner`
-เมนูปัจจุบันมี 12 ค่าฝังอยู่ใน `angle_instruction` (migration 071) และแถวใหม่ทุกแถวต้องใช้
-ค่าจากเมนูนี้เท่านั้น จึงต้องต่อ 18 บรรทัดใหม่เข้าไป ใช้ `UPDATE ... SET angle_instruction =
-replace(...)` โดยมี guard: ถ้าหาข้อความยึดไม่เจอให้ `RAISE EXCEPTION` แบบเดียวกับที่ 071 ทำ
-กับ `script_basic` — การ replace ที่ไม่เจอจะเงียบและทำให้ agent เห็นเมนูเก่าตลอดไป
+เมนูปัจจุบันมี 12 ค่าฝังอยู่ใน `angle_instruction` (migration 071) จึงต่อ 18 บรรทัดใหม่เข้าไป
+ด้วย `UPDATE ... SET angle_instruction = replace(...)` โดยมี guard: ถ้าหาข้อความยึดไม่เจอให้
+`RAISE EXCEPTION` แบบเดียวกับที่ 071 ทำกับ `script_basic` — การ replace ที่ไม่เจอจะเงียบ
+
+ขอบเขตที่แท้จริงของส่วนนี้ (ตรวจโค้ดแล้ว): เมนูนี้มี `QuestionAgent` เป็นผู้อ่าน แต่ช่อง 15:00
+เรียก `produceCatalogClip` ซึ่ง**ข้าม QuestionAgent ทั้งหมด** และ `topic_categories.beginner`
+ยัง `enabled=false` ⇒ **ตอนนี้ยังไม่มีใครอ่านเมนูนี้จริง** ที่เติมเพราะ migration 071/072 ตั้ง
+กฎไว้ว่าเมนูต้องสะท้อนคลัง วันที่เปิด category นี้จะได้ไม่มีหัวข้อตกหล่น
+
+ส่วน `pain_point` ที่อยู่ใน**ตัวแถว**มีผลจริง: `produceCatalogClip` ส่งค่านี้เข้า
+`GeneratedQuestion` แล้วไหลลง `topic_history` ซึ่ง `Deduper.PainPointInCooldown` ใช้กัน
+หัวข้อซ้ำของรอบ 12:00/18:00 — ค่าใหม่ทั้ง 18 จึงต้องไม่ชนกับ 12 ค่าเดิม
 
 **ส่วนที่ 2 — INSERT 18 แถว** รูปแบบเดียวกับ 072 ทุกประการ:
 `string_to_array($vocab$...$vocab$, '|')` สำหรับ ui_vocab และ `$steps$[...]$steps$` สำหรับ steps
