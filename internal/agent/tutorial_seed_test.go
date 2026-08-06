@@ -23,6 +23,7 @@ func TestSeedStepsCoveredByUIVocab(t *testing.T) {
 		{"../../migrations/062_tutorial_catalog_seed.sql", 8},
 		{"../../migrations/068_tutorial_catalog_seed_v2.sql", 10},
 		{"../../migrations/072_basic_catalog_seed.sql", 12},
+		{"../../migrations/080_basic_catalog_expansion.sql", 18},
 	} {
 		raw, err := os.ReadFile(seed.file)
 		if err != nil {
