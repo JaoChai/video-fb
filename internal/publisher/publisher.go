@@ -2,6 +2,8 @@ package publisher
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -85,6 +87,14 @@ func youtubePlatforms(accountID, title, firstComment, visibility string) []Platf
 		}
 	}
 	return []PlatformTarget{target}
+}
+
+// postRequestID สร้าง id รูป UUID แบบ deterministic ต่อ (clip, format) — retry รอบถัดไป
+// ของคลิปเดิมจึงส่ง x-request-id เดิมเสมอ ให้ Zernio จับ replay ได้แทนที่จะสร้างโพสต์ซ้ำ
+func postRequestID(clipID, format string) string {
+	sum := sha1.Sum([]byte("adsvance-publish:" + clipID + ":" + format))
+	h := hex.EncodeToString(sum[:16])
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
 type Publisher struct {
@@ -195,6 +205,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				MediaItems: []MediaItem{{Type: "video", URL: *video169}},
 				Visibility: VisibilityPublic,
 				PublishNow: true,
+				RequestID:  postRequestID(clipID, "169"),
 			})
 			if err != nil {
 				log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
@@ -221,6 +232,7 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
 				Visibility: VisibilityPublic,
 				PublishNow: true,
+				RequestID:  postRequestID(clipID, "916"),
 			})
 			if err != nil {
 				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)

@@ -96,12 +96,18 @@ type PostRequest struct {
 	PublishNow     bool             `json:"publishNow,omitempty"`
 	Visibility     string           `json:"visibility,omitempty"`
 	TikTokSettings *TikTokSettings  `json:"tiktokSettings,omitempty"`
+	// RequestID ส่งเป็น header x-request-id (idempotency ของ Zernio) ไม่ใช่ body
+	RequestID string `json:"-"`
 }
 
 type PostResponse struct {
 	Post struct {
 		ID string `json:"_id"`
 	} `json:"post"`
+	// ExistingPost คือคำตอบ replay เมื่อ x-request-id ซ้ำภายใน ~5 นาที — โพสต์เดิมที่สร้างไปแล้ว
+	ExistingPost struct {
+		ID string `json:"_id"`
+	} `json:"existingPost"`
 	Message string `json:"message"`
 	Error   string `json:"error,omitempty"`
 }
@@ -222,6 +228,9 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if req.RequestID != "" {
+		httpReq.Header.Set("x-request-id", req.RequestID)
+	}
 
 	postClient := z.postClient
 	if postClient == nil {
@@ -250,6 +259,10 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		// แนบ body ดิบมาด้วย เพราะ result.Error สรุปรวมเป็น "All platforms failed" ซึ่งบอก
 		// ไม่ได้ว่าแพลตฟอร์มไหนล้มเพราะอะไร — ตอนสืบเคส 2026-08-02 ต้องไปไล่ GET /posts เอง
 		return nil, fmt.Errorf("zernio error: %s (response: %s)", result.Error, string(respBody[:min(len(respBody), 300)]))
+	}
+	if result.Post.ID == "" && result.ExistingPost.ID != "" {
+		log.Printf("[zernio] replay detected, adopting existing post %s", result.ExistingPost.ID)
+		result.Post.ID = result.ExistingPost.ID
 	}
 	if result.Post.ID == "" {
 		return nil, fmt.Errorf("zernio returned empty post ID (response: %s)", string(respBody[:min(len(respBody), 300)]))

@@ -215,3 +215,50 @@ func TestPost_NilPostClientFallsBackToClient(t *testing.T) {
 		t.Fatalf("got %q", resp.Post.ID)
 	}
 }
+
+func TestPost_SendsXRequestIDHeader(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("x-request-id")
+		w.Write([]byte(`{"post":{"_id":"p1"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	if _, err := z.Post(context.Background(), PostRequest{Content: "x", RequestID: "rid-1"}); err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	if got != "rid-1" {
+		t.Fatalf("x-request-id = %q, want rid-1", got)
+	}
+}
+
+func TestPost_AdoptsExistingPostOnReplay(t *testing.T) {
+	// Zernio ตอบ 200 + existingPost เมื่อ x-request-id ซ้ำภายใน ~5 นาที (docs/guides/idempotency)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"existingPost":{"_id":"orig-1"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	resp, err := z.Post(context.Background(), PostRequest{Content: "x", RequestID: "rid-1"})
+	if err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	if resp.Post.ID != "orig-1" {
+		t.Fatalf("Post.ID = %q, want orig-1", resp.Post.ID)
+	}
+}
+
+func TestPostRequestID_DeterministicAndDistinct(t *testing.T) {
+	a := postRequestID("clip-1", "916")
+	b := postRequestID("clip-1", "916")
+	c := postRequestID("clip-1", "169")
+	if a != b {
+		t.Fatalf("not deterministic: %q vs %q", a, b)
+	}
+	if a == c {
+		t.Fatal("formats must produce distinct ids")
+	}
+	if len(a) != 36 {
+		t.Fatalf("want uuid-shaped id, got %q", a)
+	}
+}
