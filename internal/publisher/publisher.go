@@ -139,12 +139,14 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		}
 	}()
 
+	// คลิปที่ส่งพลาดค้าง fail_reason ถูกดันท้ายคิว ให้คลิปดีได้คิวก่อน — กัน head-of-line
+	// blocking แบบเหตุ 08-08 (คลิปเสีย 1 ตัวกินคิวทุกรอบเพราะ LIMIT 1 + เรียงตามวันเก่าสุด)
 	rows, err := p.pool.Query(ctx,
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
 		 JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE
-		 ORDER BY c.publish_date ASC LIMIT 1`)
+		 ORDER BY (c.fail_reason IS NOT NULL), c.publish_date ASC LIMIT 1`)
 	if err != nil {
 		return fmt.Errorf("query ready clips: %w", err)
 	}
