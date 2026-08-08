@@ -262,3 +262,85 @@ func TestPostRequestID_DeterministicAndDistinct(t *testing.T) {
 		t.Fatalf("want uuid-shaped id, got %q", a)
 	}
 }
+
+func TestPost_409ReturnsDuplicatePostError(t *testing.T) {
+	// body จริงที่วัดได้ 08-08: existingPostId อยู่ใน details (docs แสดง top-level ด้วย)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"Duplicate","details":{"accountId":"a","platform":"youtube","existingPostId":"dup-1"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	_, err := z.Post(context.Background(), PostRequest{Content: "x"})
+	var dup *DuplicatePostError
+	if !errors.As(err, &dup) {
+		t.Fatalf("want DuplicatePostError, got %v", err)
+	}
+	if dup.ExistingPostID != "dup-1" {
+		t.Fatalf("ExistingPostID = %q", dup.ExistingPostID)
+	}
+}
+
+func TestPost_409TopLevelExistingPostID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"Duplicate","existingPostId":"dup-2"}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	_, err := z.Post(context.Background(), PostRequest{Content: "x"})
+	var dup *DuplicatePostError
+	if !errors.As(err, &dup) || dup.ExistingPostID != "dup-2" {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestGetPost_ReturnsStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/posts/p9" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		w.Write([]byte(`{"post":{"_id":"p9","status":"published"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	ps, err := z.GetPost(context.Background(), "p9")
+	if err != nil {
+		t.Fatalf("GetPost: %v", err)
+	}
+	if ps.ID != "p9" || ps.Status != "published" {
+		t.Fatalf("got %+v", ps)
+	}
+}
+
+func TestAdoptDuplicate_PublishedAdopts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"post":{"_id":"dup-1","status":"published"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	p := &Publisher{zernio: z}
+	id, ok := p.adoptDuplicate(context.Background(), &DuplicatePostError{ExistingPostID: "dup-1"})
+	if !ok || id != "dup-1" {
+		t.Fatalf("got id=%q ok=%v", id, ok)
+	}
+}
+
+func TestAdoptDuplicate_NotPublishedDoesNotAdopt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"post":{"_id":"dup-1","status":"scheduled"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	p := &Publisher{zernio: z}
+	if _, ok := p.adoptDuplicate(context.Background(), &DuplicatePostError{ExistingPostID: "dup-1"}); ok {
+		t.Fatal("must not adopt a non-published post")
+	}
+}
+
+func TestAdoptDuplicate_NonDuplicateError(t *testing.T) {
+	p := &Publisher{}
+	if _, ok := p.adoptDuplicate(context.Background(), errors.New("boom")); ok {
+		t.Fatal("plain errors must not adopt")
+	}
+}

@@ -208,12 +208,17 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				RequestID:  postRequestID(clipID, "169"),
 			})
 			if err != nil {
-				log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
-				p.recordPublishFailure(ctx, clipID, err)
-				continue
+				if id, ok := p.adoptDuplicate(ctx, err); ok {
+					mainPostID = id
+				} else {
+					log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
+					p.recordPublishFailure(ctx, clipID, err)
+					continue
+				}
+			} else {
+				log.Printf("Posted 16:9 public for clip %s → %s", clipID, result169.Post.ID)
+				mainPostID = result169.Post.ID
 			}
-			log.Printf("Posted 16:9 public for clip %s → %s", clipID, result169.Post.ID)
-			mainPostID = result169.Post.ID
 		}
 
 		// 9:16 (YouTube Shorts), if present.
@@ -235,8 +240,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 				RequestID:  postRequestID(clipID, "916"),
 			})
 			if err != nil {
-				log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
-				postErr = err
+				if id, ok := p.adoptDuplicate(ctx, err); ok {
+					shortsPostID = id
+				} else {
+					log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
+					postErr = err
+				}
 			} else {
 				log.Printf("Posted 9:16 Shorts public for clip %s → %s", clipID, result916.Post.ID)
 				shortsPostID = result916.Post.ID
@@ -273,6 +282,27 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		return fmt.Errorf("iterate ready clips: %w", err)
 	}
 	return nil
+}
+
+// adoptDuplicate ตัดสิน 409: โพสต์เดิมขึ้นจริงแล้ว → คืน id ให้บันทึกเป็นสำเร็จ · ยังไม่ขึ้น
+// (scheduled/publishing/failed) → ไม่ adopt ปล่อยให้วน retry ตามเดิม เพราะ mark published
+// ทั้งที่ของจริงยังไม่ขึ้นคือการโกหก DB แบบเดียวกับที่เพิ่งแก้มา
+func (p *Publisher) adoptDuplicate(ctx context.Context, cause error) (string, bool) {
+	var dup *DuplicatePostError
+	if !errors.As(cause, &dup) {
+		return "", false
+	}
+	ps, err := p.zernio.GetPost(ctx, dup.ExistingPostID)
+	if err != nil {
+		log.Printf("adoptDuplicate: เช็คสถานะโพสต์ %s ไม่สำเร็จ: %v", dup.ExistingPostID, err)
+		return "", false
+	}
+	if ps.Status != "published" {
+		log.Printf("adoptDuplicate: โพสต์ %s สถานะ %s ยังไม่ adopt", ps.ID, ps.Status)
+		return "", false
+	}
+	log.Printf("adoptDuplicate: โพสต์ %s ขึ้นแล้วจริง — บันทึกเป็นสำเร็จ", ps.ID)
+	return ps.ID, true
 }
 
 // recordPublished marks the clip 'published' and records its Zernio post ids in a

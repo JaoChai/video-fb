@@ -112,6 +112,22 @@ type PostResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// DuplicatePostError คือ 409 ของ Zernio (content-hash ซ้ำใน 24 ชม.) — ไม่ใช่ความล้มเหลวจริง
+// เสมอไป: โพสต์เดิมอาจขึ้น YouTube สำเร็จไปแล้วแต่เราไม่ได้ id กลับมา (timeout) ฝั่งเรียกต้อง
+// เช็คสถานะโพสต์เดิมก่อนตัดสิน (เหตุจริง 08-08: คลิปขวางหัวคิว 20 รอบ)
+type DuplicatePostError struct {
+	ExistingPostID string
+}
+
+func (e *DuplicatePostError) Error() string {
+	return fmt.Sprintf("zernio 409: duplicate of existing post %s", e.ExistingPostID)
+}
+
+type PostStatus struct {
+	ID     string
+	Status string
+}
+
 type PostMetrics struct {
 	Impressions    int     `json:"impressions"`
 	Reach          int     `json:"reach"`
@@ -247,6 +263,22 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusConflict {
+		var dup struct {
+			ExistingPostID string `json:"existingPostId"`
+			Details        struct {
+				ExistingPostID string `json:"existingPostId"`
+			} `json:"details"`
+		}
+		_ = json.Unmarshal(respBody, &dup)
+		id := dup.Details.ExistingPostID
+		if id == "" {
+			id = dup.ExistingPostID
+		}
+		if id != "" {
+			return nil, &DuplicatePostError{ExistingPostID: id}
+		}
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("zernio %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
 	}
@@ -268,6 +300,40 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 		return nil, fmt.Errorf("zernio returned empty post ID (response: %s)", string(respBody[:min(len(respBody), 300)]))
 	}
 	return &result, nil
+}
+
+func (z *ZernioClient) GetPost(ctx context.Context, id string) (*PostStatus, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", z.baseURL+"/posts/"+id, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	apiKey := z.getAPIKey(ctx)
+	if apiKey == "" {
+		return nil, fmt.Errorf("zernio API key not configured")
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := z.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get post: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("zernio %d: %s", resp.StatusCode, string(respBody[:min(len(respBody), 300)]))
+	}
+	var parsed struct {
+		Post struct {
+			ID     string `json:"_id"`
+			Status string `json:"status"`
+		} `json:"post"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("parse post: %w", err)
+	}
+	return &PostStatus{ID: parsed.Post.ID, Status: parsed.Post.Status}, nil
 }
 
 func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string) (*AnalyticsResponse, error) {
