@@ -261,6 +261,9 @@ func TestPostRequestID_DeterministicAndDistinct(t *testing.T) {
 	if len(a) != 36 {
 		t.Fatalf("want uuid-shaped id, got %q", a)
 	}
+	if a[14] != '5' {
+		t.Fatalf("want UUID version 5, got %q", a)
+	}
 }
 
 func TestPost_409ReturnsDuplicatePostError(t *testing.T) {
@@ -342,5 +345,35 @@ func TestAdoptDuplicate_NonDuplicateError(t *testing.T) {
 	p := &Publisher{}
 	if _, ok := p.adoptDuplicate(context.Background(), errors.New("boom")); ok {
 		t.Fatal("plain errors must not adopt")
+	}
+}
+
+func TestPost_409WithoutExistingPostIDIsGenericError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"Conflict but no id"}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	_, err := z.Post(context.Background(), PostRequest{Content: "x"})
+	var dup *DuplicatePostError
+	if errors.As(err, &dup) {
+		t.Fatalf("409 without existingPostId must not be DuplicatePostError, got %v", err)
+	}
+	if err == nil {
+		t.Fatal("want error")
+	}
+}
+
+func TestAdoptDuplicate_GetPostErrorDoesNotAdopt(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	p := &Publisher{zernio: z}
+	if _, ok := p.adoptDuplicate(context.Background(), &DuplicatePostError{ExistingPostID: "dup-1"}); ok {
+		t.Fatal("GetPost error must fail closed (no adopt)")
 	}
 }

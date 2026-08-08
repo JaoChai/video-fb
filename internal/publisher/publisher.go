@@ -93,6 +93,8 @@ func youtubePlatforms(accountID, title, firstComment, visibility string) []Platf
 // ของคลิปเดิมจึงส่ง x-request-id เดิมเสมอ ให้ Zernio จับ replay ได้แทนที่จะสร้างโพสต์ซ้ำ
 func postRequestID(clipID, format string) string {
 	sum := sha1.Sum([]byte("adsvance-publish:" + clipID + ":" + format))
+	sum[6] = sum[6]&0x0f | 0x50 // version 5
+	sum[8] = sum[8]&0x3f | 0x80 // RFC 4122 variant
 	h := hex.EncodeToString(sum[:16])
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
@@ -139,14 +141,17 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		}
 	}()
 
-	// คลิปที่ส่งพลาดค้าง fail_reason ถูกดันท้ายคิว ให้คลิปดีได้คิวก่อน — กัน head-of-line
-	// blocking แบบเหตุ 08-08 (คลิปเสีย 1 ตัวกินคิวทุกรอบเพราะ LIMIT 1 + เรียงตามวันเก่าสุด)
+	// ดันท้ายคิวเฉพาะคลิปที่ "ส่งพลาด" (fail_reason ขึ้นต้นด้วย publishFailPrefix) ให้คลิปดี
+	// ได้คิวก่อน — กัน head-of-line blocking แบบเหตุ 08-08 (คลิปเสีย 1 ตัวกินคิวทุกรอบเพราะ
+	// LIMIT 1 + เรียงตามวันเก่าสุด) · เหตุผลจากด่านอื่น (layout inspector ฯลฯ) ไม่เกี่ยวกับรอบส่ง
+	// ต้องไม่โดนดัน ไม่งั้นคลิปที่คน approve จาก needs_review ถูกท้ายคิวทั้งที่ไม่เคยส่งพลาด
 	rows, err := p.pool.Query(ctx,
 		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
 		 FROM clips c
 		 JOIN clip_metadata cm ON c.id = cm.clip_id
 		 WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE
-		 ORDER BY (c.fail_reason IS NOT NULL), c.publish_date ASC LIMIT 1`)
+		 ORDER BY (c.fail_reason IS NOT NULL AND starts_with(c.fail_reason, $1)), c.publish_date ASC LIMIT 1`,
+		publishFailPrefix)
 	if err != nil {
 		return fmt.Errorf("query ready clips: %w", err)
 	}
