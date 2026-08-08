@@ -24,7 +24,10 @@ type ZernioClient struct {
 	fallbackKey string
 	pool        *pgxpool.Pool
 	client      *http.Client
-	baseURL     string
+	// postClient ใช้เฉพาะ Post — Zernio publishNow ตอบหลัง publish เสร็จ (~70-90 วิ วัดจริง
+	// 08-08) 60 วิของ client ปกติจึงตัดก่อนได้ post ID กลับมา = คลิปขึ้นแล้วแต่ DB ไม่รู้
+	postClient *http.Client
+	baseURL    string
 }
 
 func NewZernioClient(fallbackKey string, pool *pgxpool.Pool) *ZernioClient {
@@ -32,6 +35,7 @@ func NewZernioClient(fallbackKey string, pool *pgxpool.Pool) *ZernioClient {
 		fallbackKey: fallbackKey,
 		pool:        pool,
 		client:      &http.Client{Timeout: 60 * time.Second},
+		postClient:  &http.Client{Timeout: 5 * time.Minute},
 		baseURL:     zernioAPI,
 	}
 }
@@ -219,7 +223,11 @@ func (z *ZernioClient) Post(ctx context.Context, req PostRequest) (*PostResponse
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := z.client.Do(httpReq)
+	postClient := z.postClient
+	if postClient == nil {
+		postClient = z.client
+	}
+	resp, err := postClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("send post: %w", err)
 	}

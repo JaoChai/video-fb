@@ -189,3 +189,29 @@ func TestPost_OmitsPlatformSpecificDataWhenUnset(t *testing.T) {
 		t.Fatalf("expected no platformSpecificData key when unset, got %s", body)
 	}
 }
+
+func TestNewZernioClient_PostClientTimeout(t *testing.T) {
+	z := NewZernioClient("k", nil)
+	if z.postClient == nil {
+		t.Fatal("postClient must be initialized")
+	}
+	if z.postClient.Timeout != 5*time.Minute {
+		t.Fatalf("postClient timeout = %v, want 5m", z.postClient.Timeout)
+	}
+}
+
+// struct literal ที่ไม่ตั้ง postClient (แพทเทิร์นเทสต์เดิมทั้งไฟล์) ต้องยังใช้ Post ได้
+func TestPost_NilPostClientFallsBackToClient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"post":{"_id":"p1"}}`))
+	}))
+	defer srv.Close()
+	z := &ZernioClient{fallbackKey: "k", client: srv.Client(), baseURL: srv.URL}
+	resp, err := z.Post(context.Background(), PostRequest{Content: "x"})
+	if err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	if resp.Post.ID != "p1" {
+		t.Fatalf("got %q", resp.Post.ID)
+	}
+}
