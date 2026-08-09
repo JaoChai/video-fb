@@ -1,6 +1,11 @@
 package publisher
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -77,4 +82,54 @@ func TestStripBrandTagStillUsedByTikTok(t *testing.T) {
 	if got := stripBrandTag("ตั้งงบยังไง | Ads Vance"); !strings.HasSuffix(got, "ตั้งงบยังไง") {
 		t.Fatalf("stripBrandTag ไม่ได้ตัดแบรนด์แท็ก: %q", got)
 	}
+}
+
+func TestSendTelegram_PostsExpectedPayload(t *testing.T) {
+	var body map[string]any
+	var reqID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		reqID = r.Header.Get("x-request-id")
+		_, _ = w.Write([]byte(`{"post":{"_id":"TG1"}}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.sendTelegram(context.Background(), "clip-1", "tg_acc",
+		"ตั้งงบยังไงไม่ให้บาน | Ads Vance", "https://www.youtube.com/watch?v=abc")
+
+	if body["content"] != "ตั้งงบยังไงไม่ให้บาน\n\nhttps://www.youtube.com/watch?v=abc" {
+		t.Fatalf("unexpected content: %v", body["content"])
+	}
+	if body["publishNow"] != true {
+		t.Fatalf("expected publishNow=true, got %v", body["publishNow"])
+	}
+	platforms, ok := body["platforms"].([]any)
+	if !ok || len(platforms) != 1 {
+		t.Fatalf("expected 1 platform, got %v", body["platforms"])
+	}
+	first := platforms[0].(map[string]any)
+	if first["platform"] != "telegram" || first["accountId"] != "tg_acc" {
+		t.Fatalf("unexpected platform target: %v", first)
+	}
+	// Telegram ไม่มีชื่อโพสต์ ส่ง title ไปก็ไม่มีที่ลง — ต้องไม่ติดไปกับคำขอ
+	if _, has := body["title"]; has {
+		t.Fatalf("expected no title field, got %v", body["title"])
+	}
+	if reqID != postRequestID("clip-1", "telegram") {
+		t.Fatalf("expected deterministic x-request-id, got %q", reqID)
+	}
+}
+
+func TestSendTelegram_ErrorDoesNotPanic(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"boom"}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	// ต้องกลับมาเงียบๆ ไม่ panic ไม่ค้าง — คลิปขึ้น YouTube ไปแล้ว ห้ามให้ Telegram ทำพัง
+	p.sendTelegram(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "https://youtu.be/x")
 }

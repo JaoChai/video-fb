@@ -1,6 +1,11 @@
 package publisher
 
-import "strings"
+import (
+	"context"
+	"errors"
+	"log"
+	"strings"
+)
 
 const platformTelegram = "telegram"
 
@@ -33,4 +38,50 @@ func youtubePostURL(ps *PostStatus) string {
 		}
 	}
 	return ""
+}
+
+// sendTelegram โพสต์ข้อความเข้าช่องแล้วบันทึก post id · ไม่คืน error โดยตั้งใจ: คลิปขึ้น
+// YouTube สำเร็จไปแล้ว ความล้มเหลวตรงนี้ต้องไม่ไหลย้อนไปเปลี่ยนสถานะคลิปหรือเขียน fail_reason
+func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, videoURL string) {
+	res, err := p.zernio.Post(ctx, PostRequest{
+		Content:    telegramMessage(title, videoURL),
+		Platforms:  telegramPlatforms(accountID),
+		PublishNow: true,
+		RequestID:  postRequestID(clipID, "telegram"),
+	})
+
+	postID := ""
+	switch {
+	case err == nil:
+		postID = res.Post.ID
+	default:
+		// 409 = Zernio เห็นเนื้อหาซ้ำใน 24 ชม. แปลว่าข้อความนี้เคยส่งเข้าช่องไปแล้ว
+		// บันทึก id เดิมเพื่อไม่ให้รอบเก็บตกวนมาลองใหม่ทุกชั่วโมง
+		var dup *DuplicatePostError
+		if errors.As(err, &dup) {
+			postID = dup.ExistingPostID
+			log.Printf("Telegram: คลิป %s ซ้ำกับโพสต์ %s ที่เคยส่งแล้ว บันทึกเป็นส่งแล้ว", clipID, postID)
+		} else {
+			log.Printf("Telegram: ส่งคลิป %s เข้าช่องไม่สำเร็จ: %v", clipID, err)
+			return
+		}
+	}
+	if postID == "" {
+		log.Printf("Telegram: คลิป %s ไม่ได้ post id กลับมา ข้ามการบันทึก", clipID)
+		return
+	}
+
+	// pool เป็น nil เฉพาะในเทสต์ที่ตรวจรูปคำขอ HTTP เท่านั้น — เส้นทางจริงมี pool เสมอ
+	if p.pool == nil {
+		return
+	}
+	if _, err := p.pool.Exec(ctx,
+		`UPDATE clip_metadata SET zernio_telegram_post_id = $2 WHERE clip_id = $1`,
+		clipID, postID); err != nil {
+		// บันทึกพลาด = รอบเก็บตกจะลองใหม่ แล้ว x-request-id เดิมทำให้ Zernio คืนโพสต์เดิม
+		// แทนการโพสต์ซ้ำ จึงแค่ log พอ
+		log.Printf("Telegram: บันทึก telegram_post_id ของคลิป %s ไม่สำเร็จ: %v", clipID, err)
+		return
+	}
+	log.Printf("Telegram: ส่งคลิป %s เข้าช่องแล้ว → %s", clipID, postID)
 }
