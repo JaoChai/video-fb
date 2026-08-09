@@ -1,7 +1,10 @@
 package publisher
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
@@ -75,5 +78,60 @@ func TestParseYouTubeDailyViews(t *testing.T) {
 	}
 	if resp.DailyViews[2].SubscribersGained != 1 {
 		t.Errorf("subscribersGained = %d, want 1", resp.DailyViews[2].SubscribersGained)
+	}
+}
+
+// โครงสร้าง response ตัดมาจากของจริง (GET /posts/6a7889575925ec7a11ae2273 เมื่อ 2026-08-09)
+func TestGetPost_ParsesPlatformPostURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"post":{
+			"_id":"P1",
+			"status":"published",
+			"platforms":[{
+				"platform":"youtube",
+				"status":"published",
+				"platformPostId":"iJq2W3-vRbs",
+				"platformPostUrl":"https://www.youtube.com/watch?v=iJq2W3-vRbs"
+			}]
+		}}`))
+	}))
+	defer srv.Close()
+
+	z := newTestZernioClient(srv.URL, "k")
+	ps, err := z.GetPost(context.Background(), "P1")
+	if err != nil {
+		t.Fatalf("GetPost err: %v", err)
+	}
+	if ps.ID != "P1" || ps.Status != "published" {
+		t.Fatalf("expected P1/published, got %+v", ps)
+	}
+	if len(ps.Platforms) != 1 {
+		t.Fatalf("expected 1 platform entry, got %d", len(ps.Platforms))
+	}
+	if ps.Platforms[0].Platform != "youtube" {
+		t.Fatalf("expected platform youtube, got %q", ps.Platforms[0].Platform)
+	}
+	if ps.Platforms[0].PlatformPostURL != "https://www.youtube.com/watch?v=iJq2W3-vRbs" {
+		t.Fatalf("unexpected url %q", ps.Platforms[0].PlatformPostURL)
+	}
+	if ps.Platforms[0].PlatformPostID != "iJq2W3-vRbs" {
+		t.Fatalf("unexpected video id %q", ps.Platforms[0].PlatformPostID)
+	}
+}
+
+func TestGetPost_NoPlatformsKeepsStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"post":{"_id":"P2","status":"scheduled"}}`))
+	}))
+	defer srv.Close()
+
+	z := newTestZernioClient(srv.URL, "k")
+	ps, err := z.GetPost(context.Background(), "P2")
+	if err != nil {
+		t.Fatalf("GetPost err: %v", err)
+	}
+	if ps.Status != "scheduled" || len(ps.Platforms) != 0 {
+		t.Fatalf("expected scheduled with no platforms, got %+v", ps)
 	}
 }

@@ -123,9 +123,20 @@ func (e *DuplicatePostError) Error() string {
 	return fmt.Sprintf("zernio 409: duplicate of existing post %s", e.ExistingPostID)
 }
 
+// PostPlatform คือรายการต่อแพลตฟอร์มใน GET /posts/{id} · PlatformPostURL คือลิงก์จริงบน
+// แพลตฟอร์มปลายทาง (เช่น https://www.youtube.com/watch?v=xxxx) ซึ่งมาพร้อมทันทีที่โพสต์
+// publish เสร็จ — ไม่ต้องรอ FetchAnalytics ที่รันวันละครั้ง
+type PostPlatform struct {
+	Platform        string `json:"platform"`
+	Status          string `json:"status"`
+	PlatformPostID  string `json:"platformPostId"`
+	PlatformPostURL string `json:"platformPostUrl"`
+}
+
 type PostStatus struct {
-	ID     string
-	Status string
+	ID        string
+	Status    string
+	Platforms []PostPlatform
 }
 
 type PostMetrics struct {
@@ -326,14 +337,15 @@ func (z *ZernioClient) GetPost(ctx context.Context, id string) (*PostStatus, err
 	}
 	var parsed struct {
 		Post struct {
-			ID     string `json:"_id"`
-			Status string `json:"status"`
+			ID        string         `json:"_id"`
+			Status    string         `json:"status"`
+			Platforms []PostPlatform `json:"platforms"`
 		} `json:"post"`
 	}
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("parse post: %w", err)
 	}
-	return &PostStatus{ID: parsed.Post.ID, Status: parsed.Post.Status}, nil
+	return &PostStatus{ID: parsed.Post.ID, Status: parsed.Post.Status, Platforms: parsed.Post.Platforms}, nil
 }
 
 func (z *ZernioClient) GetAnalytics(ctx context.Context, postID, platform string) (*AnalyticsResponse, error) {
