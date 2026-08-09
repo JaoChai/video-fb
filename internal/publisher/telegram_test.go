@@ -1,11 +1,14 @@
 package publisher
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -119,6 +122,32 @@ func TestSendTelegram_PostsExpectedPayload(t *testing.T) {
 	}
 	if reqID != postRequestID("clip-1", "telegram") {
 		t.Fatalf("expected deterministic x-request-id, got %q", reqID)
+	}
+}
+
+// 409 ต้องถูกจับเป็น "เคยส่งแล้ว" ไม่ใช่ error ทั่วไป — ยืนยันผ่าน log เพราะ pool == nil
+// ในเทสต์ตัดขั้นเขียน DB ออก (แพตเทิร์นเดียวกับเทสต์อื่นในไฟล์นี้) จึงไม่มีทางสังเกต
+// ผลลัพธ์จากภายนอกได้นอกจากข้อความ log ที่แต่ละ branch เขียนไว้คนละข้อความ
+func TestSendTelegram_DuplicateSavesExistingPostID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"Duplicate","details":{"existingPostId":"dup-1"}}`))
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.sendTelegram(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "https://youtu.be/x")
+
+	got := logBuf.String()
+	if !strings.Contains(got, "ซ้ำกับโพสต์ dup-1") {
+		t.Fatalf("expected duplicate-handling log line, got: %s", got)
+	}
+	if strings.Contains(got, "เข้าช่องไม่สำเร็จ") {
+		t.Fatalf("409 ถูกปฏิบัติเหมือน error ทั่วไป ไม่ใช่ duplicate: %s", got)
 	}
 }
 
