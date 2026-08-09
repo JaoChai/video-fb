@@ -167,6 +167,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'youtube_first_comment'`).Scan(&firstComment)
 	firstComment = strings.TrimSpace(firstComment)
 
+	// ช่อง Telegram ที่จะส่งคลิปเข้าไปหลังขึ้น YouTube · ค่าว่าง (หรือไม่มีแถวนี้) = ปิดฟีเจอร์
+	// อ่านครั้งเดียวต่อรอบเหมือน ytAccountID — Scan ที่ error ทิ้งค่าไว้เป็น "" ซึ่งคือสถานะปิดพอดี
+	var tgAccountID string
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_telegram_account_id'`).Scan(&tgAccountID)
+	tgAccountID = strings.TrimSpace(tgAccountID)
+
 	for rows.Next() {
 		var clipID, title string
 		var description *string
@@ -284,6 +290,10 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		}
 
 		log.Printf("Published clip %s via Zernio (main=%q shorts=%q)", clipID, mainPostID, shortsPostID)
+
+		// ส่งเข้าช่อง Telegram ท้ายสุดเสมอ — คลิปขึ้น YouTube และ DB commit ไปแล้ว
+		// อะไรที่พังหลังจากนี้จึงกระทบแค่ช่อง Telegram ช่องเดียว
+		p.postTelegramForClip(ctx, clipID, tgAccountID, title, mainPostID, shortsPostID)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate ready clips: %w", err)

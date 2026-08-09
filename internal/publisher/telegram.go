@@ -85,3 +85,32 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 	}
 	log.Printf("Telegram: ส่งคลิป %s เข้าช่องแล้ว → %s", clipID, postID)
 }
+
+// postTelegramForClip หาลิงก์คลิปจริงจากโพสต์ที่เพิ่งขึ้น แล้วส่งเข้าช่อง · เรียกครั้งเดียว
+// ต่อคลิปแม้จะมีทั้ง 16:9 และ 9:16 — ช่องไม่ควรได้ลิงก์คลิปเดียวกันสองใบ
+func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, title, mainPostID, shortsPostID string) {
+	if accountID == "" {
+		return // ฟีเจอร์ปิด: ไม่ยิงอะไรออกไปเลย
+	}
+	// 16:9 ก่อนเสมอ เพราะเป็นหน้าคลิปเต็มที่ดูได้ทุกอุปกรณ์ · ตอนนี้ pipeline ผลิต 9:16
+	// อย่างเดียว ทางนี้จึงตกไป Shorts เป็นปกติ
+	postID := mainPostID
+	if postID == "" {
+		postID = shortsPostID
+	}
+	if postID == "" {
+		return
+	}
+
+	ps, err := p.zernio.GetPost(ctx, postID)
+	if err != nil {
+		log.Printf("Telegram: อ่านโพสต์ %s ของคลิป %s ไม่สำเร็จ: %v", postID, clipID, err)
+		return
+	}
+	videoURL := youtubePostURL(ps)
+	if videoURL == "" {
+		log.Printf("Telegram: โพสต์ %s ของคลิป %s ยังไม่มีลิงก์ YouTube — ปล่อยให้รอบเก็บตกจัดการ", postID, clipID)
+		return
+	}
+	p.sendTelegram(ctx, clipID, accountID, title, videoURL)
+}

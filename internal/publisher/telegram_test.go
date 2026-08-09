@@ -162,3 +162,95 @@ func TestSendTelegram_ErrorDoesNotPanic(t *testing.T) {
 	// ต้องกลับมาเงียบๆ ไม่ panic ไม่ค้าง — คลิปขึ้น YouTube ไปแล้ว ห้ามให้ Telegram ทำพัง
 	p.sendTelegram(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "https://youtu.be/x")
 }
+
+func TestPostTelegramForClip_DisabledWhenNoAccount(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(`{"post":{"_id":"X"}}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.postTelegramForClip(context.Background(), "clip-1", "", "หัวข้อ", "MAIN", "SHORTS")
+
+	if calls != 0 {
+		t.Fatalf("account id ว่าง = ปิดสนิท ต้องไม่ยิง HTTP เลย แต่ยิงไป %d ครั้ง", calls)
+	}
+}
+
+func TestPostTelegramForClip_PrefersMainPostAndPostsOnce(t *testing.T) {
+	var gotPaths []string
+	var content string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"post":{"_id":"MAIN","status":"published","platforms":[
+				{"platform":"youtube","status":"published","platformPostId":"vid1","platformPostUrl":"https://www.youtube.com/watch?v=vid1"}]}}`))
+			return
+		}
+		var body map[string]any
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		content, _ = body["content"].(string)
+		_, _ = w.Write([]byte(`{"post":{"_id":"TG1"}}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.postTelegramForClip(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "MAIN", "SHORTS")
+
+	if len(gotPaths) != 2 {
+		t.Fatalf("คาด GET /posts/MAIN แล้ว POST /posts อย่างละครั้ง ได้ %v", gotPaths)
+	}
+	if gotPaths[0] != "GET /posts/MAIN" {
+		t.Fatalf("ต้องใช้โพสต์ 16:9 ก่อนเสมอ ได้ %q", gotPaths[0])
+	}
+	if !strings.Contains(content, "https://www.youtube.com/watch?v=vid1") {
+		t.Fatalf("ข้อความไม่มีลิงก์ที่ได้จาก GetPost: %q", content)
+	}
+}
+
+func TestPostTelegramForClip_FallsBackToShorts(t *testing.T) {
+	var firstPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if firstPath == "" {
+			firstPath = r.URL.Path
+		}
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"post":{"_id":"SHORTS","status":"published","platforms":[
+				{"platform":"youtube","platformPostUrl":"https://www.youtube.com/watch?v=vid2"}]}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"post":{"_id":"TG1"}}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.postTelegramForClip(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "", "SHORTS")
+
+	if firstPath != "/posts/SHORTS" {
+		t.Fatalf("ไม่มีโพสต์ 16:9 ต้องใช้ Shorts แทน ได้ %q", firstPath)
+	}
+}
+
+func TestPostTelegramForClip_NoURLSkipsSending(t *testing.T) {
+	posts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// ยังไม่มี platformPostUrl (Zernio ยังไม่อัปเดต) = ยังไม่พร้อมส่ง
+			_, _ = w.Write([]byte(`{"post":{"_id":"MAIN","status":"publishing","platforms":[{"platform":"youtube"}]}}`))
+			return
+		}
+		posts++
+		_, _ = w.Write([]byte(`{"post":{"_id":"TG1"}}`))
+	}))
+	defer srv.Close()
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.postTelegramForClip(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "MAIN", "")
+
+	if posts != 0 {
+		t.Fatalf("ไม่มีลิงก์ต้องไม่ส่ง ปล่อยให้รอบเก็บตกจัดการ แต่ส่งไป %d ครั้ง", posts)
+	}
+}
