@@ -129,6 +129,9 @@ func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID string) 
 	}
 	var clipID, title string
 	var mainPostID, shortsPostID *string
+	// updated_at คือเวลาที่แถวถูกแตะล่าสุด ไม่ใช่เวลา publish เป๊ะ — คลิปที่ยังส่งไม่สำเร็จ
+	// จะอยู่ในกรอบนี้ต่อไปทุกครั้งที่มีอะไรมาอัปเดตแถว (นี่คือพฤติกรรม retry ที่ตั้งใจ)
+	// ส่วนคลิปที่ส่งสำเร็จแล้วหลุดคิวทันทีเพราะ zernio_telegram_post_id ถูกตั้งค่า
 	err := p.pool.QueryRow(ctx, `
 		SELECT c.id, cm.youtube_title, cm.zernio_post_id, cm.zernio_shorts_post_id
 		FROM clips c
