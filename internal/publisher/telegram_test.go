@@ -125,11 +125,16 @@ func TestSendTelegram_PostsExpectedPayload(t *testing.T) {
 	}
 }
 
-// 409 ต้องถูกจับเป็น "เคยส่งแล้ว" ไม่ใช่ error ทั่วไป — ยืนยันผ่าน log เพราะ pool == nil
-// ในเทสต์ตัดขั้นเขียน DB ออก (แพตเทิร์นเดียวกับเทสต์อื่นในไฟล์นี้) จึงไม่มีทางสังเกต
-// ผลลัพธ์จากภายนอกได้นอกจากข้อความ log ที่แต่ละ branch เขียนไว้คนละข้อความ
+// 409 ต้องถูกจับเป็น "เคยส่งแล้ว" ผ่าน adoptDuplicate ซึ่งเช็คสถานะโพสต์เดิมก่อนเสมอ (ไม่ใช่
+// เชื่อ ExistingPostID ตรงๆ) — mock ต้องตอบทั้ง POST (409) และ GET /posts/dup-1 (published)
+// ยืนยันผ่าน log เพราะ pool == nil ในเทสต์ตัดขั้นเขียน DB ออก จึงไม่มีทางสังเกตผลลัพธ์
+// จากภายนอกได้นอกจากข้อความ log ที่แต่ละ branch เขียนไว้คนละข้อความ
 func TestSendTelegram_DuplicateSavesExistingPostID(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"post":{"_id":"dup-1","status":"published"}}`))
+			return
+		}
 		w.WriteHeader(http.StatusConflict)
 		_, _ = w.Write([]byte(`{"error":"Duplicate","details":{"existingPostId":"dup-1"}}`))
 	}))
@@ -148,6 +153,36 @@ func TestSendTelegram_DuplicateSavesExistingPostID(t *testing.T) {
 	}
 	if strings.Contains(got, "เข้าช่องไม่สำเร็จ") {
 		t.Fatalf("409 ถูกปฏิบัติเหมือน error ทั่วไป ไม่ใช่ duplicate: %s", got)
+	}
+}
+
+// ถ้าโพสต์เดิมยังไม่ published จริง (scheduled/publishing/failed) ต้องไม่ adopt — ปฏิบัติ
+// เหมือน error ทั่วไป (mark failed ให้รอบเก็บตกลองใหม่) ไม่ใช่บันทึกเป็นสำเร็จทั้งที่ของจริง
+// ยังไม่ขึ้น (บั๊กเดียวกับที่เคยเกิดกับคิว YouTube 08-08)
+func TestSendTelegram_DuplicateNotYetPublishedIsNotAdopted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"post":{"_id":"dup-1","status":"scheduled"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"Duplicate","details":{"existingPostId":"dup-1"}}`))
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(os.Stderr)
+
+	p := &Publisher{zernio: newTestZernioClient(srv.URL, "k")}
+	p.sendTelegram(context.Background(), "clip-1", "tg_acc", "หัวข้อ", "https://youtu.be/x")
+
+	got := logBuf.String()
+	if strings.Contains(got, "ซ้ำกับโพสต์ dup-1 ที่เคยส่งแล้ว บันทึกเป็นส่งแล้ว") {
+		t.Fatalf("โพสต์ยังไม่ published ต้องไม่ adopt แต่ log บอกว่า adopt แล้ว: %s", got)
+	}
+	if !strings.Contains(got, "เข้าช่องไม่สำเร็จ") {
+		t.Fatalf("expected generic-failure log line, got: %s", got)
 	}
 }
 

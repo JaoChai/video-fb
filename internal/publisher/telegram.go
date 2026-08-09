@@ -57,11 +57,12 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 	case err == nil:
 		postID = res.Post.ID
 	default:
-		// 409 = Zernio เห็นเนื้อหาซ้ำใน 24 ชม. แปลว่าข้อความนี้เคยส่งเข้าช่องไปแล้ว
-		// บันทึก id เดิมเพื่อไม่ให้รอบเก็บตกวนมาลองใหม่ทุกชั่วโมง
-		var dup *DuplicatePostError
-		if errors.As(err, &dup) {
-			postID = dup.ExistingPostID
+		// 409 = Zernio เห็นเนื้อหาซ้ำใน 24 ชม. — ใช้ adoptDuplicate ตัวเดียวกับที่รอบส่ง
+		// YouTube ใช้ (publisher.go) เพราะมันเช็คสถานะโพสต์เดิมก่อนเสมอ ไม่ใช่เชื่อ
+		// ExistingPostID ตรงๆ: โพสต์เดิมอาจยัง scheduled/publishing/failed อยู่ก็ได้
+		// (เหตุจริง 08-08 กับคิว YouTube — ดู adoptDuplicate ด้านบนในไฟล์เดียวกัน)
+		if id, ok := p.adoptDuplicate(ctx, err); ok {
+			postID = id
 			log.Printf("Telegram: คลิป %s ซ้ำกับโพสต์ %s ที่เคยส่งแล้ว บันทึกเป็นส่งแล้ว", clipID, postID)
 		} else {
 			log.Printf("Telegram: ส่งคลิป %s เข้าช่องไม่สำเร็จ: %v", clipID, err)
