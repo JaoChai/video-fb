@@ -12,8 +12,8 @@ func TestCleanTikTokHook(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := cleanTikTokHook(c.in); got != c.want {
-				t.Errorf("cleanTikTokHook(%q) = %q, want %q", c.in, got, c.want)
+			if got := stripBrandTag(c.in); got != c.want {
+				t.Errorf("stripBrandTag(%q) = %q, want %q", c.in, got, c.want)
 			}
 		})
 	}
@@ -24,7 +24,7 @@ func TestCleanTikTokHookCaps(t *testing.T) {
 	for i := range long {
 		long[i] = 'ก'
 	}
-	got := []rune(cleanTikTokHook(string(long)))
+	got := []rune(stripBrandTag(string(long)))
 	if len(got) > 120 {
 		t.Errorf("caption not capped: got %d runes, want <= 120", len(got))
 	}

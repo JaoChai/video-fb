@@ -38,16 +38,16 @@ func isContactInfo(title string) bool {
 // templated to end with off-platform contact links (LINE id + Telegram URL) —
 // TikTok hard-suppresses reach on posts that drive users off-platform.
 func buildTikTokCaption(title, hashtags string) string {
-	hook := cleanTikTokHook(title)
+	hook := stripBrandTag(title)
 	if hashtags = strings.TrimSpace(hashtags); hashtags != "" {
 		return hook + "\n\n" + hashtags
 	}
 	return hook
 }
 
-// cleanTikTokHook strips the "| Ads Vance" brand tag and caps the caption so it
-// reads as a scroll-stopping hook, not a search-SEO paragraph.
-func cleanTikTokHook(title string) string {
+// stripBrandTag ตัดแบรนด์แท็ก "| Ads Vance" ท้ายชื่อคลิปและจำกัดความยาว เพื่อให้ข้อความ
+// อ่านเป็นพาดหัวไม่ใช่บรรทัด SEO · ใช้ทั้งแคปชัน TikTok และข้อความที่ส่งเข้าช่อง Telegram
+func stripBrandTag(title string) string {
 	if i := strings.LastIndex(title, "|"); i >= 0 && strings.Contains(strings.ToLower(title[i:]), "ads vance") {
 		title = strings.TrimSpace(title[:i])
 	}
@@ -410,7 +410,7 @@ func (p *Publisher) PublishTikTok(ctx context.Context) error {
 	caption := buildTikTokCaption(title, hashtags)
 
 	result, err := p.zernio.Post(ctx, PostRequest{
-		Title:      cleanTikTokHook(title),
+		Title:      stripBrandTag(title),
 		Content:    caption,
 		Platforms:  []PlatformTarget{{Platform: "tiktok", AccountID: ttAccountID}},
 		MediaItems: []MediaItem{{Type: "video", URL: *video916}},
