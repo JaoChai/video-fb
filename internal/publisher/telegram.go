@@ -72,6 +72,7 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 	}
 	if postID == "" {
 		log.Printf("Telegram: คลิป %s ไม่ได้ post id กลับมา ข้ามการบันทึก", clipID)
+		p.markTelegramFailed(ctx, clipID)
 		return
 	}
 
@@ -83,8 +84,10 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 		`UPDATE clip_metadata SET zernio_telegram_post_id = $2 WHERE clip_id = $1`,
 		clipID, postID); err != nil {
 		// บันทึกพลาด = รอบเก็บตกจะลองใหม่ แล้ว x-request-id เดิมทำให้ Zernio คืนโพสต์เดิม
-		// แทนการโพสต์ซ้ำ จึงแค่ log พอ
+		// แทนการโพสต์ซ้ำ · markTelegramFailed ด้วยเพื่อไม่ให้คลิปนี้ค้างที่หัวคิว "ไม่เคยพลาด"
+		// ตลอดไปทั้งที่จริงพลาดไปแล้ว
 		log.Printf("Telegram: บันทึก telegram_post_id ของคลิป %s ไม่สำเร็จ: %v", clipID, err)
+		p.markTelegramFailed(ctx, clipID)
 		return
 	}
 	log.Printf("Telegram: ส่งคลิป %s เข้าช่องแล้ว → %s", clipID, postID)
@@ -153,10 +156,18 @@ func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID, skipCli
 	// (recordPublished เขียนครั้งเดียว) แปลว่าคลิปที่ Telegram ส่งไม่สำเร็จซ้ำๆ จะเป็นแถว
 	// เก่าสุดตลอดกาล ถ้าไม่ดันไปท้ายคิวจะถูกหยิบซ้ำทุกรอบจนคลิปใหม่ไม่มีวันถึงคิวเลย
 	// (เหตุเดียวกับที่เคยเกิดกับรอบส่ง YouTube — ดู fail_reason+starts_with ในคิวหลักด้านบน
-	// commit 32a5915) จึงดัน zernio_telegram_failed_at ที่ไม่ใช่ NULL ไปท้ายคิวด้วยแพตเทิร์น
-	// เดียวกัน · c.id ต้อง cast เป็น ::text ก่อนเทียบกับ skipClipID เพราะ c.id เป็นคอลัมน์ uuid —
-	// เทียบตรงๆ กับพารามิเตอร์ค่าว่าง (กรณีไม่มีคลิปให้ข้าม) จะพังด้วย "invalid input syntax
-	// for type uuid" (ทดสอบจริงบน Neon branch แล้วเจอเคสนี้ก่อนแก้)
+	// commit 32a5915)
+	//
+	// NULLS FIRST: คลิปที่ยังไม่เคยพลาด (zernio_telegram_failed_at IS NULL) มาก่อนเสมอ
+	// เรียงกันเองด้วย updated_at เหมือนเดิม · ส่วนกลุ่มที่เคยพลาดแล้ว เรียงด้วย failed_at เอง
+	// (ไม่ใช่ updated_at ที่แช่แข็ง) — markTelegramFailed เขียน NOW() ทุกครั้งที่พลาดซ้ำ
+	// จึงหมุนคิวแบบ round-robin ในกลุ่มนี้ให้เอง: ตัวที่เพิ่งพลาดไปหมาดๆ จะตกไปท้ายกลุ่มทันที
+	// กันไม่ให้คลิปที่พังถาวรตัวเดียวยึดหัวแถวของกลุ่ม "เคยพลาด" กินคิวของตัวอื่นที่แค่พลาด
+	// ชั่วคราวไปตลอด 24 ชม. (ตรวจพบจากโค้ดรีวิวรอบสอง — ดันด้วย boolean เฉยๆ แก้ได้แค่ชั้นแรก)
+	//
+	// c.id ต้อง cast เป็น ::text ก่อนเทียบกับ skipClipID เพราะ c.id เป็นคอลัมน์ uuid — เทียบตรงๆ
+	// กับพารามิเตอร์ค่าว่าง (กรณีไม่มีคลิปให้ข้าม) จะพังด้วย "invalid input syntax for type uuid"
+	// (ทดสอบจริงบน Neon branch แล้วเจอเคสนี้ก่อนแก้)
 	err := p.pool.QueryRow(ctx, `
 		SELECT c.id, cm.youtube_title, cm.zernio_post_id, cm.zernio_shorts_post_id
 		FROM clips c
@@ -166,7 +177,7 @@ func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID, skipCli
 		  AND (cm.zernio_telegram_post_id IS NULL OR cm.zernio_telegram_post_id = '')
 		  AND (COALESCE(cm.zernio_post_id, '') <> '' OR COALESCE(cm.zernio_shorts_post_id, '') <> '')
 		  AND c.id::text <> $1
-		ORDER BY (cm.zernio_telegram_failed_at IS NOT NULL), c.updated_at ASC LIMIT 1`,
+		ORDER BY cm.zernio_telegram_failed_at ASC NULLS FIRST, c.updated_at ASC LIMIT 1`,
 		skipClipID).
 		Scan(&clipID, &title, &mainPostID, &shortsPostID)
 	if err != nil {
