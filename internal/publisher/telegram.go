@@ -65,6 +65,7 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 			log.Printf("Telegram: คลิป %s ซ้ำกับโพสต์ %s ที่เคยส่งแล้ว บันทึกเป็นส่งแล้ว", clipID, postID)
 		} else {
 			log.Printf("Telegram: ส่งคลิป %s เข้าช่องไม่สำเร็จ: %v", clipID, err)
+			p.markTelegramFailed(ctx, clipID)
 			return
 		}
 	}
@@ -88,6 +89,19 @@ func (p *Publisher) sendTelegram(ctx context.Context, clipID, accountID, title, 
 	log.Printf("Telegram: ส่งคลิป %s เข้าช่องแล้ว → %s", clipID, postID)
 }
 
+// markTelegramFailed บันทึกเวลาที่ล้มเหลวล่าสุด ให้ sweepTelegramBacklog ดันคลิปนี้ไปท้ายคิว
+// แทนการวนลองคลิปเดิมซ้ำทุกรอบจนคลิปใหม่ไม่มีวันถึงคิว (เหตุผลเต็มดูที่คอมเมนต์ ORDER BY ใน
+// sweepTelegramBacklog — เหตุเดียวกับที่เคยเกิดกับรอบส่ง YouTube)
+func (p *Publisher) markTelegramFailed(ctx context.Context, clipID string) {
+	if p.pool == nil {
+		return
+	}
+	if _, err := p.pool.Exec(ctx,
+		`UPDATE clip_metadata SET zernio_telegram_failed_at = NOW() WHERE clip_id = $1`, clipID); err != nil {
+		log.Printf("Telegram: บันทึกเวลาล้มเหลวของคลิป %s ไม่สำเร็จ: %v", clipID, err)
+	}
+}
+
 // postTelegramForClip หาลิงก์คลิปจริงจากโพสต์ที่เพิ่งขึ้น แล้วส่งเข้าช่อง · เรียกครั้งเดียว
 // ต่อคลิปแม้จะมีทั้ง 16:9 และ 9:16 — ช่องไม่ควรได้ลิงก์คลิปเดียวกันสองใบ
 func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, title, mainPostID, shortsPostID string) {
@@ -107,11 +121,13 @@ func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, 
 	ps, err := p.zernio.GetPost(ctx, postID)
 	if err != nil {
 		log.Printf("Telegram: อ่านโพสต์ %s ของคลิป %s ไม่สำเร็จ: %v", postID, clipID, err)
+		p.markTelegramFailed(ctx, clipID)
 		return
 	}
 	videoURL := youtubePostURL(ps)
 	if videoURL == "" {
 		log.Printf("Telegram: โพสต์ %s ของคลิป %s ยังไม่มีลิงก์ YouTube — ปล่อยให้รอบเก็บตกจัดการ", postID, clipID)
+		p.markTelegramFailed(ctx, clipID)
 		return
 	}
 	p.sendTelegram(ctx, clipID, accountID, title, videoURL)
@@ -123,15 +139,23 @@ func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, 
 // กรอบ 24 ชั่วโมงคือสิ่งเดียวที่กันไม่ให้คลังคลิปเก่าทั้งหมดถูกยิงเข้าช่องรวดเดียว ห้ามถอด
 // (migration 081 ปั๊ม 'skipped-backfill' ให้คลิปที่ published อยู่ก่อนแล้ว จึงไม่มีคลิปเก่า
 // ค้างในกรอบนี้ตอน deploy ครั้งแรก)
-func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID string) {
+// skipClipID กันไม่ให้หยิบคลิปตัวเดียวกับที่ PublishReady เพิ่งลองส่งในทิคเดียวกันซ้ำ —
+// ถ้าเพิ่งลองไปแล้วยังไม่มี URL การลองอีกครั้งภายในไม่กี่วินาทีแทบไม่มีทางสำเร็จ ปล่อยว่าง
+// เมื่อไม่มีคลิปให้ข้าม (เช่นตอนไม่มีคลิป ready ให้ publish ในรอบนี้เลย)
+func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID, skipClipID string) {
 	if accountID == "" {
 		return
 	}
 	var clipID, title string
 	var mainPostID, shortsPostID *string
-	// updated_at คือเวลาที่แถวถูกแตะล่าสุด ไม่ใช่เวลา publish เป๊ะ — คลิปที่ยังส่งไม่สำเร็จ
-	// จะอยู่ในกรอบนี้ต่อไปทุกครั้งที่มีอะไรมาอัปเดตแถว (นี่คือพฤติกรรม retry ที่ตั้งใจ)
-	// ส่วนคลิปที่ส่งสำเร็จแล้วหลุดคิวทันทีเพราะ zernio_telegram_post_id ถูกตั้งค่า
+	// updated_at คือเวลาที่แถวถูกแตะล่าสุด — หลัง status='published' ไม่มีอะไรมาแตะแถวอีก
+	// (recordPublished เขียนครั้งเดียว) แปลว่าคลิปที่ Telegram ส่งไม่สำเร็จซ้ำๆ จะเป็นแถว
+	// เก่าสุดตลอดกาล ถ้าไม่ดันไปท้ายคิวจะถูกหยิบซ้ำทุกรอบจนคลิปใหม่ไม่มีวันถึงคิวเลย
+	// (เหตุเดียวกับที่เคยเกิดกับรอบส่ง YouTube — ดู fail_reason+starts_with ในคิวหลักด้านบน
+	// commit 32a5915) จึงดัน zernio_telegram_failed_at ที่ไม่ใช่ NULL ไปท้ายคิวด้วยแพตเทิร์น
+	// เดียวกัน · c.id ต้อง cast เป็น ::text ก่อนเทียบกับ skipClipID เพราะ c.id เป็นคอลัมน์ uuid —
+	// เทียบตรงๆ กับพารามิเตอร์ค่าว่าง (กรณีไม่มีคลิปให้ข้าม) จะพังด้วย "invalid input syntax
+	// for type uuid" (ทดสอบจริงบน Neon branch แล้วเจอเคสนี้ก่อนแก้)
 	err := p.pool.QueryRow(ctx, `
 		SELECT c.id, cm.youtube_title, cm.zernio_post_id, cm.zernio_shorts_post_id
 		FROM clips c
@@ -140,7 +164,9 @@ func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID string) 
 		  AND c.updated_at > NOW() - INTERVAL '24 hours'
 		  AND (cm.zernio_telegram_post_id IS NULL OR cm.zernio_telegram_post_id = '')
 		  AND (COALESCE(cm.zernio_post_id, '') <> '' OR COALESCE(cm.zernio_shorts_post_id, '') <> '')
-		ORDER BY c.updated_at ASC LIMIT 1`).
+		  AND c.id::text <> $1
+		ORDER BY (cm.zernio_telegram_failed_at IS NOT NULL), c.updated_at ASC LIMIT 1`,
+		skipClipID).
 		Scan(&clipID, &title, &mainPostID, &shortsPostID)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {

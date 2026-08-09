@@ -173,6 +173,10 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_telegram_account_id'`).Scan(&tgAccountID)
 	tgAccountID = strings.TrimSpace(tgAccountID)
 
+	// รอบนี้ประมวลผลคลิปเดียว (LIMIT 1 ในคำสั่ง query ด้านบน) — เก็บ id ไว้กันไม่ให้
+	// sweepTelegramBacklog หยิบคลิปตัวเดียวกันมาลองซ้ำในทิคเดียวกัน
+	var processedClipID string
+
 	for rows.Next() {
 		var clipID, title string
 		var description *string
@@ -294,13 +298,14 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		// ส่งเข้าช่อง Telegram ท้ายสุดเสมอ — คลิปขึ้น YouTube และ DB commit ไปแล้ว
 		// อะไรที่พังหลังจากนี้จึงกระทบแค่ช่อง Telegram ช่องเดียว
 		p.postTelegramForClip(ctx, clipID, tgAccountID, title, mainPostID, shortsPostID)
+		processedClipID = clipID
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate ready clips: %w", err)
 	}
 
 	// เก็บตกท้ายรอบ: คลิปที่ขึ้น YouTube แล้วแต่ยังไม่เข้าช่อง Telegram (จำกัด 24 ชม.)
-	p.sweepTelegramBacklog(ctx, tgAccountID)
+	p.sweepTelegramBacklog(ctx, tgAccountID, processedClipID)
 	return nil
 }
 
