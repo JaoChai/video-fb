@@ -66,6 +66,7 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		"express_consent_given":     true,
 		"topic_stats_enabled":       true,
 		"youtube_first_comment":     true,
+		"zernio_telegram_account_id": true,
 	}
 
 	for k, v := range req {

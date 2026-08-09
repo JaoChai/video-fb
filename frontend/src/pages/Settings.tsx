@@ -126,6 +126,19 @@ function ContentSettingsCard({ form, dirty, onSave, saving, saved, onChange }: C
             placeholder="Zernio TikTok account ID..."
           />
         </div>
+        <div>
+          <label className="block text-xs text-muted-foreground uppercase tracking-wide mb-1.5">
+            Telegram Account ID (Zernio)
+          </label>
+          <Input
+            value={form['zernio_telegram_account_id'] ?? ''}
+            onChange={e => onChange('zernio_telegram_account_id', e.target.value)}
+            placeholder="Zernio Telegram account ID..."
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            เว้นว่างไว้ = ไม่ส่งคลิปเข้าช่อง Telegram
+          </p>
+        </div>
         <div className="flex items-center justify-between">
           <label className="text-sm">Content Preview Confirmed</label>
           <Switch
