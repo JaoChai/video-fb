@@ -298,6 +298,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate ready clips: %w", err)
 	}
+
+	// เก็บตกท้ายรอบ: คลิปที่ขึ้น YouTube แล้วแต่ยังไม่เข้าช่อง Telegram (จำกัด 24 ชม.)
+	p.sweepTelegramBacklog(ctx, tgAccountID)
 	return nil
 }
 

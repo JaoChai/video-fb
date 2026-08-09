@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const platformTelegram = "telegram"
@@ -113,4 +115,44 @@ func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, 
 		return
 	}
 	p.sendTelegram(ctx, clipID, accountID, title, videoURL)
+}
+
+// sweepTelegramBacklog เก็บตกคลิปที่ขึ้น YouTube แล้วแต่ยังไม่ได้เข้าช่อง (เช่นรอบที่ Zernio
+// ล่มพอดี หรือรอบที่ยังไม่มี platformPostUrl) · ทีละ 1 คลิปต่อรอบเหมือน PublishTikTok
+//
+// กรอบ 24 ชั่วโมงคือสิ่งเดียวที่กันไม่ให้คลังคลิปเก่าทั้งหมดถูกยิงเข้าช่องรวดเดียว ห้ามถอด
+// (migration 081 ปั๊ม 'skipped-backfill' ให้คลิปที่ published อยู่ก่อนแล้ว จึงไม่มีคลิปเก่า
+// ค้างในกรอบนี้ตอน deploy ครั้งแรก)
+func (p *Publisher) sweepTelegramBacklog(ctx context.Context, accountID string) {
+	if accountID == "" {
+		return
+	}
+	var clipID, title string
+	var mainPostID, shortsPostID *string
+	err := p.pool.QueryRow(ctx, `
+		SELECT c.id, cm.youtube_title, cm.zernio_post_id, cm.zernio_shorts_post_id
+		FROM clips c
+		JOIN clip_metadata cm ON cm.clip_id = c.id
+		WHERE c.status = 'published'
+		  AND c.updated_at > NOW() - INTERVAL '24 hours'
+		  AND (cm.zernio_telegram_post_id IS NULL OR cm.zernio_telegram_post_id = '')
+		  AND (COALESCE(cm.zernio_post_id, '') <> '' OR COALESCE(cm.zernio_shorts_post_id, '') <> '')
+		ORDER BY c.updated_at ASC LIMIT 1`).
+		Scan(&clipID, &title, &mainPostID, &shortsPostID)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("Telegram: หาคลิปเก็บตกไม่สำเร็จ: %v", err)
+		}
+		return
+	}
+
+	main, shorts := "", ""
+	if mainPostID != nil {
+		main = *mainPostID
+	}
+	if shortsPostID != nil {
+		shorts = *shortsPostID
+	}
+	log.Printf("Telegram: เก็บตกคลิป %s ที่ยังไม่ได้เข้าช่อง", clipID)
+	p.postTelegramForClip(ctx, clipID, accountID, sanitizeYouTubeText(title), main, shorts)
 }
