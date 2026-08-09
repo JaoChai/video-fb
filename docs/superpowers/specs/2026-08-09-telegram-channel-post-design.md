@@ -76,7 +76,7 @@
 | ไฟล์ | สิ่งที่ทำ |
 |---|---|
 | `migrations/081_telegram_channel_post.sql` | `ALTER TABLE clip_metadata ADD COLUMN IF NOT EXISTS zernio_telegram_post_id TEXT` + `INSERT` setting `zernio_telegram_account_id` ค่าว่าง + **ปั๊มค่า `'skipped-backfill'` ให้คลิป `published` ทุกตัวที่มีอยู่ ณ เวลารัน migration** |
-| `internal/publisher/zernio.go` | `GetPost()` อ่าน `platforms[].platformPostUrl`/`platformPostId` เพิ่ม · คลาย `PlatformSpecificData` ให้รับ `TelegramOptions` ได้ (เปลี่ยน type เป็น `any` หรือ interface ที่ทั้งสอง struct ใช้ร่วมกัน) |
+| `internal/publisher/zernio.go` | `GetPost()` อ่าน `platforms[].platformPostUrl`/`platformPostId` เพิ่ม (ตอนนี้อ่านแค่ `status`) |
 | `internal/publisher/telegram.go` (ใหม่) | `postTelegram()`, `sweepTelegramBacklog()`, ตัวประกอบข้อความ — แยกไฟล์เพราะ `publisher.go` 748 บรรทัดแล้ว |
 | `internal/publisher/publisher.go` | เรียกสองฟังก์ชันข้างบน + เปลี่ยนชื่อ `cleanTikTokHook` → `stripBrandTag` (ใช้ร่วมสองที่) |
 | `internal/handler/settings.go` | เพิ่ม `zernio_telegram_account_id` ใน allowlist ของ `Update` |
@@ -90,10 +90,13 @@
 https://www.youtube.com/watch?v=iJq2W3-vRbs
 ```
 
-- ต้นทาง: `clip_metadata.youtube_title` ผ่าน `stripBrandTag` (ตัด `| Ads Vance` ท้ายชื่อ) และตัด
-  ` #Shorts` ที่ `PublishReady` ต่อท้ายเข้าไปสำหรับโพสต์ 9:16
-- `parseMode: "HTML"` — ชื่อคลิปผ่าน `sanitizeYouTubeText` มาแล้วจึงไม่มี `<` `>` เหลือ
-  ส่วน `&` ต้อง escape เป็น `&amp;` ก่อนส่ง
+- ต้นทาง: `clip_metadata.youtube_title` ผ่าน `stripBrandTag` (ตัด `| Ads Vance` ท้ายชื่อ)
+  ไม่ต้องตัด ` #Shorts` เพราะชื่อที่ไหลเข้าเส้นทางนี้ไม่เคยมี — `PublishReady` เก็บชื่อ Shorts
+  ไว้ในตัวแปรแยก (`shortsTitle`, `publisher.go:233`) และรอบเก็บตกอ่านค่าดิบจาก DB
+- **ไม่ส่ง `platformSpecificData` เลย** — `parseMode` ค่า default ของ Zernio คือ `"HTML"`
+  อยู่แล้ว จึงไม่ต้องแตะ `PlatformTarget.PlatformSpecificData` ที่ผูก type กับ `*YouTubeOptions`
+  ⇒ เส้นทาง YouTube ไม่ถูกแก้แม้แต่บรรทัดเดียว · แต่ยังต้อง escape `&` `<` `>` ในชื่อคลิป
+  เพราะปลายทาง parse เป็น HTML
 - คลิปที่มีทั้ง 16:9 และ 9:16 → ส่ง **ครั้งเดียว** ใช้ลิงก์ของ 16:9 ก่อน
 
 ### ความล้มเหลว
@@ -126,7 +129,7 @@ setting `zernio_telegram_account_id` — **ค่าว่าง = ปิดส�
 
 เขียนก่อนโค้ด ใช้ `httptest` แบบเดียวกับ `zernio_test.go`:
 
-1. ประกอบข้อความถูก — ตัด `| Ads Vance` และ ` #Shorts`, ลิงก์อยู่คนละบรรทัด, `&` ถูก escape
+1. ประกอบข้อความถูก — ตัด `| Ads Vance`, ลิงก์อยู่คนละบรรทัด, `&` `<` `>` ถูก escape
 2. มีทั้ง 16:9 และ 9:16 → ใช้ลิงก์ 16:9 และยิงโพสต์ครั้งเดียว
 3. `zernio_telegram_account_id` ว่าง → ไม่มี HTTP request ออกไปเลย
 4. Telegram ล้ม → `clips.status` ยังเป็น `published` และ `fail_reason` ไม่ถูกแตะ
