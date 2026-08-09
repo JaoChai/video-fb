@@ -53,19 +53,19 @@ func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allowed := map[string]bool{
-		"openrouter_api_key":        true,
-		"kie_api_key":               true,
-		"elevenlabs_voice":          true,
-		"zernio_api_key":            true,
-		"zernio_youtube_account_id": true,
-		"categories":                true,
-		"brand_aliases":             true,
-		"audience_persona":          true,
-		"zernio_tiktok_account_id":  true,
-		"content_preview_confirmed": true,
-		"express_consent_given":     true,
-		"topic_stats_enabled":       true,
-		"youtube_first_comment":     true,
+		"openrouter_api_key":         true,
+		"kie_api_key":                true,
+		"elevenlabs_voice":           true,
+		"zernio_api_key":             true,
+		"zernio_youtube_account_id":  true,
+		"categories":                 true,
+		"brand_aliases":              true,
+		"audience_persona":           true,
+		"zernio_tiktok_account_id":   true,
+		"content_preview_confirmed":  true,
+		"express_consent_given":      true,
+		"topic_stats_enabled":        true,
+		"youtube_first_comment":      true,
 		"zernio_telegram_account_id": true,
 	}
 
