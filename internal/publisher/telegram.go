@@ -33,9 +33,16 @@ func telegramPlatforms(accountID string) []PlatformTarget {
 // youtubePostURL ดึงลิงก์คลิปจริงจากผลของ GetPost · คืนค่าว่างเมื่อยังไม่มี แปลว่า "ยังไม่พร้อม
 // ส่ง" ไม่ใช่ "ประกอบ URL เองจาก video id" — เดา URL ผิดรูป (watch vs shorts) แล้วช่องจะได้
 // ลิงก์เสียโดยไม่มีใครรู้
-func youtubePostURL(ps *PostStatus) string {
+//
+// useShorts=true (โพสต์นี้มาจากไฟล์ 9:16/shortsPostID) → คืนรูป youtube.com/shorts/{id} แทน
+// watch?v={id} ที่ Zernio ให้มา เพราะลิงก์ watch เปิดมาเป็นเพลเยอร์ปกติ ไม่ใช่มุมมอง Shorts
+// เต็มจอที่คนดูคาดหวังจากคลิปแนวตั้ง
+func youtubePostURL(ps *PostStatus, useShorts bool) string {
 	for _, pl := range ps.Platforms {
 		if pl.Platform == platformYouTube && pl.PlatformPostURL != "" {
+			if useShorts && pl.PlatformPostID != "" {
+				return "https://www.youtube.com/shorts/" + pl.PlatformPostID
+			}
 			return pl.PlatformPostURL
 		}
 	}
@@ -128,7 +135,7 @@ func (p *Publisher) postTelegramForClip(ctx context.Context, clipID, accountID, 
 		p.markTelegramFailed(ctx, clipID)
 		return
 	}
-	videoURL := youtubePostURL(ps)
+	videoURL := youtubePostURL(ps, postID == shortsPostID)
 	if videoURL == "" {
 		log.Printf("Telegram: โพสต์ %s ของคลิป %s ยังไม่มีลิงก์ YouTube — ปล่อยให้รอบเก็บตกจัดการ", postID, clipID)
 		p.markTelegramFailed(ctx, clipID)

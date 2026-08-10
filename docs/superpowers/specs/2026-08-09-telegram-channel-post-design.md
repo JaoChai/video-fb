@@ -14,7 +14,9 @@
 ## ข้อเท็จจริงที่ตรวจแล้ว (ยิงของจริง 2026-08-09)
 
 - **Zernio รองรับ Telegram** — `platform: "telegram"` · เชื่อมต่อแบบ bot ไม่ใช่ OAuth
-  (`@ZernioScheduleBot` ต้องเป็นแอดมินในช่องและมีสิทธิ์โพสต์)
+  (`@LateScheduleBot` ต้องเป็นแอดมินในช่องและมีสิทธิ์โพสต์ — ชื่อ display "Social Media
+  Connector", username จริงคือ `LateScheduleBot`; ระวังบอทปลอมที่ตั้ง display name
+  เลียนแบบแต่ username จริงเป็นคนละตัว)
 - **โพสต์ในช่องขึ้นเป็นชื่อ + โลโก้ของช่องเรา** ไม่ใช่ชื่อบอท (ที่ขึ้นชื่อบอทคือกรณี group)
 - **แผนที่จ่ายอยู่รองรับแล้ว ไม่ต้องจ่ายเพิ่ม** — `GET /usage` คืน `planName: "Accelerate"`,
   `limits.uploads: -1` (ไม่จำกัด), `usage.profiles: 7 / 50`
@@ -142,8 +144,10 @@ setting `zernio_telegram_account_id` — **ค่าว่าง = ปิดส�
 
 ## งานที่ต้องทำด้วยมือ (เจ้าของทำเอง ระบบทำแทนไม่ได้)
 
-1. เพิ่ม `@ZernioScheduleBot` เป็นแอดมินของช่อง `@adsvancech` พร้อมสิทธิ์โพสต์ข้อความ
-2. ผูกบัญชีในหน้า Zernio (ระบบออก access code อายุ 15 นาที ส่งให้บอททาง DM)
+1. เพิ่ม `@LateScheduleBot` เป็นแอดมินของช่อง `@adsvancech` พร้อมสิทธิ์โพสต์ข้อความ
+2. หน้า Zernio ออก access code อายุ 15 นาที (รูปแบบ `ZRN-XXXXXX`) → เปิดแชทส่วนตัวกับบอท →
+   ส่งโค้ดพร้อม `@ชื่อช่อง` (ช่องมี public username) หรือส่งโค้ดแล้ว forward ข้อความจากช่องมา
+   (ช่องส่วนตัวไม่มี username) → รอหน้า Zernio อัปเดตอัตโนมัติ
 3. เอา `accountId` ที่ได้ (`GET /accounts` → รายการ platform `telegram`) ไปกรอกใน Settings
 
 ถ้ายังไม่ทำข้อ 1-3 ฟีเจอร์จะอยู่ในสถานะปิดสนิท ระบบทำงานเหมือนเดิมทุกประการ

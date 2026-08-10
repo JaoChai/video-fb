@@ -66,17 +66,22 @@ func TestTelegramPlatforms(t *testing.T) {
 func TestYoutubePostURL(t *testing.T) {
 	ps := &PostStatus{Platforms: []PostPlatform{
 		{Platform: "telegram", PlatformPostURL: "https://t.me/x/1"},
-		{Platform: "youtube", PlatformPostURL: "https://www.youtube.com/watch?v=abc"},
+		{Platform: "youtube", PlatformPostID: "abc", PlatformPostURL: "https://www.youtube.com/watch?v=abc"},
 	}}
-	if got := youtubePostURL(ps); got != "https://www.youtube.com/watch?v=abc" {
-		t.Fatalf("expected youtube url, got %q", got)
+	if got := youtubePostURL(ps, false); got != "https://www.youtube.com/watch?v=abc" {
+		t.Fatalf("expected watch url เมื่อไม่ใช่ shorts, got %q", got)
 	}
-	if got := youtubePostURL(&PostStatus{}); got != "" {
+	// useShorts=true ต้องคืนลิงก์รูป /shorts/{id} ไม่ใช่ watch?v= ที่ Zernio ให้มาเฉยๆ —
+	// watch เปิดเป็นเพลเยอร์ปกติ ไม่ใช่มุมมอง Shorts เต็มจอที่คลิปแนวตั้งควรได้
+	if got := youtubePostURL(ps, true); got != "https://www.youtube.com/shorts/abc" {
+		t.Fatalf("expected shorts url เมื่อ useShorts=true, got %q", got)
+	}
+	if got := youtubePostURL(&PostStatus{}, false); got != "" {
 		t.Fatalf("expected empty string when no platforms, got %q", got)
 	}
 	// ยังไม่มีลิงก์ = ยังไม่พร้อมส่ง ต้องคืนค่าว่าง ไม่ใช่เดา URL เอง
 	noURL := &PostStatus{Platforms: []PostPlatform{{Platform: "youtube", PlatformPostID: "abc"}}}
-	if got := youtubePostURL(noURL); got != "" {
+	if got := youtubePostURL(noURL, false); got != "" {
 		t.Fatalf("expected empty string when url missing, got %q", got)
 	}
 }
@@ -248,15 +253,20 @@ func TestPostTelegramForClip_PrefersMainPostAndPostsOnce(t *testing.T) {
 
 func TestPostTelegramForClip_FallsBackToShorts(t *testing.T) {
 	var firstPath string
+	var content string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if firstPath == "" {
 			firstPath = r.URL.Path
 		}
 		if r.Method == http.MethodGet {
 			_, _ = w.Write([]byte(`{"post":{"_id":"SHORTS","status":"published","platforms":[
-				{"platform":"youtube","platformPostUrl":"https://www.youtube.com/watch?v=vid2"}]}}`))
+				{"platform":"youtube","platformPostId":"vid2","platformPostUrl":"https://www.youtube.com/watch?v=vid2"}]}}`))
 			return
 		}
+		var body map[string]any
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		content, _ = body["content"].(string)
 		_, _ = w.Write([]byte(`{"post":{"_id":"TG1"}}`))
 	}))
 	defer srv.Close()
@@ -266,6 +276,10 @@ func TestPostTelegramForClip_FallsBackToShorts(t *testing.T) {
 
 	if firstPath != "/posts/SHORTS" {
 		t.Fatalf("ไม่มีโพสต์ 16:9 ต้องใช้ Shorts แทน ได้ %q", firstPath)
+	}
+	// มาจาก shortsPostID ต้องได้ลิงก์รูป /shorts/{id} ไม่ใช่ watch?v= ที่ Zernio คืนมาเฉยๆ
+	if !strings.Contains(content, "https://www.youtube.com/shorts/vid2") {
+		t.Fatalf("คลิปมาจาก Shorts ต้องได้ลิงก์ /shorts/vid2 แต่ได้: %q", content)
 	}
 }
 
