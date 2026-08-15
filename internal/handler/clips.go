@@ -50,6 +50,21 @@ func (h *ClipsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, models.APIResponse{Data: clip})
 }
 
+// readyBlockedReason บอกว่าทำไมคลิปนี้ยังเข้าสถานะ ready ไม่ได้ ("" = เข้าได้)
+// สถานะ ready แปลว่า "พร้อมให้รอบส่งหยิบไปอัปขึ้น YouTube" — คลิปที่ยังไม่มีไฟล์วิดีโอ
+// เข้าสถานะนี้แล้วจะถูกหยิบไปวนซ้ำทุกรอบโดยส่งอะไรไม่ได้เลย (เหตุ 2026-08-14: คลิปเดียว
+// ยึดหัวคิว 21 ชั่วโมง) · ทางออกที่ถูกต้องของคลิปแบบนั้นคือสั่งเรนเดอร์ ไม่ใช่อนุมัติ
+func readyBlockedReason(c *models.Clip) string {
+	if c == nil {
+		return ""
+	}
+	has := func(u *string) bool { return u != nil && *u != "" }
+	if has(c.Video916URL) || has(c.Video169URL) {
+		return ""
+	}
+	return "คลิปนี้ยังไม่มีไฟล์วิดีโอ — สั่งเรนเดอร์ก่อน แล้วคลิปจะเข้าคิวเผยแพร่เอง"
+}
+
 func (h *ClipsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req models.UpdateClipRequest
@@ -64,6 +79,17 @@ func (h *ClipsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, models.APIResponse{
 			Error: "status '" + *req.Status + "' ตั้งได้โดย pipeline เท่านั้น"})
 		return
+	}
+	if req.Status != nil && *req.Status == "ready" {
+		clip, err := h.repo.GetByID(r.Context(), id)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, models.APIResponse{Error: "clip not found"})
+			return
+		}
+		if reason := readyBlockedReason(clip); reason != "" {
+			writeJSON(w, http.StatusConflict, models.APIResponse{Error: reason})
+			return
+		}
 	}
 	clip, err := h.repo.Update(r.Context(), id, req)
 	if err != nil {
@@ -86,6 +112,16 @@ func (h *ClipsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 // manual "override & publish anyway" escape hatch for a clip the auto-reviewer gated.
 func (h *ClipsHandler) Unhold(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	clip, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, models.APIResponse{Error: "clip not found"})
+		return
+	}
+	// ปลดกัก = ดันคลิปเป็น ready (ดู ClearAutoReviewHeld) จึงต้องผ่านด่านเดียวกับ PATCH
+	if reason := readyBlockedReason(clip); reason != "" {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: reason})
+		return
+	}
 	if err := h.repo.ClearAutoReviewHeld(r.Context(), id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, models.APIResponse{Error: err.Error()})
 		return
