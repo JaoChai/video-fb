@@ -95,3 +95,28 @@ func TestPublishFailure_KeepsOriginalError(t *testing.T) {
 		t.Errorf("publishFailure(orig) = %v, want %v (ห้ามกลืนเหตุผลจริง)", got, orig)
 	}
 }
+
+func TestStuckQueueMessage_SilentWhenNothingWaiting(t *testing.T) {
+	if got := stuckQueueMessage(0, 0, 0); got != "" {
+		t.Errorf("stuckQueueMessage(0,0,0) = %q, want \"\" (ไม่มีคลิปค้าง = ไม่ต้องเตือน)", got)
+	}
+}
+
+func TestStuckQueueMessage_ReportsBlockers(t *testing.T) {
+	got := stuckQueueMessage(3, 1, 2)
+	for _, want := range []string{"3", "metadata=1", "ไม่มีไฟล์วิดีโอ=2"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stuckQueueMessage(3,1,2) = %q, ต้องมี %q", got, want)
+		}
+	}
+}
+
+func TestStuckQueueMessage_WaitingWithoutKnownBlocker(t *testing.T) {
+	got := stuckQueueMessage(2, 0, 0)
+	if got == "" {
+		t.Fatal("มีคลิปค้าง 2 ใบแต่เงียบ — ต้องเตือนเสมอ")
+	}
+	if !strings.Contains(got, "2") {
+		t.Errorf("ข้อความ %q ต้องบอกจำนวนคลิปที่ค้าง", got)
+	}
+}

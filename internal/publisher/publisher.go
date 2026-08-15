@@ -166,6 +166,39 @@ type publishOpts struct {
 	tgAccountID  string
 }
 
+// stuckQueueMessage ประกอบข้อความเตือนเมื่อรอบส่งจบโดยไม่ได้ส่งอะไรเลยทั้งที่ยังมีคลิป
+// สถานะ ready ค้างอยู่ · คืน "" เมื่อไม่มีคลิปค้าง (กรณีปกติ ไม่ต้องเตือน)
+// noMetadata คือคลิปที่หายจากคิวเพราะไม่มีแถว clip_metadata ให้ JOIN — เงียบที่สุดในบรรดา
+// เส้นทางทั้งหมด เพราะมันไม่เคยเข้าถึงลูปส่งเลยจึงไม่มี log ของตัวเอง
+func stuckQueueMessage(total, noMetadata, noVideo int) string {
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("PublishReady: จบรอบโดยไม่ได้ส่งคลิปใดเลย ทั้งที่มีคลิป ready ค้าง %d ใบ (ไม่มี metadata=%d, ไม่มีไฟล์วิดีโอ=%d)",
+		total, noMetadata, noVideo)
+}
+
+// logStuckQueue นับคลิปที่ค้างในคิวแล้วเตือน · เรียกเฉพาะรอบที่ไม่ได้ส่งอะไรเลย
+// ความล้มเหลวของการนับต้องไม่กระทบรอบส่ง — log แล้วจบ
+func (p *Publisher) logStuckQueue(ctx context.Context) {
+	var total, noMetadata, noVideo int
+	err := p.pool.QueryRow(ctx, `
+        SELECT COUNT(*),
+               COUNT(*) FILTER (WHERE cm.clip_id IS NULL),
+               COUNT(*) FILTER (WHERE COALESCE(c.video_16_9_url, '') = '' AND COALESCE(c.video_9_16_url, '') = '')
+        FROM clips c
+        LEFT JOIN clip_metadata cm ON cm.clip_id = c.id
+        WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE`,
+	).Scan(&total, &noMetadata, &noVideo)
+	if err != nil {
+		log.Printf("PublishReady: นับคลิปค้างในคิวไม่สำเร็จ: %v", err)
+		return
+	}
+	if msg := stuckQueueMessage(total, noMetadata, noVideo); msg != "" {
+		log.Print(msg)
+	}
+}
+
 // publishFirst ลองส่งทีละใบตามลำดับคิว หยุดทันทีที่ใบหนึ่งขึ้นสำเร็จ แล้วคืน id ของใบนั้น
 // ("" = รอบนี้ไม่มีใบไหนขึ้นเลย) · แยกออกจาก I/O เพื่อให้ทดสอบพฤติกรรม "ใบที่ส่งไม่ออก
 // ต้องไม่ขวางใบถัดไป" ได้จริงในโปรเจกต์ที่ไม่มี integration test ต่อ Postgres
@@ -371,6 +404,12 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	processedClipID := publishFirst(cands, func(c publishCandidate) bool {
 		return p.publishOne(ctx, c, o)
 	})
+
+	// รอบที่ไม่ได้ส่งอะไรเลยคืออาการเดียวที่ไม่เคยสร้าง error (เหตุ 2026-08-14) — เตือนใน log
+	// ให้คนเฝ้าเห็นว่ามีคลิปค้างและติดที่อะไร
+	if processedClipID == "" {
+		p.logStuckQueue(ctx)
+	}
 
 	// เก็บตกท้ายรอบ: คลิปที่ขึ้น YouTube แล้วแต่ยังไม่เข้าช่อง Telegram (จำกัด 24 ชม.)
 	// ส่ง processedClipID ไปกันไม่ให้ sweep หยิบคลิปที่เพิ่งส่งในทิคเดียวกันมาลองซ้ำ
