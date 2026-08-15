@@ -6,13 +6,14 @@ import (
 	"testing"
 )
 
-// หัวใจของเหตุ 2026-08-14: คลิปที่ส่งไม่ออกต้องไม่ขวางใบถัดไป
+// หัวใจของเหตุ 2026-08-14: คลิปที่ส่งไม่ออกเลย (posted=false) ต้องไม่ขวางใบถัดไป
 func TestPublishFirst_SkipsFailingCandidateAndPublishesNext(t *testing.T) {
 	cands := []publishCandidate{{ClipID: "เสีย"}, {ClipID: "ดี"}, {ClipID: "ไม่ควรถูกแตะ"}}
 	var tried []string
-	got := publishFirst(cands, func(c publishCandidate) bool {
+	got := publishFirst(cands, func(c publishCandidate) (bool, bool) {
 		tried = append(tried, c.ClipID)
-		return c.ClipID == "ดี"
+		ok := c.ClipID == "ดี"
+		return ok, ok
 	})
 	if got != "ดี" {
 		t.Errorf("publishFirst() = %q, want %q", got, "ดี")
@@ -26,7 +27,7 @@ func TestPublishFirst_SkipsFailingCandidateAndPublishesNext(t *testing.T) {
 func TestPublishFirst_NoCandidateSucceeds(t *testing.T) {
 	cands := []publishCandidate{{ClipID: "a"}, {ClipID: "b"}}
 	calls := 0
-	got := publishFirst(cands, func(publishCandidate) bool { calls++; return false })
+	got := publishFirst(cands, func(publishCandidate) (bool, bool) { calls++; return false, false })
 	if got != "" {
 		t.Errorf("publishFirst() = %q, want \"\"", got)
 	}
@@ -36,8 +37,26 @@ func TestPublishFirst_NoCandidateSucceeds(t *testing.T) {
 }
 
 func TestPublishFirst_EmptyList(t *testing.T) {
-	if got := publishFirst(nil, func(publishCandidate) bool { return true }); got != "" {
+	if got := publishFirst(nil, func(publishCandidate) (bool, bool) { return true, true }); got != "" {
 		t.Errorf("publishFirst(nil) = %q, want \"\"", got)
+	}
+}
+
+// เหตุที่ whole-branch review เจอ: Zernio โพสต์คลิปขึ้น YouTube สำเร็จจริง (posted=true) แต่
+// recordPublished (DB) ล้มทีหลัง (recorded=false) — เดิมค่านี้แปลว่า "ลองใบถัดไป" ทำให้รอบ
+// เดียวโพสต์ขึ้น YouTube ได้ 2 คลิป ต้องหยุดทันทีและไม่นับว่าใบไหน "จบสมบูรณ์"
+func TestPublishFirst_PostedButNotRecordedStopsWithoutTryingNext(t *testing.T) {
+	cands := []publishCandidate{{ClipID: "โพสต์สำเร็จ_บันทึกล้ม"}, {ClipID: "ห้ามถูกแตะ"}}
+	var tried []string
+	got := publishFirst(cands, func(c publishCandidate) (bool, bool) {
+		tried = append(tried, c.ClipID)
+		return true, false
+	})
+	if got != "" {
+		t.Errorf("publishFirst() = %q, want \"\" (ยังไม่นับว่าจบสมบูรณ์เพราะ DB ยังไม่บันทึก)", got)
+	}
+	if len(tried) != 1 || tried[0] != "โพสต์สำเร็จ_บันทึกล้ม" {
+		t.Errorf("ลองส่ง %v, want แค่ [\"โพสต์สำเร็จ_บันทึกล้ม\"] (ห้ามลองใบถัดไปทั้งที่มีคลิปขึ้น YouTube ไปแล้ว)", tried)
 	}
 }
 

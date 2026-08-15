@@ -199,14 +199,24 @@ func (p *Publisher) logStuckQueue(ctx context.Context) {
 	}
 }
 
-// publishFirst ลองส่งทีละใบตามลำดับคิว หยุดทันทีที่ใบหนึ่งขึ้นสำเร็จ แล้วคืน id ของใบนั้น
-// ("" = รอบนี้ไม่มีใบไหนขึ้นเลย) · แยกออกจาก I/O เพื่อให้ทดสอบพฤติกรรม "ใบที่ส่งไม่ออก
-// ต้องไม่ขวางใบถัดไป" ได้จริงในโปรเจกต์ที่ไม่มี integration test ต่อ Postgres
-func publishFirst(cands []publishCandidate, send func(publishCandidate) bool) string {
+// publishFirst ลองส่งทีละใบตามลำดับคิว หยุดทันทีที่มีการโพสต์ขึ้น YouTube จริงแล้ว (posted=true)
+// ไม่ว่าจะบันทึกลง DB สำเร็จหรือไม่ — ต้องหยุดไม่ใช่แค่ตอนสำเร็จสมบูรณ์ เพราะ recorded=false
+// หมายความว่าคลิปขึ้น YouTube ไปแล้วจริง (Zernio ตอบสำเร็จ) แค่ DB commit ล้มทีหลัง หากตีความ
+// เป็น "ลองใบถัดไปได้" เหมือนกรณีส่งไม่ออก จะทำให้รอบเดียวขึ้น YouTube ได้เกิน 1 คลิป (พบจาก
+// whole-branch review ก่อน merge 2026-08-15) · คืน id ของใบที่ "จบสมบูรณ์" เท่านั้น
+// (posted && recorded) — "" = ไม่มีใบไหนจบสมบูรณ์ในรอบนี้ ไม่ว่าจะเพราะไม่มีใบไหนขึ้นเลย
+// หรือใบเดียวที่ขึ้นแล้วบันทึกไม่สำเร็จ · แยกออกจาก I/O เพื่อให้ทดสอบพฤติกรรมนี้ได้จริงใน
+// โปรเจกต์ที่ไม่มี integration test ต่อ Postgres
+func publishFirst(cands []publishCandidate, send func(publishCandidate) (posted, recorded bool)) string {
 	for _, c := range cands {
-		if send(c) {
+		posted, recorded := send(c)
+		if !posted {
+			continue
+		}
+		if recorded {
 			return c.ClipID
 		}
+		return ""
 	}
 	return ""
 }
@@ -244,9 +254,12 @@ func (p *Publisher) readyCandidates(ctx context.Context) ([]publishCandidate, er
 	return out, nil
 }
 
-// publishOne ส่งคลิปหนึ่งใบขึ้น YouTube · คืน true เมื่อคลิปขึ้นจริงและบันทึก published สำเร็จ
-// false = คลิปยังคาสถานะ ready ให้รอบหน้าลองใหม่ และผู้เรียกจะไปลองใบถัดไปในคิวทันที
-func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publishOpts) bool {
+// publishOne ส่งคลิปหนึ่งใบขึ้น YouTube · คืน (posted, recorded)
+// posted=true = มีการโพสต์ขึ้น YouTube จริงแล้วในคอลนี้ (ไม่ว่า DB จะบันทึกสำเร็จหรือไม่)
+// — ผู้เรียก (publishFirst) ต้องหยุดทันทีเมื่อ posted=true เพื่อไม่ให้อัปโหลดคลิปที่สอง
+// ซ้อนทับในทิคเดียวกัน · recorded=true = บันทึกลง DB สำเร็จด้วย (จบสมบูรณ์)
+// posted=false = คลิปยังคาสถานะ ready ให้รอบหน้าลองใหม่ และผู้เรียกไปลองใบถัดไปในคิวทันที
+func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publishOpts) (posted, recorded bool) {
 	title := c.Title
 	if isContactInfo(title) {
 		var clipTitle string
@@ -262,7 +275,7 @@ func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publis
 
 	if o.ytAccountID == "" {
 		log.Printf("No Zernio accounts configured, skipping clip %s", c.ClipID)
-		return false
+		return false, false
 	}
 
 	// Post whatever formats this clip actually has. The hyperframes pipeline
@@ -288,7 +301,7 @@ func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publis
 			} else {
 				log.Printf("Failed to post 16:9 for clip %s: %v", c.ClipID, err)
 				p.recordPublishFailure(ctx, c.ClipID, err)
-				return false
+				return false, false
 			}
 		} else {
 			log.Printf("Posted 16:9 public for clip %s → %s", c.ClipID, result169.Post.ID)
@@ -332,15 +345,20 @@ func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publis
 	if mainPostID == "" && shortsPostID == "" {
 		log.Printf("No video published for clip %s, leaving as ready", c.ClipID)
 		p.recordPublishFailure(ctx, c.ClipID, publishFailure(postErr))
-		return false
+		return false, false
 	}
 
 	// Persist status + post ids atomically. The YouTube post already happened,
 	// so a silent DB failure here would leave the clip 'ready' and re-post it
 	// (duplicate upload) on the next run — log loudly if the commit fails.
+	//
+	// posted=true ที่นี่สำคัญมาก: วิดีโอขึ้น YouTube จริงแล้ว (Zernio ตอบสำเร็จ) เพียงแต่ DB
+	// commit ล้ม — publishFirst ต้องหยุดทันที ห้ามตีความเหมือนกรณี "ส่งไม่ออก" แล้วไปลองใบ
+	// ถัดไป ไม่งั้นรอบเดียวจะขึ้น YouTube ได้เกิน 1 คลิป (พบจาก whole-branch review ก่อน
+	// merge 2026-08-15 — ผิด invariant "drip 1 คลิป/รอบ")
 	if err := p.recordPublished(ctx, c.ClipID, mainPostID, shortsPostID); err != nil {
 		log.Printf("CRITICAL clip %s posted to YouTube (main=%q shorts=%q) but DB commit FAILED: %v — will be re-published next run", c.ClipID, mainPostID, shortsPostID, err)
-		return false
+		return true, false
 	}
 
 	// เงื่อนไข postErr == nil: คลิปที่มีทั้ง 16:9 และ 9:16 อาจขึ้นได้แค่รูปแบบเดียว
@@ -354,7 +372,7 @@ func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publis
 	// ส่งเข้าช่อง Telegram ท้ายสุดเสมอ — คลิปขึ้น YouTube และ DB commit ไปแล้ว
 	// อะไรที่พังหลังจากนี้จึงกระทบแค่ช่อง Telegram ช่องเดียว
 	p.postTelegramForClip(ctx, c.ClipID, o.tgAccountID, title, mainPostID, shortsPostID)
-	return true
+	return true, true
 }
 
 func (p *Publisher) PublishReady(ctx context.Context) error {
@@ -401,7 +419,9 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 	o.tgAccountID = strings.TrimSpace(o.tgAccountID)
 
 	// ส่งจริงไม่เกินใบเดียวต่อรอบ · ใบที่ส่งไม่ออกจะถูกข้ามไปใบถัดไปทันที ไม่ยึดคิวอีกต่อไป
-	processedClipID := publishFirst(cands, func(c publishCandidate) bool {
+	// (ใบที่โพสต์ขึ้น YouTube แล้วแต่บันทึก DB ไม่สำเร็จจะหยุดคิวทันทีเหมือนกัน — ดูคอมเมนต์
+	// ใน publishFirst)
+	processedClipID := publishFirst(cands, func(c publishCandidate) (bool, bool) {
 		return p.publishOne(ctx, c, o)
 	})
 
