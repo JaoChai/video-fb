@@ -150,4 +150,5 @@ func SetOrchestrator(r *chi.Mux, h *handler.OrchestratorHandler) {
 	r.Post("/api/v1/orchestrator/publish", h.TriggerPublish)
 	r.Post("/api/v1/orchestrator/publish-tiktok", h.TriggerPublishTikTok)
 	r.Post("/api/v1/orchestrator/retry", h.RetryFailed)
+	r.Post("/api/v1/clips/{id}/rerender", h.RerenderClip)
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jaochai/video-fb/internal/models"
 	"github.com/jaochai/video-fb/internal/orchestrator"
 	"github.com/jaochai/video-fb/internal/progress"
@@ -164,6 +165,28 @@ func (h *OrchestratorHandler) RetryFailed(w http.ResponseWriter, r *http.Request
 		if err := h.orch.RetryAllFailed(context.Background(), 2, 0); err != nil {
 			log.Printf("Retry all failed: %v", err)
 			h.tracker.AddErrorLog(err.Error())
+		}
+	}()
+}
+
+// RerenderClip สั่งเรนเดอร์คลิปที่เนื้อหาครบแล้วแต่ยังไม่มีไฟล์วิดีโอ · ทำงานเบื้องหลัง
+// (เรนเดอร์ใช้เวลาหลักนาที) จึงตอบ 202 ทันทีเหมือน RetryFailed แล้วให้หน้าเว็บติดตามจาก
+// สถานะคลิป · ตรวจเงื่อนไขแบบ synchronous ก่อนเสมอ เพื่อให้คนกดปุ่มได้เหตุผลกลับทันที
+func (h *OrchestratorHandler) RerenderClip(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if s := h.tracker.GetStatus(); s.Active {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: "Production already in progress"})
+		return
+	}
+	if err := h.orch.CanRerender(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusConflict, models.APIResponse{Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, models.APIResponse{Message: "กำลังเรนเดอร์คลิปใหม่"})
+	go func() {
+		if err := h.orch.RerenderClip(context.Background(), id); err != nil {
+			log.Printf("Rerender %s failed: %v", id, err)
 		}
 	}()
 }

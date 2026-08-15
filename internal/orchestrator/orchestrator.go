@@ -885,6 +885,84 @@ func (o *Orchestrator) RetryClip(ctx context.Context, clip *models.Clip) error {
 	return o.retryFull(ctx, clip)
 }
 
+// ErrRerenderNotAllowed แยกจากความล้มเหลวอื่นเพื่อให้ handler ตอบ 409 ได้ตรง — คนกดปุ่ม
+// ต้องเห็นว่า "สั่งไม่ได้เพราะอะไร" ไม่ใช่ 500 ลอยๆ
+var ErrRerenderNotAllowed = errors.New("rerender not allowed")
+
+// rerenderBlockedReason บอกว่าทำไมคลิปนี้สั่งเรนเดอร์ใหม่ไม่ได้ ("" = สั่งได้)
+//
+// เป้าหมายของทางนี้คือคลิปที่ตะแกรงเนื้อหา (tutorial/myth) ตีตกก่อนถึงขั้นเรนเดอร์:
+// สคริปต์ ฉาก และ metadata ถูกบันทึกครบแล้ว (stage=content_ready) ขาดแค่ไฟล์วิดีโอ —
+// การ resume จึงไม่ต้องจ่ายค่า LLM ใหม่ · คลิปที่มีไฟล์อยู่แล้วถูกห้ามไว้ เพราะการเรนเดอร์
+// ซ้ำมีต้นทุนจริง (ภาพ + เสียง + CPU) และของเดิมก็ใช้ได้อยู่
+func rerenderBlockedReason(c *models.Clip) string {
+	if c == nil {
+		return "ไม่พบคลิปนี้"
+	}
+	if c.Status != "needs_review" && c.Status != "ready" {
+		return fmt.Sprintf("คลิปสถานะ %s สั่งเรนเดอร์ใหม่ไม่ได้ (รับเฉพาะ needs_review และ ready)", c.Status)
+	}
+	has := func(u *string) bool { return u != nil && *u != "" }
+	if has(c.Video916URL) || has(c.Video169URL) {
+		return "คลิปนี้มีไฟล์วิดีโออยู่แล้ว — ถ้าต้องการของใหม่ให้ลบคลิปแล้วผลิตใหม่"
+	}
+	if !resumeAtRender(c.ProductionStage) {
+		return fmt.Sprintf("คลิปยังไม่มีฉาก/สคริปต์ที่บันทึกไว้ (stage=%q) จึงเรนเดอร์ต่อไม่ได้", c.ProductionStage)
+	}
+	return ""
+}
+
+// getRerenderableClip ดึงคลิปแล้วตรวจว่าสั่งเรนเดอร์ใหม่ได้ไหม — ทางเดียวที่ CanRerender
+// กับ RerenderClip ใช้ร่วมกัน จึงการันตีว่าสองทางตัดสินด้วยเงื่อนไขชุดเดียวกันเป๊ะ
+func (o *Orchestrator) getRerenderableClip(ctx context.Context, id string) (*models.Clip, error) {
+	clip, err := o.clipsRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("%w: ไม่พบคลิป %s", ErrRerenderNotAllowed, id)
+	}
+	if reason := rerenderBlockedReason(clip); reason != "" {
+		return nil, fmt.Errorf("%w: %s", ErrRerenderNotAllowed, reason)
+	}
+	return clip, nil
+}
+
+// CanRerender ตรวจว่าคลิปนี้สั่งเรนเดอร์ใหม่ได้ไหม โดยไม่เริ่มงานจริง — handler เรียก
+// ก่อนตอบ 202 เพื่อให้คนกดปุ่มได้เหตุผลกลับทันทีแทนที่จะต้องไปไล่ log
+// (RerenderClip ตรวจซ้ำเองอีกรอบ เพราะงานจริงวิ่งใน goroutine คนละจังหวะกับการตรวจนี้)
+func (o *Orchestrator) CanRerender(ctx context.Context, id string) error {
+	_, err := o.getRerenderableClip(ctx, id)
+	return err
+}
+
+// RerenderClip สั่งเรนเดอร์คลิปที่มีเนื้อหาครบแล้วแต่ยังไม่มีไฟล์วิดีโอ — ทางกู้ของคลิปที่
+// ตะแกรงเนื้อหาตีตกก่อนถึงขั้นเรนเดอร์ · เรียกจาก endpoint ที่ "คนกด" เท่านั้น ห้ามผูกกับ
+// schedule หรือ tick ใดๆ เพราะเส้นทาง resume ข้ามตะแกรงเนื้อหา (มันอยู่ก่อน renderAndFinalize)
+// การกดปุ่มนี้จึงเท่ากับคนรับผิดชอบเนื้อหาที่ตะแกรงเคยตีตกด้วยตัวเอง
+func (o *Orchestrator) RerenderClip(ctx context.Context, id string) error {
+	clip, err := o.getRerenderableClip(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if !o.tracker.StartProduction(1) {
+		return ErrProductionRunning
+	}
+	defer o.tracker.FinishProduction()
+
+	ctx, cancel := context.WithCancel(ctx)
+	o.tracker.SetCancelFunc(cancel)
+	defer cancel()
+
+	// ปลดธงกักก่อนเรนเดอร์: renderAndFinalize จะตั้งสถานะเป็น ready เมื่อผ่านทุกด่าน
+	// แต่รอบส่งกรอง auto_review_held = FALSE ด้วย ถ้าไม่ปลดตรงนี้คลิปจะเรนเดอร์เสร็จ
+	// แล้วค้างอยู่นอกคิวเงียบๆ · ปลดแค่ธง ไม่แตะสถานะ (resume เป็นคนตั้ง producing เอง)
+	if err := o.clipsRepo.ClearHeldFlag(ctx, id); err != nil {
+		log.Printf("rerender %s: ปลดธงกักไม่สำเร็จ (เรนเดอร์ต่อ แต่คลิปอาจไม่เข้าคิว): %v", id, err)
+	}
+
+	log.Printf("Rerender: สั่งเรนเดอร์คลิป %s ใหม่ (stage=%s)", id, clip.ProductionStage)
+	return o.resumeHyperframesProduction(ctx, clip)
+}
+
 // resumeHyperframesProduction reuses the DB-persisted scenes (no LLM re-run) and
 // resumes at the render stage. Falls back to a full rebuild if the scenes are
 // missing (shouldn't happen for a content_ready clip).

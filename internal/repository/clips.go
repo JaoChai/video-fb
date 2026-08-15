@@ -264,6 +264,15 @@ func (r *ClipsRepo) ClearAutoReviewHeld(ctx context.Context, id string) error {
 	return err
 }
 
+// ClearHeldFlag ปลดธงกักอย่างเดียว ไม่แตะสถานะ — ต่างจาก ClearAutoReviewHeld ที่ดันคลิป
+// เป็น ready ด้วย · ใช้ตอนสั่งเรนเดอร์ใหม่ ซึ่งสถานะจะถูกตั้งเป็น producing แล้วจบที่
+// ready/needs_review ตามผลของด่านตรวจ การดันเป็น ready ระหว่างทางจึงผิดและอันตราย
+func (r *ClipsRepo) ClearHeldFlag(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE clips SET auto_review_held = FALSE, updated_at = NOW() WHERE id = $1`, id)
+	return err
+}
+
 // IncrementReviewRetry bumps the review-retry counter (separate from retry_count).
 func (r *ClipsRepo) IncrementReviewRetry(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE clips SET review_retry_count = review_retry_count + 1, updated_at = NOW() WHERE id = $1`, id)
