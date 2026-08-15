@@ -145,6 +145,20 @@ type publishCandidate struct {
 
 func (c publishCandidate) hasVideo() bool { return c.Video169 != "" || c.Video916 != "" }
 
+// noVideoErr คือเหตุผลของกรณีที่ไม่มีอะไรถูกยิงออกไปเลย (ไม่มีไฟล์วิดีโอให้ส่ง จึงไม่มี
+// error จาก Zernio ให้บันทึก) · ต้องมีข้อความเสมอ ไม่งั้นคลิปจะไม่ถูกดันท้ายคิวและคนเปิด
+// หน้าคลิปจะไม่เห็นสาเหตุ — นี่คือรูที่ทำให้คิวตัน 21 ชั่วโมงเมื่อ 2026-08-14
+var noVideoErr = errors.New("ไม่มีไฟล์วิดีโอให้ส่ง")
+
+// publishFailure เลือกเหตุผลที่จะบันทึก: ถ้ามี error จริงจากการโพสต์ให้ใช้ตัวนั้น
+// (คนอ่านต้องได้เหตุผลจริง) ถ้าไม่มีแปลว่าไม่มีอะไรให้ส่งตั้งแต่แรก
+func publishFailure(postErr error) error {
+	if postErr != nil {
+		return postErr
+	}
+	return noVideoErr
+}
+
 // publishOpts คือค่าที่อ่านครั้งเดียวต่อรอบแล้วใช้ร่วมกันทุกใบ (ไม่ query ซ้ำต่อผู้สมัคร)
 type publishOpts struct {
 	ytAccountID  string
@@ -284,9 +298,7 @@ func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publis
 	// 'ready' so a later run retries it instead of marking an empty publish.
 	if mainPostID == "" && shortsPostID == "" {
 		log.Printf("No video published for clip %s, leaving as ready", c.ClipID)
-		if postErr != nil {
-			p.recordPublishFailure(ctx, c.ClipID, postErr)
-		}
+		p.recordPublishFailure(ctx, c.ClipID, publishFailure(postErr))
 		return false
 	}
 

@@ -1,6 +1,7 @@
 package publisher
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -73,5 +74,24 @@ func TestPublishCandidate_HasVideo(t *testing.T) {
 				t.Errorf("hasVideo() = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// เส้นทาง "ไม่มีอะไรขึ้นเลย" ต้องมีเหตุผลเสมอ — เดิมกรณี postErr == nil เงียบสนิท
+// ทำให้คลิปไม่ถูกดันท้ายคิวและคนเปิดหน้าคลิปไม่เห็นสาเหตุ (เหตุ 2026-08-14)
+func TestPublishFailure_NilBecomesNoVideoReason(t *testing.T) {
+	err := publishFailure(nil)
+	if err == nil {
+		t.Fatal("publishFailure(nil) = nil, want error")
+	}
+	if !errors.Is(err, noVideoErr) {
+		t.Errorf("publishFailure(nil) = %v, want noVideoErr", err)
+	}
+}
+
+func TestPublishFailure_KeepsOriginalError(t *testing.T) {
+	orig := errors.New("zernio 500")
+	if got := publishFailure(orig); got != orig {
+		t.Errorf("publishFailure(orig) = %v, want %v (ห้ามกลืนเหตุผลจริง)", got, orig)
 	}
 }
