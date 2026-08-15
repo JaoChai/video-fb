@@ -67,3 +67,17 @@ func TestRerenderBlockedReason_MessageNamesTheProblem(t *testing.T) {
 		t.Errorf("ข้อความ %q ต้องบอกสถานะที่เป็นเหตุ", got)
 	}
 }
+
+func TestGateFailReason(t *testing.T) {
+	got := gateFailReason("tutorial", `ui_vocab violation: scene 2 breadcrumb: "A" not in ui_vocab`)
+	if !strings.HasPrefix(got, "tutorial gate: ") {
+		t.Errorf("gateFailReason() = %q, ต้องขึ้นต้นด้วยชื่อตะแกรง", got)
+	}
+	if !strings.Contains(got, "scene 2") {
+		t.Errorf("gateFailReason() = %q, ต้องพกรายละเอียดเดิมไว้ครบ", got)
+	}
+	// ห้ามชนกับ prefix ของรอบส่ง ไม่งั้นเหตุผลของตะแกรงจะถูก clearPublishFailure ล้างทิ้ง
+	if strings.HasPrefix(got, "publish: ") {
+		t.Error("เหตุผลของตะแกรงต้องไม่ขึ้นต้นด้วย publish: — รอบส่งจะล้างทิ้ง")
+	}
+}

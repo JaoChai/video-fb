@@ -1192,17 +1192,31 @@ func (o *Orchestrator) resolveFormatInfo(ctx context.Context, clipID string, pre
 	return producer.FormatInfo{Mode: producer.ModeCase, CaseNumber: n}
 }
 
+// gateFailReason ประกอบข้อความเหตุผลของตะแกรงให้อยู่รูปเดียวกันทุกตัว · จงใจไม่ขึ้นต้นด้วย
+// "publish: " เพราะ prefix นั้นเป็นของรอบส่ง (clearPublishFailure จะล้างข้อความที่ขึ้นต้น
+// แบบนั้นทิ้งเมื่อคลิปขึ้นสำเร็จ) — เหตุผลของตะแกรงต้องอยู่จนกว่าคลิปจะถูกเรนเดอร์ใหม่จริง
+func gateFailReason(gate, msg string) string {
+	return gate + " gate: " + msg
+}
+
 // blockForReview ส่งคลิปเข้าคิวคนตรวจแทนการทิ้ง ใช้ร่วมกันโดยทุกตะแกรง deterministic
 // ที่ทำงานแทนคนตรวจก่อนเรนเดอร์ (ui_vocab ของคลิปสอน, ข้อเท็จจริงของคลิป myth)
 //
 // จงใจไม่ใช่ failClip: เนื้อหาผิด ไม่ใช่ระบบพัง การ retry แบบไม่มีคนดูจะเผา LLM
 // รอบใหม่กับ output เดิม · เขียนที่เดียวเพื่อให้ตะแกรงที่เพิ่มมาทีหลังไม่หลุดสถานะ
 // หรือรูปแบบข้อความ error ไปจากกันเงียบๆ
+//
+// เหตุผลต้องลง fail_reason ด้วยเสมอ: log บน Railway หมุนหายภายในไม่กี่วัน คนที่เปิดหน้า
+// คลิปทีหลังจะเห็นแค่ป้าย "ถูกกัก QA" แล้วเดาไม่ออกว่าตะแกรงตัวไหนตีตกเพราะอะไร
+// (เกิดจริง 2026-08-14: คนกดอนุมัติคลิปที่ยังไม่ได้เรนเดอร์ แล้วคิวส่งตัน 21 ชั่วโมง)
 func (o *Orchestrator) blockForReview(ctx context.Context, clipID, gate, msg string) error {
 	log.Printf("%s gate blocked clip %s: %s", gate, clipID, msg)
 	reviewStatus := "needs_review"
 	o.clipsRepo.Update(ctx, clipID, models.UpdateClipRequest{Status: &reviewStatus})
-	return fmt.Errorf("%s gate: %s: %w", gate, msg, ErrContentGateBlocked)
+	if err := o.clipsRepo.SetFailReason(ctx, clipID, gateFailReason(gate, msg)); err != nil {
+		log.Printf("%s gate: บันทึกเหตุผลของคลิป %s ไม่สำเร็จ: %v", gate, clipID, err)
+	}
+	return fmt.Errorf("%s: %w", gateFailReason(gate, msg), ErrContentGateBlocked)
 }
 
 func (o *Orchestrator) failClip(ctx context.Context, clipID string, err error) error {
