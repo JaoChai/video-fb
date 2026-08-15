@@ -14,7 +14,7 @@ import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import { useToast } from '../components/ui/toaster';
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Trash2, VideoOff, X } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Lock, RefreshCw, Trash2, VideoOff, X } from 'lucide-react';
 
 export default function ClipDetailPage() {
   const { id = '' } = useParams();
@@ -22,7 +22,7 @@ export default function ClipDetailPage() {
   const [videoError, setVideoError] = useState(false);
   const queryClient = useQueryClient();
   const { success, error: showError } = useToast();
-  const [acting, setActing] = useState<'approve' | 'reject' | 'delete' | null>(null);
+  const [acting, setActing] = useState<'approve' | 'reject' | 'delete' | 'rerender' | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['clip-detail', id],
@@ -69,11 +69,15 @@ export default function ClipDetailPage() {
   const held = clip.auto_review_held
     && (clip.status === 'needs_review' || clip.status === 'ready');
   const reviewable = clip.status === 'needs_review';
+  // คลิปที่ตะแกรงเนื้อหาตีตกจะไม่มีไฟล์วิดีโอเลย (มันถูกกันไว้ก่อนถึงขั้นเรนเดอร์) — สิ่งที่
+  // คลิปแบบนี้ต้องการคือ "สั่งเรนเดอร์" ไม่ใช่ "อนุมัติ" · การอนุมัติมันเข้าคิวเผยแพร่คือสิ่งที่
+  // ทำให้คิวส่งตัน 21 ชั่วโมงเมื่อ 2026-08-14 และตอนนี้ backend ปฏิเสธด้วย 409
+  const hasVideo = Boolean(clip.video_9_16_url) || Boolean(clip.video_16_9_url);
 
   // แอ็กชันทั้งสามหมุนรอบเดียวกัน: ล็อกปุ่ม → ยิง API → รีเฟรชรายการคลิป →
   // toast → กลับหน้าตารางถ้าคลิปถูกลบไปแล้ว
   async function runAction(
-    kind: 'approve' | 'reject' | 'delete',
+    kind: 'approve' | 'reject' | 'delete' | 'rerender',
     fn: () => Promise<unknown>,
     successMsg: string,
     leavePage: boolean,
@@ -110,6 +114,15 @@ export default function ClipDetailPage() {
             body: JSON.stringify({ status: 'ready' }),
           }),
       held ? 'Override แล้ว — คลิปพร้อม publish รอบถัดไป' : 'อนุมัติแล้ว — คลิปพร้อม publish',
+      false,
+    );
+  }
+
+  function handleRerender(): void {
+    runAction(
+      'rerender',
+      () => apiFetch(`/api/v1/clips/${clip.id}/rerender`, { method: 'POST' }),
+      'สั่งเรนเดอร์แล้ว — ใช้เวลาราว 10 นาที คลิปจะเข้าคิวเผยแพร่เองเมื่อผ่านด่านตรวจ',
       false,
     );
   }
@@ -181,10 +194,17 @@ export default function ClipDetailPage() {
           )}
           {(reviewable || held) && (
             <div className="flex flex-col gap-2 mt-3">
-              <Button onClick={handleApprove} disabled={acting !== null} size="sm">
-                {acting === 'approve' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                {held ? 'Override — publish ทั้งที่มีตำหนิ' : 'อนุมัติ — พร้อม publish'}
-              </Button>
+              {hasVideo ? (
+                <Button onClick={handleApprove} disabled={acting !== null} size="sm">
+                  {acting === 'approve' ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                  {held ? 'Override — publish ทั้งที่มีตำหนิ' : 'อนุมัติ — พร้อม publish'}
+                </Button>
+              ) : (
+                <Button onClick={handleRerender} disabled={acting !== null} size="sm">
+                  {acting === 'rerender' ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                  อนุมัติเนื้อหา + สั่งเรนเดอร์
+                </Button>
+              )}
               <Button variant="destructive" size="sm" onClick={() => handleDelete('reject')} disabled={acting !== null}>
                 {acting === 'reject' ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
                 ตีกลับ (ลบ)
