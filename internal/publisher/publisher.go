@@ -116,6 +116,202 @@ func NewPublisher(zernio *ZernioClient, pool *pgxpool.Pool, clips *repository.Cl
 // UPDATE status เสมอ — ล็อกนี้คือสิ่งที่ทำให้เพิ่มความถี่รอบส่งได้อย่างปลอดภัย
 const publishLockKey int64 = 8213401
 
+// รอบส่งดึงผู้สมัครมาหลายใบแทนที่จะดึงใบเดียว · ยังขึ้น YouTube ไม่เกิน 1 คลิปต่อรอบเหมือนเดิม
+// (drip) — ตัวสำรองมีไว้เพื่อให้คลิปที่ส่งไม่ออกใบหนึ่ง "ข้ามได้" ไม่ใช่เพื่อส่งทีละหลายใบ
+// เหตุ 2026-08-14: คลิปไร้ไฟล์วิดีโอใบเดียวยึดหัวคิวทุกรอบนาน 21 ชั่วโมง เพราะ LIMIT 1
+// บวกกับเส้นทางที่ไม่เขียน fail_reason ทำให้กลไกดันท้ายคิวมองไม่เห็นมัน
+const readyCandidateLimit = 5
+
+// เงื่อนไขวิดีโอใน WHERE คือด่านที่สอง (ด่านแรกคือปุ่มอนุมัติที่ไม่ปล่อยคลิปไร้ไฟล์เข้าสถานะ
+// ready) · คลิปที่ไม่มีไฟล์ให้ส่งไม่ควรกินคิวตั้งแต่แรก ไม่ใช่แค่ถูกดันไปท้ายคิว
+const readyClipsQuery = `
+    SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url
+    FROM clips c
+    JOIN clip_metadata cm ON c.id = cm.clip_id
+    WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE
+      AND (COALESCE(c.video_16_9_url, '') <> '' OR COALESCE(c.video_9_16_url, '') <> '')
+    ORDER BY (c.fail_reason IS NOT NULL AND starts_with(c.fail_reason, $1)), c.publish_date ASC
+    LIMIT $2`
+
+// publishCandidate คือคลิปหนึ่งใบที่รอบส่งจะลองส่ง — อ่านจาก DB ให้ครบก่อนแล้วปิด rows
+// เพื่อไม่ถือ connection ไว้ตลอดการอัปโหลดวิดีโอ (โพสต์หนึ่งใบใช้เวลาได้ถึงหลักนาที)
+type publishCandidate struct {
+	ClipID   string
+	Title    string
+	Desc     string
+	Video169 string
+	Video916 string
+}
+
+func (c publishCandidate) hasVideo() bool { return c.Video169 != "" || c.Video916 != "" }
+
+// publishOpts คือค่าที่อ่านครั้งเดียวต่อรอบแล้วใช้ร่วมกันทุกใบ (ไม่ query ซ้ำต่อผู้สมัคร)
+type publishOpts struct {
+	ytAccountID  string
+	firstComment string
+	tgAccountID  string
+}
+
+// publishFirst ลองส่งทีละใบตามลำดับคิว หยุดทันทีที่ใบหนึ่งขึ้นสำเร็จ แล้วคืน id ของใบนั้น
+// ("" = รอบนี้ไม่มีใบไหนขึ้นเลย) · แยกออกจาก I/O เพื่อให้ทดสอบพฤติกรรม "ใบที่ส่งไม่ออก
+// ต้องไม่ขวางใบถัดไป" ได้จริงในโปรเจกต์ที่ไม่มี integration test ต่อ Postgres
+func publishFirst(cands []publishCandidate, send func(publishCandidate) bool) string {
+	for _, c := range cands {
+		if send(c) {
+			return c.ClipID
+		}
+	}
+	return ""
+}
+
+func textOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// readyCandidates อ่านผู้สมัครของรอบนี้ให้ครบแล้วปิด rows ทันที
+func (p *Publisher) readyCandidates(ctx context.Context) ([]publishCandidate, error) {
+	rows, err := p.pool.Query(ctx, readyClipsQuery, publishFailPrefix, readyCandidateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("query ready clips: %w", err)
+	}
+	defer rows.Close()
+
+	var out []publishCandidate
+	for rows.Next() {
+		var c publishCandidate
+		var desc, video169, video916 *string
+		if err := rows.Scan(&c.ClipID, &c.Title, &desc, &video169, &video916); err != nil {
+			return nil, fmt.Errorf("scan clip: %w", err)
+		}
+		c.Desc = textOrEmpty(desc)
+		c.Video169 = textOrEmpty(video169)
+		c.Video916 = textOrEmpty(video916)
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate ready clips: %w", err)
+	}
+	return out, nil
+}
+
+// publishOne ส่งคลิปหนึ่งใบขึ้น YouTube · คืน true เมื่อคลิปขึ้นจริงและบันทึก published สำเร็จ
+// false = คลิปยังคาสถานะ ready ให้รอบหน้าลองใหม่ และผู้เรียกจะไปลองใบถัดไปในคิวทันที
+func (p *Publisher) publishOne(ctx context.Context, c publishCandidate, o publishOpts) bool {
+	title := c.Title
+	if isContactInfo(title) {
+		var clipTitle string
+		if err := p.pool.QueryRow(ctx, `SELECT title FROM clips WHERE id = $1`, c.ClipID).Scan(&clipTitle); err == nil && clipTitle != "" {
+			log.Printf("Title validation: '%s' looks like contact info, using clip question instead", title)
+			title = clipTitle
+		}
+	}
+
+	// แปลงครั้งเดียวตรงนี้ให้ครอบทั้งโพสต์ 16:9 และ 9:16 (shortsTitle ต่อยอดจาก title)
+	title = sanitizeYouTubeText(title)
+	desc := sanitizeYouTubeText(c.Desc)
+
+	if o.ytAccountID == "" {
+		log.Printf("No Zernio accounts configured, skipping clip %s", c.ClipID)
+		return false
+	}
+
+	// Post whatever formats this clip actually has. The hyperframes pipeline
+	// produces 9:16 only; the legacy pipeline produced 16:9 (+ a 9:16 Short).
+	// Publish each format that exists rather than requiring 16:9.
+	var mainPostID, shortsPostID string
+	var postErr error
+
+	// 16:9 (YouTube regular), if present. Zernio uses Content's first line as the title.
+	if c.Video169 != "" {
+		result169, err := p.zernio.Post(ctx, PostRequest{
+			Title:      title,
+			Content:    title + "\n\n" + desc,
+			Platforms:  youtubePlatforms(o.ytAccountID, title, o.firstComment, VisibilityPublic),
+			MediaItems: []MediaItem{{Type: "video", URL: c.Video169}},
+			Visibility: VisibilityPublic,
+			PublishNow: true,
+			RequestID:  postRequestID(c.ClipID, "169"),
+		})
+		if err != nil {
+			if id, ok := p.adoptDuplicate(ctx, err); ok {
+				mainPostID = id
+			} else {
+				log.Printf("Failed to post 16:9 for clip %s: %v", c.ClipID, err)
+				p.recordPublishFailure(ctx, c.ClipID, err)
+				return false
+			}
+		} else {
+			log.Printf("Posted 16:9 public for clip %s → %s", c.ClipID, result169.Post.ID)
+			mainPostID = result169.Post.ID
+		}
+	}
+
+	// 9:16 (YouTube Shorts), if present.
+	if c.Video916 != "" {
+		shortsTitle := title
+		if utf8.RuneCountInString(shortsTitle) > 60 {
+			runes := []rune(shortsTitle)
+			shortsTitle = string(runes[:60])
+		}
+		shortsTitle += " #Shorts"
+
+		result916, err := p.zernio.Post(ctx, PostRequest{
+			Title:      shortsTitle,
+			Content:    shortsTitle + "\n\n" + desc,
+			Platforms:  youtubePlatforms(o.ytAccountID, shortsTitle, o.firstComment, VisibilityPublic),
+			MediaItems: []MediaItem{{Type: "video", URL: c.Video916}},
+			Visibility: VisibilityPublic,
+			PublishNow: true,
+			RequestID:  postRequestID(c.ClipID, "916"),
+		})
+		if err != nil {
+			if id, ok := p.adoptDuplicate(ctx, err); ok {
+				shortsPostID = id
+			} else {
+				log.Printf("Failed to post 9:16 for clip %s: %v", c.ClipID, err)
+				postErr = err
+			}
+		} else {
+			log.Printf("Posted 9:16 Shorts public for clip %s → %s", c.ClipID, result916.Post.ID)
+			shortsPostID = result916.Post.ID
+		}
+	}
+
+	// Nothing posted (no usable video, or every post failed) → leave the clip
+	// 'ready' so a later run retries it instead of marking an empty publish.
+	if mainPostID == "" && shortsPostID == "" {
+		log.Printf("No video published for clip %s, leaving as ready", c.ClipID)
+		if postErr != nil {
+			p.recordPublishFailure(ctx, c.ClipID, postErr)
+		}
+		return false
+	}
+
+	// Persist status + post ids atomically. The YouTube post already happened,
+	// so a silent DB failure here would leave the clip 'ready' and re-post it
+	// (duplicate upload) on the next run — log loudly if the commit fails.
+	if err := p.recordPublished(ctx, c.ClipID, mainPostID, shortsPostID); err != nil {
+		log.Printf("CRITICAL clip %s posted to YouTube (main=%q shorts=%q) but DB commit FAILED: %v — will be re-published next run", c.ClipID, mainPostID, shortsPostID, err)
+		return false
+	}
+
+	// เงื่อนไข postErr == nil: คลิปที่มีทั้ง 16:9 และ 9:16 อาจขึ้นได้แค่รูปแบบเดียว
+	// อีกตัวเพิ่งล้มไป — เหตุผลนั้นยังใหม่อยู่ ห้ามล้างทิ้ง
+	if postErr == nil {
+		p.clearPublishFailure(ctx, c.ClipID)
+	}
+
+	log.Printf("Published clip %s via Zernio (main=%q shorts=%q)", c.ClipID, mainPostID, shortsPostID)
+
+	// ส่งเข้าช่อง Telegram ท้ายสุดเสมอ — คลิปขึ้น YouTube และ DB commit ไปแล้ว
+	// อะไรที่พังหลังจากนี้จึงกระทบแค่ช่อง Telegram ช่องเดียว
+	p.postTelegramForClip(ctx, c.ClipID, o.tgAccountID, title, mainPostID, shortsPostID)
+	return true
+}
+
 func (p *Publisher) PublishReady(ctx context.Context) error {
 	conn, err := p.pool.Acquire(ctx)
 	if err != nil {
@@ -141,171 +337,32 @@ func (p *Publisher) PublishReady(ctx context.Context) error {
 		}
 	}()
 
-	// ดันท้ายคิวเฉพาะคลิปที่ "ส่งพลาด" (fail_reason ขึ้นต้นด้วย publishFailPrefix) ให้คลิปดี
-	// ได้คิวก่อน — กัน head-of-line blocking แบบเหตุ 08-08 (คลิปเสีย 1 ตัวกินคิวทุกรอบเพราะ
-	// LIMIT 1 + เรียงตามวันเก่าสุด) · เหตุผลจากด่านอื่น (layout inspector ฯลฯ) ไม่เกี่ยวกับรอบส่ง
-	// ต้องไม่โดนดัน ไม่งั้นคลิปที่คน approve จาก needs_review ถูกท้ายคิวทั้งที่ไม่เคยส่งพลาด
-	rows, err := p.pool.Query(ctx,
-		`SELECT c.id, cm.youtube_title, cm.youtube_description, c.video_16_9_url, c.video_9_16_url, c.thumbnail_url
-		 FROM clips c
-		 JOIN clip_metadata cm ON c.id = cm.clip_id
-		 WHERE c.status = 'ready' AND c.auto_review_held = FALSE AND c.publish_date <= CURRENT_DATE
-		 ORDER BY (c.fail_reason IS NOT NULL AND starts_with(c.fail_reason, $1)), c.publish_date ASC LIMIT 1`,
-		publishFailPrefix)
+	cands, err := p.readyCandidates(ctx)
 	if err != nil {
-		return fmt.Errorf("query ready clips: %w", err)
+		return err
 	}
-	defer rows.Close()
 
-	var ytAccountID string
-	p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&ytAccountID)
+	var o publishOpts
+	p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_youtube_account_id'`).Scan(&o.ytAccountID)
 
-	// คอมเมนต์ติดต่อทีมงานใต้คลิป (ไม่ปักหมุด ดูเหตุผลที่ youtubePlatforms) · อ่านครั้งเดียวต่อรอบเหมือน ytAccountID
-	// ค่าว่าง (หรือไม่มีแถวนี้) = ปิดฟีเจอร์ ไม่ต้อง deploy — Scan ที่ error จะทิ้ง
-	// firstComment ไว้เป็น "" ซึ่งคือสถานะปิดพอดี จึงไม่ต้องจัดการ error แยก
-	var firstComment string
-	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'youtube_first_comment'`).Scan(&firstComment)
-	firstComment = strings.TrimSpace(firstComment)
+	// คอมเมนต์ติดต่อทีมงานใต้คลิป (ไม่ปักหมุด ดูเหตุผลที่ youtubePlatforms) · อ่านครั้งเดียวต่อรอบ
+	// ค่าว่าง (หรือไม่มีแถวนี้) = ปิดฟีเจอร์ ไม่ต้อง deploy — Scan ที่ error จะทิ้งค่าไว้เป็น ""
+	// ซึ่งคือสถานะปิดพอดี จึงไม่ต้องจัดการ error แยก
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'youtube_first_comment'`).Scan(&o.firstComment)
+	o.firstComment = strings.TrimSpace(o.firstComment)
 
-	// ช่อง Telegram ที่จะส่งคลิปเข้าไปหลังขึ้น YouTube · ค่าว่าง (หรือไม่มีแถวนี้) = ปิดฟีเจอร์
-	// อ่านครั้งเดียวต่อรอบเหมือน ytAccountID — Scan ที่ error ทิ้งค่าไว้เป็น "" ซึ่งคือสถานะปิดพอดี
-	var tgAccountID string
-	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_telegram_account_id'`).Scan(&tgAccountID)
-	tgAccountID = strings.TrimSpace(tgAccountID)
+	// ช่อง Telegram ที่จะส่งคลิปเข้าไปหลังขึ้น YouTube · ค่าว่าง = ปิดฟีเจอร์ (เหตุผลเดียวกับข้างบน)
+	_ = p.pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = 'zernio_telegram_account_id'`).Scan(&o.tgAccountID)
+	o.tgAccountID = strings.TrimSpace(o.tgAccountID)
 
-	// รอบนี้ประมวลผลคลิปเดียว (LIMIT 1 ในคำสั่ง query ด้านบน) — เก็บ id ไว้กันไม่ให้
-	// sweepTelegramBacklog หยิบคลิปตัวเดียวกันมาลองซ้ำในทิคเดียวกัน
-	var processedClipID string
-
-	for rows.Next() {
-		var clipID, title string
-		var description *string
-		var video169, video916, thumb *string
-		if err := rows.Scan(&clipID, &title, &description, &video169, &video916, &thumb); err != nil {
-			return fmt.Errorf("scan clip: %w", err)
-		}
-
-		if isContactInfo(title) {
-			var clipTitle string
-			if err := p.pool.QueryRow(ctx, `SELECT title FROM clips WHERE id = $1`, clipID).Scan(&clipTitle); err == nil && clipTitle != "" {
-				log.Printf("Title validation: '%s' looks like contact info, using clip question instead", title)
-				title = clipTitle
-			}
-		}
-
-		desc := ""
-		if description != nil {
-			desc = *description
-		}
-
-		// แปลงครั้งเดียวตรงนี้ให้ครอบทั้งโพสต์ 16:9 และ 9:16 (shortsTitle ต่อยอดจาก title)
-		title = sanitizeYouTubeText(title)
-		desc = sanitizeYouTubeText(desc)
-
-		if ytAccountID == "" {
-			log.Printf("No Zernio accounts configured, skipping clip %s", clipID)
-			continue
-		}
-
-		// Post whatever formats this clip actually has. The hyperframes pipeline
-		// produces 9:16 only; the legacy pipeline produced 16:9 (+ a 9:16 Short).
-		// Publish each format that exists rather than requiring 16:9.
-		var mainPostID, shortsPostID string
-		var postErr error
-
-		// 16:9 (YouTube regular), if present. Zernio uses Content's first line as the title.
-		if video169 != nil && *video169 != "" {
-			result169, err := p.zernio.Post(ctx, PostRequest{
-				Title:      title,
-				Content:    title + "\n\n" + desc,
-				Platforms:  youtubePlatforms(ytAccountID, title, firstComment, VisibilityPublic),
-				MediaItems: []MediaItem{{Type: "video", URL: *video169}},
-				Visibility: VisibilityPublic,
-				PublishNow: true,
-				RequestID:  postRequestID(clipID, "169"),
-			})
-			if err != nil {
-				if id, ok := p.adoptDuplicate(ctx, err); ok {
-					mainPostID = id
-				} else {
-					log.Printf("Failed to post 16:9 for clip %s: %v", clipID, err)
-					p.recordPublishFailure(ctx, clipID, err)
-					continue
-				}
-			} else {
-				log.Printf("Posted 16:9 public for clip %s → %s", clipID, result169.Post.ID)
-				mainPostID = result169.Post.ID
-			}
-		}
-
-		// 9:16 (YouTube Shorts), if present.
-		if video916 != nil && *video916 != "" {
-			shortsTitle := title
-			if utf8.RuneCountInString(shortsTitle) > 60 {
-				runes := []rune(shortsTitle)
-				shortsTitle = string(runes[:60])
-			}
-			shortsTitle += " #Shorts"
-
-			result916, err := p.zernio.Post(ctx, PostRequest{
-				Title:      shortsTitle,
-				Content:    shortsTitle + "\n\n" + desc,
-				Platforms:  youtubePlatforms(ytAccountID, shortsTitle, firstComment, VisibilityPublic),
-				MediaItems: []MediaItem{{Type: "video", URL: *video916}},
-				Visibility: VisibilityPublic,
-				PublishNow: true,
-				RequestID:  postRequestID(clipID, "916"),
-			})
-			if err != nil {
-				if id, ok := p.adoptDuplicate(ctx, err); ok {
-					shortsPostID = id
-				} else {
-					log.Printf("Failed to post 9:16 for clip %s: %v", clipID, err)
-					postErr = err
-				}
-			} else {
-				log.Printf("Posted 9:16 Shorts public for clip %s → %s", clipID, result916.Post.ID)
-				shortsPostID = result916.Post.ID
-			}
-		}
-
-		// Nothing posted (no usable video, or every post failed) → leave the clip
-		// 'ready' so a later run retries it instead of marking an empty publish.
-		if mainPostID == "" && shortsPostID == "" {
-			log.Printf("No video published for clip %s, leaving as ready", clipID)
-			if postErr != nil {
-				p.recordPublishFailure(ctx, clipID, postErr)
-			}
-			continue
-		}
-
-		// Persist status + post ids atomically. The YouTube post already happened,
-		// so a silent DB failure here would leave the clip 'ready' and re-post it
-		// (duplicate upload) on the next run — log loudly if the commit fails.
-		if err := p.recordPublished(ctx, clipID, mainPostID, shortsPostID); err != nil {
-			log.Printf("CRITICAL clip %s posted to YouTube (main=%q shorts=%q) but DB commit FAILED: %v — will be re-published next run", clipID, mainPostID, shortsPostID, err)
-			continue
-		}
-
-		// เงื่อนไข postErr == nil: คลิปที่มีทั้ง 16:9 และ 9:16 อาจขึ้นได้แค่รูปแบบเดียว
-		// อีกตัวเพิ่งล้มไป — เหตุผลนั้นยังใหม่อยู่ ห้ามล้างทิ้ง
-		if postErr == nil {
-			p.clearPublishFailure(ctx, clipID)
-		}
-
-		log.Printf("Published clip %s via Zernio (main=%q shorts=%q)", clipID, mainPostID, shortsPostID)
-
-		// ส่งเข้าช่อง Telegram ท้ายสุดเสมอ — คลิปขึ้น YouTube และ DB commit ไปแล้ว
-		// อะไรที่พังหลังจากนี้จึงกระทบแค่ช่อง Telegram ช่องเดียว
-		p.postTelegramForClip(ctx, clipID, tgAccountID, title, mainPostID, shortsPostID)
-		processedClipID = clipID
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate ready clips: %w", err)
-	}
+	// ส่งจริงไม่เกินใบเดียวต่อรอบ · ใบที่ส่งไม่ออกจะถูกข้ามไปใบถัดไปทันที ไม่ยึดคิวอีกต่อไป
+	processedClipID := publishFirst(cands, func(c publishCandidate) bool {
+		return p.publishOne(ctx, c, o)
+	})
 
 	// เก็บตกท้ายรอบ: คลิปที่ขึ้น YouTube แล้วแต่ยังไม่เข้าช่อง Telegram (จำกัด 24 ชม.)
-	p.sweepTelegramBacklog(ctx, tgAccountID, processedClipID)
+	// ส่ง processedClipID ไปกันไม่ให้ sweep หยิบคลิปที่เพิ่งส่งในทิคเดียวกันมาลองซ้ำ
+	p.sweepTelegramBacklog(ctx, o.tgAccountID, processedClipID)
 	return nil
 }
 
