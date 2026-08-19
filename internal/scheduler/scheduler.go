@@ -291,3 +291,19 @@ func (s *Scheduler) tuneWeights(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ErrUnknownAction is returned by Dispatch when the action name isn't in
+// handlerFor's table — the Cloudflare tick endpoint maps this to HTTP 404.
+var ErrUnknownAction = errors.New("unknown action")
+
+// Dispatch runs the same handler a cron tick would run for this action name.
+// It exists so an external trigger (Cloudflare Workflow) can invoke exactly
+// what internal cron ticks invoke today, without duplicating the table in
+// handlerFor or touching orchestrator.go.
+func (s *Scheduler) Dispatch(ctx context.Context, action string) error {
+	h := s.handlerFor(action)
+	if h == nil {
+		return fmt.Errorf("%w: %q", ErrUnknownAction, action)
+	}
+	return h(ctx)
+}
