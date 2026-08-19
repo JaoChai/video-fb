@@ -179,16 +179,26 @@ func main() {
 		log.Printf("SCHEDULER_ENABLED=false — ไม่สตาร์ท cron (ผลิต/ส่ง/รีทราย จะไม่ยิงจากอินสแตนซ์นี้)")
 	}
 
-	r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub, func() {
-		if err := sched.Reload(ctx); err != nil {
-			log.Printf("Scheduler reload failed: %v", err)
-		}
-	}, prod)
-	orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
-	router.SetOrchestrator(r, orchHandler)
+	var h http.Handler
+	if cfg.WorkerMode {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /health", handler.HealthCheck)
+		mux.Handle("POST /internal/tick/{action}", handler.NewTickHandler(sched.Dispatch))
+		h = mux
+		log.Println("WORKER_MODE=true — เปิดเฉพาะ /health และ /internal/tick/{action} (ไม่มี public API)")
+	} else {
+		r := router.New(pool, cfg.APIKey, ragEngine, tracker, pub, func() {
+			if err := sched.Reload(ctx); err != nil {
+				log.Printf("Scheduler reload failed: %v", err)
+			}
+		}, prod)
+		orchHandler := handler.NewOrchestratorHandler(orch, tracker, pub)
+		router.SetOrchestrator(r, orchHandler)
+		h = r
+	}
 
 	addr := ":" + cfg.Port
-	srv := &http.Server{Addr: addr, Handler: r}
+	srv := &http.Server{Addr: addr, Handler: h}
 
 	go func() {
 		sigCh := make(chan os.Signal, 1)

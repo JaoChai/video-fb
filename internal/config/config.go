@@ -17,6 +17,7 @@ type Config struct {
 	FFmpegPath       string
 	ZernioAPIKey     string
 	SchedulerEnabled bool
+	WorkerMode       bool
 }
 
 func Load() *Config {
@@ -44,6 +45,7 @@ func Load() *Config {
 		FFmpegPath:       ffmpeg,
 		ZernioAPIKey:     os.Getenv("ZERNIO_API_KEY"),
 		SchedulerEnabled: envBool("SCHEDULER_ENABLED", true),
+		WorkerMode:       envBool("WORKER_MODE", false),
 	}
 }
 
