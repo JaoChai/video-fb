@@ -52,6 +52,8 @@ Neon Postgres — คงเดิม 100% ต่อผ่าน Hyperdrive จ�
 
 **หมายเหตุ durability:** Workflow retry ที่ step "run-tick" คุ้มครองแค่กรณี container ตายกลางทาง (crash/OOM) — ไม่ได้เพิ่ม resume ระดับคลิปใหม่ เพราะกลไกนั้น (`production_stage` checkpoint + action `retry_failed`) มีอยู่แล้วในโค้ดเดิมและยังทำงานเหมือนเดิมทุกประการ ควร set `retries:{limit: 0 หรือ 1}` เท่านั้นที่ step นี้ — action อย่าง `produce_and_publish` ไม่ idempotent ต่อการเรียกซ้ำทันที (สร้างคลิปใหม่ทุกครั้งที่ถูกเรียกสำเร็จ) retry ที่มีความหมายจริงคือรอบ `retry_failed` ครั้งถัดไป (action แยกต่างหาก ถูก schedule ไว้อยู่แล้ว) ไม่ใช่ Workflow เรียก action เดิมซ้ำทันที
 
+**หมายเหตุ schedules table:** เมื่อ `SCHEDULER_ENABLED=false` ทั้ง Container (worker mode) `Scheduler.Start()` ไม่อ่านตาราง `schedules` และ `Scheduler.Reload` จะไม่มีการเรียกจากที่ใดแต่อย่างไร — กลไกการหยุด/เล่นลาดตั้ง schedule เดิมผ่าน **API PATCH** จะหยุดมีผลในระบบ Cloudflare แต่เป็นแค่ข้อมูล DB ที่ไม่ได้ถูกอ่าน ควรอัปเดตขั้นตอน cutover ให้ใช้ Cloudflare Cron Trigger config เป็นตัวควบคุมแทน
+
 ## ก้อนงาน
 
 ### 1. Container: Go เดิม → tick-dispatch endpoint (แผนละเอียด: `docs/superpowers/plans/2026-08-19-cloudflare-migration-worker-mode.md`)

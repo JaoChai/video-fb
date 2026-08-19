@@ -183,7 +183,8 @@ func main() {
 	if cfg.WorkerMode {
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /health", handler.HealthCheck)
-		mux.Handle("POST /internal/tick/{action}", handler.NewTickHandler(sched.Dispatch))
+		mux.Handle("POST /internal/tick/{action}", handler.NewTickHandler(
+			func(_ context.Context, action string) error { return sched.Dispatch(context.Background(), action) }))
 		h = mux
 		log.Println("WORKER_MODE=true — เปิดเฉพาะ /health และ /internal/tick/{action} (ไม่มี public API)")
 	} else {
