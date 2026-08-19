@@ -10,6 +10,16 @@
 
 **ขอบเขต: ย้ายทุกอย่าง ยกเว้น database — Neon Postgres คงเดิม 100% ไม่แตะ ไม่ย้าย**
 
+## Revision 2026-08-19 (ระหว่างเขียน implementation plan)
+
+ตอนเริ่มเขียนแผน implementation พบว่าโมเดล Workflow เดิมด้านล่าง ("1 instance ต่อ 1 คลิป, step content→render→publish") **ทำไม่ได้จริงโดยไม่แก้ `internal/orchestrator/orchestrator.go`** — ตรวจโค้ดแล้วพบว่าไม่มีฟังก์ชันไหนรับ clipID เดียวแล้วทำ content-step/render-step แยกกันจากภายนอกได้ ของจริงคือ `ProduceWeekly` สร้าง+ผลิตคลิปใหม่ N ใบในลูปเดียวจบ และการ resume ทำผ่าน DB checkpoint (`production_stage`) ที่ `RetryAllFailed`/`resumeHyperframesProduction` จัดการเองอยู่แล้ว ส่วนที่ระบบทำจริงคือ 12 "action" ระดับ tick ที่ `internal/scheduler/scheduler.go:241-272` แม็พจากตาราง `schedules` ไปยังฟังก์ชัน zero-arg แต่ละตัว (แต่ละ action มี gate กันชนกันเองอยู่แล้ว: `tracker.StartProduction` mutex + circuit breaker)
+
+**แก้ไข (ยืนยันกับเจ้าของแล้ว):** Workflow เปลี่ยนจาก "1 instance/1 คลิป" เป็น **"1 instance/1 schedule tick"** — เหมือนที่ `scheduler.go` ทำอยู่ทุกวันนี้ทุกประการ เปลี่ยนแค่ตัวสั่ง (Go cron ภายใน → Cloudflare Cron Trigger + Workflow ภายนอก) Container เพิ่ม endpoint เดียว `POST /internal/tick/{action}` ที่เรียก dispatch table เดิมผ่าน `Scheduler.Dispatch` (method ใหม่ export จาก `handlerFor` ที่มีอยู่แล้ว) — **ไม่แตะ `orchestrator.go` เลย** ตรงกับที่ตกลงไว้แต่แรกว่า business logic ไม่พอร์ต
+
+ผลคือ durability ที่ได้จาก Workflow แคบกว่าที่ระบุไว้เดิม: ได้การรอด "container ตายกลางทาง (crash/OOM) ระหว่าง tick" เพราะ Workflow retry เรียก tick ใหม่ได้ — **ไม่ได้** ได้ per-clip step-level resume ใหม่ที่ orchestrator.go ไม่มีให้ (resume ระดับคลิปยังเป็นกลไกเดิมที่ `retry_failed` action จัดการอยู่แล้ว ซึ่งดีกว่าของ Railway เดิมอยู่แล้วเพราะจะไม่ค้างเป็น orphaned goroutine เมื่อ container ตาย)
+
+ส่วน "สถาปัตยกรรมเป้าหมาย" และ "ก้อนงาน" ด้านล่างถูกอัปเดตให้ตรงกับการแก้ไขนี้แล้ว — ไม่ใช่เวอร์ชันเดิมที่ approve ตอนแรก
+
 ## การตัดสินใจที่ยืนยันแล้ว
 
 - **ราคาไม่ใช่เกณฑ์** — ไม่ต้อง block ด้วยตัวเลขต้นทุนที่ยังไม่ verify อีก
@@ -18,7 +28,7 @@
 - **API layer เขียนใหม่เป็น Worker TypeScript ทั้งหมด** (ไม่ใช่คง Go เดิมในคอนเทนเนอร์) — ยอมรับความเสี่ยงพอร์ต 55 routes + repository 5,357 บรรทัด เพื่อได้สถาปัตยกรรม Cloudflare-native เต็มรูปแบบที่ edge
 - business logic (agent/orchestrator/producer) **ไม่พอร์ต** — ยังเป็น Go เดิมทั้งหมด ย้ายแค่ที่โฮสต์
 
-## สถาปัตยกรรมเป้าหมาย
+## สถาปัตยกรรมเป้าหมาย (แก้ตาม Revision ด้านบน)
 
 ```
 Browser
@@ -26,48 +36,48 @@ Browser
         ├── Static Assets  ← frontend/dist (แทน nginx)
         ├── /api/v1/*      ← พอร์ตจาก internal/handler + internal/repository (55 routes, 5,357 บรรทัด)
         ├── Hyperdrive     ← Neon (ไม่ย้าย, connection string เดิม)
-        ├── Cron Trigger   ← แทน internal/scheduler (อ่านตาราง schedules เอง, UTC→Asia/Bangkok)
-        └── Workflow "produce-clip" (durable, retry ราย step)
-              └─> Container "adsvance-render" (Go binary เดิม + Dockerfile เดิม, chromium pin คงไว้)
-                    step endpoints: /internal/step/{content,render,publish,retry,autoreview}
-                    standard-4 · sleepAfter สั้น · หลับเมื่อไม่ผลิต
+        └── Cron Trigger ("0 * * * *", UTC) → อ่านตาราง schedules (cron_expression, Asia/Bangkok)
+              ตัดสินเองว่า schedule row ไหนถึงรอบ → สร้าง Workflow instance ต่อ 1 tick ที่ถึงรอบ
+              └─> Workflow "run-tick" (durable, 1 instance ต่อ 1 schedule action ที่ถึงรอบ)
+                    └─> Container "adsvance-render" (Go binary เดิม + Dockerfile เดิม, chromium pin คงไว้)
+                          POST /internal/tick/{action}  ← เรียก Scheduler.Dispatch(action) เดิม
+                          (action คือ 1 ใน 12 ตัวที่ scheduler.go:241-272 แม็พอยู่แล้ว:
+                           produce_and_publish, produce_evening, produce_tutorial, produce_basic,
+                           produce_myth, publish_daily, publish_tiktok, retry_failed, auto_review,
+                           analyze_and_improve, fetch_analytics, learn, tune_weights)
+                          standard-4 · sleepAfter สั้น · หลับเมื่อไม่มี tick
 R2 (cdn.thinkclip.xyz) — อยู่บน Cloudflare แล้ว ไม่ต้องแตะ ผูก binding ตรงจาก Worker/Container ได้เลย
 Neon Postgres — คงเดิม 100% ต่อผ่าน Hyperdrive จาก Worker และต่อตรงจาก Container
 ```
 
+**หมายเหตุ durability:** Workflow retry ที่ step "run-tick" คุ้มครองแค่กรณี container ตายกลางทาง (crash/OOM) — ไม่ได้เพิ่ม resume ระดับคลิปใหม่ เพราะกลไกนั้น (`production_stage` checkpoint + action `retry_failed`) มีอยู่แล้วในโค้ดเดิมและยังทำงานเหมือนเดิมทุกประการ ควร set `retries:{limit: 0 หรือ 1}` เท่านั้นที่ step นี้ — action อย่าง `produce_and_publish` ไม่ idempotent ต่อการเรียกซ้ำทันที (สร้างคลิปใหม่ทุกครั้งที่ถูกเรียกสำเร็จ) retry ที่มีความหมายจริงคือรอบ `retry_failed` ครั้งถัดไป (action แยกต่างหาก ถูก schedule ไว้อยู่แล้ว) ไม่ใช่ Workflow เรียก action เดิมซ้ำทันที
+
 ## ก้อนงาน
 
-### 1. Container: Go เดิม → step endpoints
-- `cmd/server/main.go` — เพิ่มโหมด `-mode=worker`: ไม่ start `scheduler.New()`, ไม่ serve public API, เปิดเฉพาะ step endpoints บน port 8080
-- เพิ่ม `internal/handler/steps.go` — HTTP endpoint หุ้มขั้นตอนที่มีอยู่แล้วใน `internal/orchestrator/orchestrator.go`:
-  - `POST /internal/step/content` → `produceClipWithID` ส่วนต้นถึงเช็คพอยต์ `stageContentReady`
-  - `POST /internal/step/render` → `renderAndFinalize`
-  - `POST /internal/step/publish` → publisher เดิม
-  - `POST /internal/step/retry`, `/internal/step/autoreview` → `RetryAllFailed`, `AutoReviewPending`
-  - `POST /internal/migrate` → `database.RunMigrations`
-  - ทุก endpoint รับ/คืน JSON ที่ serialize ได้ และ **idempotent ต่อ clipID** (Workflow retry ได้)
+### 1. Container: Go เดิม → tick-dispatch endpoint (แผนละเอียด: `docs/superpowers/plans/2026-08-19-cloudflare-migration-worker-mode.md`)
+- `internal/scheduler/scheduler.go` — export `Dispatch(ctx, action) error` ที่หุ้ม `handlerFor` (private) ที่มีอยู่แล้ว ไม่แตะ `orchestrator.go`
+- `internal/handler/tick.go` — `POST /internal/tick/{action}` หุ้ม `Dispatch`, map error → HTTP status (unknown action → 404, `orchestrator.ErrProductionRunning` → 409, อื่นๆ → 500)
+- `cmd/server/main.go` — เพิ่ม config `WORKER_MODE` (env bool, default false): เมื่อ true เปิดเฉพาะ `/health` + `/internal/tick/{action}` แทน public router เต็มรูปแบบ — `sched := scheduler.New(...)` ยังสร้างเหมือนเดิมทั้งสองโหมด แค่ `sched.Start(ctx)` (internal cron) ปิดผ่าน env `SCHEDULER_ENABLED=false` ที่มีอยู่แล้วตอน deploy จริง ไม่ใช่โค้ดใหม่
 - `Dockerfile` — ใช้ของเดิมทั้งไฟล์ รวม chromium snapshot pin ห้ามแตะ
-- ตัด `internal/router/router.go` ออกจาก path นี้ (router เดิมยังใช้สำหรับ local dev)
+- ไม่ต้องการ `/internal/migrate` endpoint แยก — `database.RunMigrations` ถูกเรียกอัตโนมัติทุกครั้งที่ binary boot อยู่แล้ว (`cmd/server/main.go:54`)
 
 ### 2. Cloudflare project scaffold
 - สร้าง `cf/` ใน repo: `wrangler.jsonc`, `src/index.ts`, `src/container.ts`, `src/workflow.ts`
 - `wrangler.jsonc`: containers (`image = "../Dockerfile"`, `instance_type = "standard-4"`), workflows, hyperdrive, r2_buckets, assets (`frontend/dist`), triggers.crons, `limits.cpu_ms`
-- `src/container.ts`: `class RenderContainer extends Container` — `defaultPort = 8080`, `sleepAfter = "2m"`, `envVars` ยกจาก Railway (`DATABASE_URL`, flags ทั้ง 8 ตัว, `TZ`, `FONTS_DIR`, `PUPPETEER_*`)
+- `src/container.ts`: `class RenderContainer extends Container` — `defaultPort = 8080`, `sleepAfter = "2m"`, `envVars` ยกจาก Railway (`DATABASE_URL`, flags ทั้ง 8 ตัว, `TZ`, `FONTS_DIR`, `PUPPETEER_*`, `WORKER_MODE=true`, `SCHEDULER_ENABLED=false`)
 
-### 3. Workflow `produce-clip`
-- `cf/src/workflow.ts` — `WorkflowEntrypoint` ต่อ 1 คลิป:
-  - `step.do("content", {timeout: "15 minutes", retries:{limit:2}})` → เรียก container `/internal/step/content`
-  - `step.do("render", {timeout: "30 minutes", retries:{limit:1}})` → `/internal/step/render` (ต้องยาวกว่า `HyperframesRenderer.timeout` 20 นาทีที่ `internal/producer/hyperframes.go:77`)
-  - `step.do("publish", ...)` → `/internal/step/publish`
+### 3. Workflow `run-tick`
+- `cf/src/workflow.ts` — `WorkflowEntrypoint` ต่อ 1 schedule action ที่ถึงรอบ:
+  - `step.do("run", {timeout: "35 minutes", retries:{limit: 0}})` → เรียก container `POST /internal/tick/{action}` (ดูหมายเหตุ retry ด้านบน — เหตุผลที่ไม่ retry อัตโนมัติ)
   - เรียก `this.renewActivityTimeout()` ระหว่าง step ยาว กัน container หลับกลางทาง
-- รอบ produce หลายคลิป = สร้าง instance ละคลิป (แทน loop ใน `ProduceWeekly`) — ได้ isolation + retry รายคลิป
+- 1 Workflow instance ต่อ 1 (schedule row × รอบที่ถึงเวลา) — Cron Trigger เป็นคนสร้าง instance ไม่ใช่ Workflow เองวนลูป
 
 ### 4. Worker API + frontend
 - พอร์ต 55 routes จาก `internal/router/router.go` → `cf/src/api/*.ts` โดยยึด response shape เดิม 1:1 (frontend ห้ามแก้)
   - **กติกา:** list endpoint ต้องคืน `[]` ไม่ใช่ `null`
 - พอร์ต `internal/repository/*.go` → query ผ่าน Hyperdrive ด้วย `postgres.js`
 - middleware API key (`internal/handler/middleware.go`) → Worker middleware, ค่าเดิม `API_KEY` เก็บเป็น secret
-- routes ที่เรียก orchestrator (`/orchestrator/produce*`, `/publish*`, `/retry`, `/analytics/fetch`) → เปลี่ยนเป็นสร้าง Workflow instance แทนการเรียก Go ตรง
+- routes ที่เรียก orchestrator ตรงจาก UI (เช่น "สั่งเรนเดอร์ใหม่" ต่อคลิปเดียว) — ยังเรียก container ตรงแบบ request-response เหมือนเดิม (คนละกรณีกับ tick แบบ scheduled ที่ผ่าน Workflow) ไม่ต้องสร้าง Workflow instance สำหรับ action ที่คนกดเอง
 - `frontend/` — เปลี่ยนแค่ base URL ของ API, build เดิม, ทิ้ง `frontend/Dockerfile` + `nginx.conf`
 
 ### 5. Cron
@@ -94,6 +104,6 @@ Neon Postgres — คงเดิม 100% ต่อผ่าน Hyperdrive จ�
 1. `go build ./...` + `go test ./...` ผ่าน หลังเพิ่มโหมด worker
 2. `npx wrangler dev` — เรียกทุก route ที่พอร์ตแล้ว เทียบ JSON กับ prod Railway ตัวต่อตัว (55 routes)
 3. `npx wrangler deploy` สำเร็จ, `wrangler containers list` เห็น image
-4. ยิง Workflow 1 instance → `wrangler workflows instances describe` ต้องเห็นทั้ง 3 step สถานะ success
+4. ยิง Workflow 1 instance ด้วย action `produce_and_publish` → `wrangler workflows instances describe` ต้องเห็น step "run" สถานะ success
 5. คลิปที่ได้: มี MP4 บน R2, `clips.status` เป็น ready/needs_review, `render_checks` มีแถว, เปิดดูวิดีโอแล้วภาพ+เสียงครบ
-6. ทดสอบ durability: kill container ระหว่าง step render → Workflow ต้อง retry แล้วจบงานได้เอง (นี่คือสิ่งที่ระบบเดิมทำไม่ได้)
+6. ทดสอบ durability: kill container ระหว่าง tick กำลังรัน → Workflow เห็น step ล้มเหลว (ไม่ auto-retry ตาม `retries:{limit:0}`) — คลิปที่ทัน checkpoint `stageContentReady` ก่อนตายต้องกู้ได้ด้วยรอบ `retry_failed` tick ถัดไป ไม่ค้างเป็น orphan เหมือน Railway เดิม
