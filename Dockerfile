@@ -48,8 +48,11 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
 # complete (manifest included), and the Go renderer prefers `npx hyperframes@<ver>`
 # when no global binary is on PATH — so this fixes the manifest AND stays offline
 # at render time. Keep this version in sync with hyperframesVersion in
-# internal/producer/hyperframes.go (0.7.90).
-RUN npx --yes hyperframes@0.7.90 --version
+# internal/producer/hyperframes.go (0.7.90). The build fails if the versions disagree.
+COPY internal/producer/hyperframes.go /tmp/hf.go
+RUN grep -q 'hyperframesVersion = "0.7.90"' /tmp/hf.go \
+ && npx --yes hyperframes@0.7.90 --version \
+ && rm /tmp/hf.go
 
 COPY --from=builder /server /server
 COPY migrations/ /migrations/
@@ -63,9 +66,10 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
 
-# เพดานหน่วยความจำของตัวเรนเดอร์ · CLI ปรับค่าพวกนี้เองตามแรมที่มันมองเห็น ซึ่งใน
-# คอนเทนเนอร์เคยเป็นแรมของโฮสต์ (เหตุคลิปค้าง 20 ส.ค. 2026) · เวอร์ชันปัจจุบันอ่าน
-# cgroup เป็นแล้ว ค่าพวกนี้จึงเป็นเข็มขัดนิรภัยเส้นที่สอง ไม่ใช่ตัวแก้หลัก
+# ค่าพวกนี้ **ทับ** ค่าที่ CLI คำนวณเองจาก cgroup · ตั้งไว้สำหรับเดโพลอยรอบแรก
+# เพราะสมมติฐานเรื่องหน่วยความจำยังไม่ได้พิสูจน์บนของจริง · ให้ถอดสองบรรทัดแคช
+# เฟรมออกเมื่อเห็นบรรทัด [SystemMemory] cgroup memory limit detected ใน log ของ prod
+# · ถ้าคอนเทนเนอร์ถูกขยายแรมวันหน้า ค่านี้จะค้างอยู่เดิมถ้าไม่มีใครถอด
 ENV PRODUCER_FRAME_DATA_URI_CACHE_BYTES_MB=256
 ENV PRODUCER_FRAME_DATA_URI_CACHE_LIMIT=64
 # 10 นาทีต่อหนึ่งคำสั่ง CDP: การจับภาพที่อืดแต่ยังเดินอยู่จะได้ไปต่อจนจบ แทนที่จะ

@@ -212,12 +212,12 @@ const renderWorkers = "3"
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) (CheckResult, error) {
 	log.Printf("host render-start: %s", hostSnapshot(dir))
 	stop := make(chan struct{})
+	defer close(stop)
 	go logHostDuring("render", dir, hostSampleInterval, stop)
 
 	res, err := h.runCheck(ctx, "render", h.timeout, dir,
 		"render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
 
-	close(stop)
 	log.Printf("host render-end: %s", hostSnapshot(dir))
 	return res, err
 }
