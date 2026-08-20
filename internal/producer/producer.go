@@ -560,6 +560,20 @@ func (p *Producer) uploadPersistent(ctx context.Context, localPath, r2Key, kieDi
 	return p.kie.UploadFile(ctx, localPath, kieDir)
 }
 
+// CleanupClipDir ลบโฟลเดอร์งานของคลิปหนึ่งใบ · เรียกเมื่อผลิตสำเร็จเท่านั้น —
+// วิดีโอกับปกขึ้น R2 ไปแล้ว ไฟล์ที่เหลือในเครื่องไม่มีใครใช้ต่อ แต่ก่อนหน้านี้ไม่มี
+// ใครลบ มันจึงกองอยู่ใน /tmp จนกว่าคอนเทนเนอร์จะรีสตาร์ต · คลิปที่ล้มเหลวต้องไม่
+// ถูกลบ เพราะเส้นทาง resume ใช้ภาพพื้นหลังเดิมซ้ำแทนที่จะจ่ายค่าเจนใหม่
+//
+// clipID ว่างเป็น error ไม่ใช่ no-op: filepath.Join(workDir, "") = workDir และ
+// RemoveAll จะกวาดงานของทุกคลิปทิ้ง
+func (p *Producer) CleanupClipDir(clipID string) error {
+	if strings.TrimSpace(clipID) == "" {
+		return fmt.Errorf("CleanupClipDir: clipID ว่าง")
+	}
+	return os.RemoveAll(filepath.Join(p.workDir, clipID))
+}
+
 // ProduceHyperframes916 assembles a 9:16 multi-scene MP4 from scenes (per-scene
 // TTS + gpt-image-2 + render via AssembleHyperframes916), extracts a thumbnail
 // from the first frame, uploads both to kie.ai, and returns their URLs. It is the

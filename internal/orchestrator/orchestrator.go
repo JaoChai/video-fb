@@ -832,6 +832,11 @@ func (o *Orchestrator) renderAndFinalize(ctx context.Context, clipID string, q a
 	if status == "ready" {
 		log.Printf("Clip ready (hyperframes): %s", clipID)
 	}
+	// ผลิตสำเร็จแล้ว (เส้นทางล้มเหลวคืนค่าไปตั้งแต่ failClip ด้านบน) — เก็บกวาดไฟล์งาน
+	// ของคลิปนี้ · ล้มเหลวตรงนี้ไม่ใช่เรื่องใหญ่พอจะทำให้คลิปที่เสร็จแล้วกลายเป็นคลิปพัง
+	if cErr := o.producer.CleanupClipDir(clipID); cErr != nil {
+		log.Printf("cleanup clip dir failed (non-fatal) for clip %s: %v", clipID, cErr)
+	}
 	return nil
 }
 
