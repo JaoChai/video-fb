@@ -200,10 +200,19 @@ const renderWorkers = "3"
 
 // Render produces an MP4 at outputPath from the composition in dir. Quality is
 // standard/24fps so the memory-heavy multi-scene render fits the ~8GB container
-// without OOM.
+// without OOM. ค่าสภาพเครื่องถูก log คร่อมและระหว่างทาง — ขั้นนี้เป็นขั้นเดียวที่
+// เคยค้างจนตาย และตอนนั้นเราไม่มีตัวเลขอะไรจะอ่านย้อนหลังเลย
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) (CheckResult, error) {
-	return h.runCheck(ctx, "render", h.timeout, dir,
+	log.Printf("host render-start: %s", hostSnapshot(dir))
+	stop := make(chan struct{})
+	go logHostDuring("render", dir, hostSampleInterval, stop)
+
+	res, err := h.runCheck(ctx, "render", h.timeout, dir,
 		"render", "--output", outputPath, "--quality", "standard", "--fps", "24", "-w", renderWorkers)
+
+	close(stop)
+	log.Printf("host render-end: %s", hostSnapshot(dir))
+	return res, err
 }
 
 func lastBytes(b []byte, n int) string {
