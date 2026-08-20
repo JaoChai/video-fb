@@ -65,22 +65,26 @@ COPY migrations/ /migrations/
 COPY internal/producer/assets/fonts/ /app/assets/fonts/
 
 ENV PORT=8080
-# Tell Puppeteer (used by Hyperframes) to use the system Chromium, not download one.
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-# hyperframes ≥0.7 เลิกอ่าน PUPPETEER_EXECUTABLE_PATH แล้ว (grep ในบันเดิล 0.7.90: ศูนย์ครั้ง)
-# มันไล่หาเบราว์เซอร์ตามลำดับ PRODUCER_HEADLESS_SHELL_PATH → HYPERFRAMES_BROWSER_PATH →
-# แคช chrome-headless-shell → ดาวน์โหลดเอง · อิมเมจนี้ไม่มี unzip การดาวน์โหลดจึงตาย
-# ("Extraction failed: no zip archiver is available") และเรนเดอร์ล้มใน 9 วินาที
-# ตั้งตัวนี้เพื่อให้มันหยุดที่ chromium ที่เราตรึงเวอร์ชันไว้แล้ว ไม่ต้องออกเน็ตเลย
+# hyperframes ไม่เคยอ่าน PUPPETEER_EXECUTABLE_PATH เลยสักเวอร์ชัน (grep บันเดิลทั้ง 0.6.70
+# และ 0.7.90: ศูนย์ครั้งทั้งคู่) — 0.6.70 รอดมาตลอดเพราะมีทางสำรอง whichBinary("chromium")
+# ค้นหา /usr/bin/chromium เอง แต่ 0.7.90 ตัดทางสำรองนั้นทิ้ง เปลี่ยนมาไล่ลำดับ
+# PRODUCER_HEADLESS_SHELL_PATH → HYPERFRAMES_BROWSER_PATH → แคชในโฮม → ดาวน์โหลดเอง ·
+# อิมเมจนี้ไม่มี unzip การดาวน์โหลดจึงตาย ("Extraction failed: no zip archiver is
+# available") และเรนเดอร์ล้มใน 9 วินาที · ตัวแปรนี้จึงเป็นตัวเดียวที่กันไม่ให้ hyperframes
+# ออกเน็ตตอนเรนเดอร์
 ENV HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium
+# ตายตอน build ดีกว่าไปตายกลางการเรนเดอร์บน prod — รัน chromium จริงแทนแค่เช็ค exec-bit
+# เพื่อจับ shared-lib ที่ขาด (--no-install-recommends ด้านบนต้องไล่ลง lib เอง พลาดตัวเดียว
+# ก็ล้มตอน runtime) · ด่านนี้ยังจับไม่ได้ทุกอย่าง: ถ้า hyperframes เปลี่ยนชื่อ env var หรือ
+# ลำดับค้นหาเบราว์เซอร์อีก (แบบที่ 0.6.70→0.7.90 เพิ่งทำ) ด่านนี้จะยังเขียวแล้วไปตายบน prod
+RUN "$HYPERFRAMES_BROWSER_PATH" --version
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
 
-# ค่าพวกนี้ **ทับ** ค่าที่ CLI คำนวณเองจาก cgroup · ตั้งไว้สำหรับดีพลอยรอบแรก
-# เพราะสมมติฐานเรื่องหน่วยความจำยังไม่ได้พิสูจน์บนของจริง · ให้ถอดสองบรรทัดแคช
-# เฟรมออกเมื่อเห็นบรรทัด [SystemMemory] cgroup memory limit detected ใน log ของ prod
-# · ถ้าคอนเทนเนอร์ถูกขยายแรมวันหน้า ค่านี้จะค้างอยู่เดิมถ้าไม่มีใครถอด
+# ค่าพวกนี้ **ทับ** ค่าที่ CLI คำนวณเองจาก cgroup · ตั้งไว้ตอนสมมติฐาน ~8GB ยังไม่ได้พิสูจน์
+# บนของจริง คอนเทนเนอร์จริงใหญ่กว่านั้นมาก (ตัวเลขวัดจริง ดูคอมเมนต์ renderWorkers ใน
+# internal/producer/hyperframes.go) ค่านี้จึงบีบแคชเกินจำเป็น ถอดได้ถ้าอยากได้ความเร็วเพิ่ม
+# แต่ยังไม่มีใครวัดผลหลังถอด
 ENV PRODUCER_FRAME_DATA_URI_CACHE_BYTES_MB=256
 ENV PRODUCER_FRAME_DATA_URI_CACHE_LIMIT=64
 # 10 นาทีต่อหนึ่งคำสั่ง CDP: การจับภาพที่อืดแต่ยังเดินอยู่จะได้ไปต่อจนจบ แทนที่จะ

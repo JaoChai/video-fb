@@ -13,13 +13,16 @@ import (
 )
 
 // hyperframesVersion pins the CLI so renders are reproducible across machines.
-// 0.6.70 → 0.7.90: 0.6.70 อ่าน os.totalmem() (= แรมของ "โฮสต์") ไปตั้งเพดาน heap
-// ของ Chrome, งบหน่วยความจำ GPU และขนาดแคชเฟรม ทั้งที่คอนเทนเนอร์ถูกจำกัดด้วย
-// cgroup — ค่ามันจึงเกินตัวเสมอ และการเรนเดอร์คลิปยาว 20 ส.ค. 2026 ค้างจน
-// protocolTimeout ทั้ง 3 worker · ต้นน้ำแก้ใน v0.6.99 ("Respect cgroup memory
-// limits in low-memory detection") ห้ามถอยต่ำกว่านั้น · ไม่ใช้ 0.6.99 เองเพราะ
-// 0.6.99 ตกด่าน inspect ทั้งสองคลิปที่ทดสอบ ด้วย content_overlap ที่ span.stat-num
-// ใน div.stat-label · ทั้ง 0.6.70 และ 0.7.90 ไม่ฟ้อง จึงเชื่อว่าเป็น false positive (ยังไม่ได้เปิดเฟรมยืนยัน)
+// 0.6.70 → 0.7.90: กลไกที่แท้จริงที่ทำให้ 0.6.70 ค้างยังไม่ได้พิสูจน์ (เดิมสงสัยว่า
+// 0.6.70 อ่าน os.totalmem() ไปตั้งเพดาน heap/แคชเกินตัวเทียบกับ cgroup แต่ทฤษฎีนี้
+// วัดแล้วไม่สนับสนุน — ตัวเลขจริงดู renderWorkers ด้านล่าง — และตอนนี้
+// พิสูจน์ย้อนหลังไม่ได้แล้ว) สิ่งที่วัดได้จริง: 0.6.70 บนอิมเมจเดิม render 639,772 ms
+// แล้วล้มด้วย protocolTimeout ทั้ง 3 worker ส่วน 0.7.90 (พร้อม HYPERFRAMES_BROWSER_PATH)
+// บนคอนเทนเนอร์เดียวกัน chromium ตัวเดียวกัน render ผ่านใน 114,421 ms (20 ส.ค. 2026) ·
+// ต้นน้ำแก้ใน v0.6.99 ("Respect cgroup memory limits in low-memory detection")
+// ห้ามถอยต่ำกว่านั้น · ไม่ใช้ 0.6.99 เองเพราะ 0.6.99 ตกด่าน inspect ทั้งสองคลิปที่
+// ทดสอบ ด้วย content_overlap ที่ span.stat-num ใน div.stat-label · ทั้ง 0.6.70 และ
+// 0.7.90 ไม่ฟ้อง จึงเชื่อว่าเป็น false positive (ยังไม่ได้เปิดเฟรมยืนยัน)
 const hyperframesVersion = "0.7.90"
 
 // CheckResult คือผลของด่านตรวจหนึ่งด่านในรูปที่บันทึกลง render_checks ได้
@@ -171,9 +174,11 @@ func scanBrowserIssues(out []byte) []string {
 	return hits
 }
 
-// hyperframesCmd prefers the globally-installed CLI (the Docker image installs
-// the pinned version) so a render never hits the npm registry. It falls back to
-// `npx hyperframes@<version>` for local dev where the CLI isn't installed globally.
+// hyperframesCmd's normal path in prod is npx — the Docker image deliberately
+// does NOT `npm install -g` (a global install skips core/dist/hyperframe.manifest.json,
+// see Dockerfile), it warms the npx cache instead, so `npx hyperframes@<version>`
+// hits that warmed cache and never touches the npm registry. exec.LookPath is a
+// shortcut for machines that do have the CLI installed globally (e.g. local dev).
 func hyperframesCmd(ctx context.Context, args ...string) *exec.Cmd {
 	if bin, err := exec.LookPath("hyperframes"); err == nil {
 		return exec.CommandContext(ctx, bin, args...)
@@ -195,20 +200,22 @@ func (h *HyperframesRenderer) Inspect(ctx context.Context, dir string) (CheckRes
 	return h.runCheck(ctx, "inspect", h.timeout, dir, "inspect")
 }
 
-// renderWorkers parallelizes frame capture across Chrome instances on the ~8GB /
-// ~8 vCPU Railway container. History: 12 workers OOM-killed the 16:9 render
-// (~7.6GB then SIGKILL); 6 fixed the OOM but then OVERSUBSCRIBED the CPU — a
-// single Chrome capture starved >5m and blew hyperframes' 300s protocolTimeout
-// (memory peaked only ~2.5GB, so this was CPU contention, not RAM). 3 gives each
-// worker enough CPU to finish a frame in seconds; it sits below hyperframes'
-// default of 4, trading wall-clock for reliability on this constrained box. Raise
-// only if the container's CPU is actually raised.
+// renderWorkers parallelizes frame capture across Chrome instances on the Railway
+// container. History: 12 workers OOM-killed the 16:9 render (~7.6GB then
+// SIGKILL); 6 fixed the OOM but then OVERSUBSCRIBED the CPU — a single Chrome
+// capture starved >5m and blew hyperframes' 300s protocolTimeout (memory peaked
+// only ~2.5GB, so this was CPU contention, not RAM). Both were tuned against an
+// assumed ~8GB/~8 vCPU box; measured on prod 2026-08-20, cgroup memory.max is
+// 30,517MB and a successful render peaks around ~2.5GB — the binding constraint
+// is CPU, not memory. 3 gives each worker enough CPU to finish a frame in
+// seconds; it sits below hyperframes' default of 4, trading wall-clock for
+// reliability. Raise only after measuring the container's actual CPU headroom.
 const renderWorkers = "3"
 
 // Render produces an MP4 at outputPath from the composition in dir. Quality is
-// standard/24fps so the memory-heavy multi-scene render fits the ~8GB container
-// without OOM. ค่าสภาพเครื่องถูก log คร่อมและระหว่างทาง — ขั้นนี้เป็นขั้นเดียวที่
-// เคยค้างจนตาย และตอนนั้นเราไม่มีตัวเลขอะไรจะอ่านย้อนหลังเลย
+// standard/24fps for reliability (see renderWorkers for the measured memory and
+// CPU picture). ค่าสภาพเครื่องถูก log คร่อมและระหว่างทาง
+// — ขั้นนี้เป็นขั้นเดียวที่เคยค้างจนตาย และตอนนั้นเราไม่มีตัวเลขอะไรจะอ่านย้อนหลังเลย
 func (h *HyperframesRenderer) Render(ctx context.Context, dir, outputPath string) (CheckResult, error) {
 	log.Printf("host render-start: %s", hostSnapshot(dir))
 	stop := make(chan struct{})
