@@ -41,30 +41,6 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
     libpangocairo-1.0-0 libcairo2 libxshmfence1 \
  && rm -rf /var/lib/apt/lists/*
 
-# Warm the npx cache with the pinned Hyperframes CLI instead of a global install.
-# `npm install -g hyperframes` lays down the bin but NOT the core runtime manifest
-# (core/dist/hyperframe.manifest.json), so renders fail with "Missing manifest …"
-# and silently fall back to a static FFmpeg image. The npx-cached package is
-# complete (manifest included), and the Go renderer prefers `npx hyperframes@<ver>`
-# when no global binary is on PATH — so this fixes the manifest AND stays offline
-# at render time. The version is NOT typed here: it is read out of
-# internal/producer/hyperframes.go, the one place that decides it. A second copy
-# in this file would be a copy that can drift, and drift here is expensive — the
-# Go renderer asks npx for ITS number, so a mismatch misses this warmed cache and
-# pulls from the npm registry inside the production container mid-render. An
-# unreadable or bogus version fails the build here instead.
-COPY internal/producer/hyperframes.go /tmp/hf.go
-RUN HFV="$(sed -n 's/.*hyperframesVersion = "\([^"]*\)".*/\1/p' /tmp/hf.go)" \
- && echo "hyperframes version from hyperframes.go: ${HFV:?not found in hyperframes.go}" \
- && npx --yes "hyperframes@$HFV" --version \
- && rm /tmp/hf.go
-
-COPY --from=builder /server /server
-COPY migrations/ /migrations/
-# Sarabun Thai fonts the composition builder copies into each render project.
-COPY internal/producer/assets/fonts/ /app/assets/fonts/
-
-ENV PORT=8080
 # hyperframes ไม่เคยอ่าน PUPPETEER_EXECUTABLE_PATH เลยสักเวอร์ชัน (grep บันเดิลทั้ง 0.6.70
 # และ 0.7.90: ศูนย์ครั้งทั้งคู่) — 0.6.70 รอดมาตลอดเพราะมีทางสำรอง whichBinary("chromium")
 # ค้นหา /usr/bin/chromium เอง แต่ 0.7.90 ตัดทางสำรองนั้นทิ้ง เปลี่ยนมาไล่ลำดับ
@@ -73,11 +49,50 @@ ENV PORT=8080
 # available") และเรนเดอร์ล้มใน 9 วินาที · ตัวแปรนี้จึงเป็นตัวเดียวที่กันไม่ให้ hyperframes
 # ออกเน็ตตอนเรนเดอร์
 ENV HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium
-# ตายตอน build ดีกว่าไปตายกลางการเรนเดอร์บน prod — รัน chromium จริงแทนแค่เช็ค exec-bit
-# เพื่อจับ shared-lib ที่ขาด (--no-install-recommends ด้านบนต้องไล่ลง lib เอง พลาดตัวเดียว
-# ก็ล้มตอน runtime) · ด่านนี้ยังจับไม่ได้ทุกอย่าง: ถ้า hyperframes เปลี่ยนชื่อ env var หรือ
-# ลำดับค้นหาเบราว์เซอร์อีก (แบบที่ 0.6.70→0.7.90 เพิ่งทำ) ด่านนี้จะยังเขียวแล้วไปตายบน prod
-RUN "$HYPERFRAMES_BROWSER_PATH" --version
+
+# Warm the npx cache with the pinned Hyperframes CLI instead of a global install, then run 3
+# build-time checks against hyperframes/chromium's real behavior — ตายตอน build ดีกว่าไปตาย
+# กลางการเรนเดอร์บน prod
+#
+# ทำไมไม่ install -g: `npm install -g hyperframes` ลง bin แต่ไม่ลง core runtime manifest
+# (core/dist/hyperframe.manifest.json) เรนเดอร์พังด้วย "Missing manifest …" แล้วตกไปทำ static
+# FFmpeg image เงียบ ๆ · แพ็กเกจที่ warm ผ่าน npx สมบูรณ์กว่า และ Go renderer เองก็เรียก
+# `npx hyperframes@<ver>` เป็นทางหลักอยู่แล้วเมื่อไม่เจอ binary บน PATH
+#
+# ทำไมไม่พิมพ์เวอร์ชันซ้ำ: HFV อ่านจาก internal/producer/hyperframes.go จุดเดียวที่ตัดสินเวอร์ชัน
+# จริง พิมพ์ซ้ำในไฟล์นี้จะเกิด drift ได้ — Go renderer ขอ npx ด้วยเลขของมันเอง มิสแมตช์แล้วพลาด
+# แคชที่ warm ไว้ ไปดึงจาก npm registry กลางการเรนเดอร์บน prod แทน · เวอร์ชันอ่านไม่ได้/มั่วทำให้
+# build พังตรงนี้แทน
+#
+# 3 ด่าน (แต่ละด่านจับสิ่งที่ด่านก่อนจับไม่ได้):
+#  1) `npx hyperframes@$HFV --version` — แคชอุ่นสำเร็จ + เวอร์ชันอ่านได้จริง
+#  2) `"$HYPERFRAMES_BROWSER_PATH" --version` — ไบนารีที่ชี้ไว้รันได้จริง + shared-lib ครบ
+#     (--no-install-recommends ด้านบนต้องไล่ลง lib เอง พลาดตัวเดียวก็ล้มตอน runtime) — แต่ไม่ได้
+#     พิสูจน์ว่า hyperframes จะ *เลือก* ไบนารีตัวนี้จริง
+#  3) เทียบ `npx hyperframes browser path` กับ HYPERFRAMES_BROWSER_PATH — คำสั่งนี้ใช้ตัวจัดการ
+#     เบราว์เซอร์ของ CLI (findBrowser) ซึ่ง grep บันเดิล 0.7.90 พบว่าเป็นคนละฟังก์ชันกับตัวที่คุม
+#     การเรนเดอร์จริง (resolveHeadlessShellPath) — สอดคล้องกันตอนนี้เพราะทั้งคู่พึ่ง
+#     HYPERFRAMES_BROWSER_PATH ตัวเดียว (ไม่ได้ตั้ง PRODUCER_HEADLESS_SHELL_PATH ที่มีสิทธิ์
+#     เหนือกว่าฝั่งเรนเดอร์) · ทดสอบแล้วว่ามันไม่ error เมื่อ path ผิด (ตกไปใช้แคช/ค้นระบบเงียบ ๆ
+#     แทน) จึงต้องเทียบค่าที่มันตอบเอง ห้ามพึ่ง exit code · ปิด update-check/telemetry กันบรรทัด
+#     ปน stdout, tail -1 กันเหนียวอีกชั้น · ด่านนี้จับสิ่งที่ 1-2 จับไม่ได้: ถ้าวันหน้า hyperframes
+#     เปลี่ยนชื่อ env var หรือลำดับค้นหาเบราว์เซอร์อีก (แบบที่ 0.6.70→0.7.90 เพิ่งทำ) ค่าที่มันตอบ
+#     จะไม่ตรงกับที่เราตั้ง
+COPY internal/producer/hyperframes.go /tmp/hf.go
+RUN HFV="$(sed -n 's/.*hyperframesVersion = "\([^"]*\)".*/\1/p' /tmp/hf.go)" \
+ && echo "hyperframes version from hyperframes.go: ${HFV:?not found in hyperframes.go}" \
+ && npx --yes "hyperframes@$HFV" --version \
+ && "$HYPERFRAMES_BROWSER_PATH" --version \
+ && FOUND="$(HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 npx --yes "hyperframes@$HFV" browser path | tail -1)" \
+ && if [ "$FOUND" != "$HYPERFRAMES_BROWSER_PATH" ]; then echo "hyperframes จะใช้ '$FOUND' ไม่ใช่ '$HYPERFRAMES_BROWSER_PATH'"; exit 1; fi \
+ && rm /tmp/hf.go
+
+COPY --from=builder /server /server
+COPY migrations/ /migrations/
+# Sarabun Thai fonts the composition builder copies into each render project.
+COPY internal/producer/assets/fonts/ /app/assets/fonts/
+
+ENV PORT=8080
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
 
