@@ -48,8 +48,8 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
 # complete (manifest included), and the Go renderer prefers `npx hyperframes@<ver>`
 # when no global binary is on PATH — so this fixes the manifest AND stays offline
 # at render time. Keep this version in sync with hyperframesVersion in
-# internal/producer/hyperframes.go (0.6.70).
-RUN npx --yes hyperframes@0.6.70 --version
+# internal/producer/hyperframes.go (0.7.90).
+RUN npx --yes hyperframes@0.7.90 --version
 
 COPY --from=builder /server /server
 COPY migrations/ /migrations/
@@ -62,6 +62,15 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
+
+# เพดานหน่วยความจำของตัวเรนเดอร์ · CLI ปรับค่าพวกนี้เองตามแรมที่มันมองเห็น ซึ่งใน
+# คอนเทนเนอร์เคยเป็นแรมของโฮสต์ (เหตุคลิปค้าง 20 ส.ค. 2026) · เวอร์ชันปัจจุบันอ่าน
+# cgroup เป็นแล้ว ค่าพวกนี้จึงเป็นเข็มขัดนิรภัยเส้นที่สอง ไม่ใช่ตัวแก้หลัก
+ENV PRODUCER_FRAME_DATA_URI_CACHE_BYTES_MB=256
+ENV PRODUCER_FRAME_DATA_URI_CACHE_LIMIT=64
+# 10 นาทีต่อหนึ่งคำสั่ง CDP: การจับภาพที่อืดแต่ยังเดินอยู่จะได้ไปต่อจนจบ แทนที่จะ
+# ตายที่ 5 นาทีแบบเดิม · เพดานรวมยังคุมด้วย HyperframesRenderer.timeout (20 นาที)
+ENV PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=600000
 
 EXPOSE 8080
 CMD ["/server"]

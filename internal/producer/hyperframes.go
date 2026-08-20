@@ -13,7 +13,14 @@ import (
 )
 
 // hyperframesVersion pins the CLI so renders are reproducible across machines.
-const hyperframesVersion = "0.6.70"
+// 0.6.70 → 0.7.90: 0.6.70 อ่าน os.totalmem() (= แรมของ "โฮสต์") ไปตั้งเพดาน heap
+// ของ Chrome, งบหน่วยความจำ GPU และขนาดแคชเฟรม ทั้งที่คอนเทนเนอร์ถูกจำกัดด้วย
+// cgroup — ค่ามันจึงเกินตัวเสมอ และการเรนเดอร์คลิปยาว 20 ส.ค. 2026 ค้างจน
+// protocolTimeout ทั้ง 3 worker · ต้นน้ำแก้ใน v0.6.99 ("Respect cgroup memory
+// limits in low-memory detection") ห้ามถอยต่ำกว่านั้น · ไม่ใช้ 0.6.99 เองเพราะ
+// ตัวตรวจ layout ของรุ่นนั้นฟ้อง content_overlap ปลอมกับการ์ด stat ทุกใบ
+// (span.stat-num ใน div.stat-label) ซึ่งจะกักคลิปเข้า needs_review ทั้งสาย
+const hyperframesVersion = "0.7.90"
 
 // CheckResult คือผลของด่านตรวจหนึ่งด่านในรูปที่บันทึกลง render_checks ได้
 // มันเป็นข้อมูลสังเกตการณ์ล้วน — การตัดสินใจทุกอย่างยังอิง error ที่คืนคู่กันมา
