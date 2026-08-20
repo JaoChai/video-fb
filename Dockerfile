@@ -66,7 +66,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
 
-# ค่าพวกนี้ **ทับ** ค่าที่ CLI คำนวณเองจาก cgroup · ตั้งไว้สำหรับเดโพลอยรอบแรก
+# ค่าพวกนี้ **ทับ** ค่าที่ CLI คำนวณเองจาก cgroup · ตั้งไว้สำหรับดีพลอยรอบแรก
 # เพราะสมมติฐานเรื่องหน่วยความจำยังไม่ได้พิสูจน์บนของจริง · ให้ถอดสองบรรทัดแคช
 # เฟรมออกเมื่อเห็นบรรทัด [SystemMemory] cgroup memory limit detected ใน log ของ prod
 # · ถ้าคอนเทนเนอร์ถูกขยายแรมวันหน้า ค่านี้จะค้างอยู่เดิมถ้าไม่มีใครถอด
