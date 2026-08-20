@@ -47,11 +47,16 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
 # and silently fall back to a static FFmpeg image. The npx-cached package is
 # complete (manifest included), and the Go renderer prefers `npx hyperframes@<ver>`
 # when no global binary is on PATH — so this fixes the manifest AND stays offline
-# at render time. Keep this version in sync with hyperframesVersion in
-# internal/producer/hyperframes.go (0.7.90). The build fails if the versions disagree.
+# at render time. The version is NOT typed here: it is read out of
+# internal/producer/hyperframes.go, the one place that decides it. A second copy
+# in this file would be a copy that can drift, and drift here is expensive — the
+# Go renderer asks npx for ITS number, so a mismatch misses this warmed cache and
+# pulls from the npm registry inside the production container mid-render. An
+# unreadable or bogus version fails the build here instead.
 COPY internal/producer/hyperframes.go /tmp/hf.go
-RUN grep -q 'hyperframesVersion = "0.7.90"' /tmp/hf.go \
- && npx --yes hyperframes@0.7.90 --version \
+RUN HFV="$(sed -n 's/.*hyperframesVersion = "\([^"]*\)".*/\1/p' /tmp/hf.go)" \
+ && echo "hyperframes version from hyperframes.go: ${HFV:?not found in hyperframes.go}" \
+ && npx --yes "hyperframes@$HFV" --version \
  && rm /tmp/hf.go
 
 COPY --from=builder /server /server
