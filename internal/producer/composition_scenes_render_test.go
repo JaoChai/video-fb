@@ -101,7 +101,7 @@ func TestManualRenderMultiScene(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"package.json":     projectPackageJSON,
+		"package.json":     projectPackageJSON(),
 		"hyperframes.json": projectHyperframesJSON,
 		"meta.json":        `{"id":"multi-scene-harness","name":"multi-scene-harness"}`,
 	} {
@@ -130,7 +130,7 @@ func TestManualRenderMultiScene(t *testing.T) {
 	t.Logf("project dir: %s (aspect %s)", dir, aspect)
 
 	run := func(args ...string) {
-		cmd := exec.Command("npx", append([]string{"--yes", "hyperframes@0.6.70"}, args...)...)
+		cmd := exec.Command("npx", append([]string{"--yes", "hyperframes@" + hyperframesVersion}, args...)...)
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		t.Logf("\n$ npx hyperframes %v\n%s", args, out)

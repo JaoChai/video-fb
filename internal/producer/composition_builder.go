@@ -11,18 +11,21 @@ import (
 	"strings"
 )
 
-// Static project files Hyperframes expects alongside index.html. Kept as
-// constants so a built project does not depend on the PoC directory.
-const projectPackageJSON = `{
+// projectPackageJSON builds the static package.json that Hyperframes expects
+// alongside index.html. The version is pinned to hyperframesVersion to ensure
+// the generated script matches what the system actually runs.
+func projectPackageJSON() string {
+	return fmt.Sprintf(`{
   "name": "clip",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "npx --yes hyperframes@0.6.70 lint",
-    "render": "npx --yes hyperframes@0.6.70 render"
+    "check": "npx --yes hyperframes@%s lint",
+    "render": "npx --yes hyperframes@%s render"
   }
 }
-`
+`, hyperframesVersion, hyperframesVersion)
+}
 
 const projectHyperframesJSON = `{
   "$schema": "https://hyperframes.heygen.com/schema/hyperframes.json",
@@ -162,7 +165,7 @@ func (b *CompositionBuilder) BuildScenes(params ScenesParams, clipID, projectDir
 
 	metaJSON := fmt.Sprintf(`{"id": %q, "name": %q}`, clipID, clipID)
 	for name, content := range map[string]string{
-		"package.json":     projectPackageJSON,
+		"package.json":     projectPackageJSON(),
 		"hyperframes.json": projectHyperframesJSON,
 		"meta.json":        metaJSON,
 	} {

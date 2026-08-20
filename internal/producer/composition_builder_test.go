@@ -120,6 +120,19 @@ func TestBuildScenes(t *testing.T) {
 		t.Errorf("meta.json id = %q, want %q", meta["id"], "clip-abc-123")
 	}
 
+	// package.json scripts must use the pinned hyperframesVersion.
+	pkgBytes, err := os.ReadFile(filepath.Join(projectDir, "package.json"))
+	if err != nil {
+		t.Fatalf("read package.json: %v", err)
+	}
+	pkgContent := string(pkgBytes)
+	want := "hyperframes@" + hyperframesVersion
+	for _, script := range []string{"check", "render"} {
+		if !strings.Contains(pkgContent, want) {
+			t.Errorf("package.json %s script missing %q", script, want)
+		}
+	}
+
 	// Caller's params.Scenes must not be mutated.
 	if params.VoiceSrc != "will-be-overwritten" {
 		t.Error("BuildScenes mutated caller's params.VoiceSrc")

@@ -82,7 +82,7 @@ func TestRenderSampleA1A4(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"package.json":     projectPackageJSON,
+		"package.json":     projectPackageJSON(),
 		"hyperframes.json": projectHyperframesJSON,
 		"meta.json":        `{"id":"a1a4-sample","name":"a1a4-sample"}`,
 	} {

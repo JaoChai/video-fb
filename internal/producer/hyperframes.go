@@ -18,8 +18,8 @@ import (
 // cgroup — ค่ามันจึงเกินตัวเสมอ และการเรนเดอร์คลิปยาว 20 ส.ค. 2026 ค้างจน
 // protocolTimeout ทั้ง 3 worker · ต้นน้ำแก้ใน v0.6.99 ("Respect cgroup memory
 // limits in low-memory detection") ห้ามถอยต่ำกว่านั้น · ไม่ใช้ 0.6.99 เองเพราะ
-// ตัวตรวจ layout ของรุ่นนั้นฟ้อง content_overlap ปลอมกับการ์ด stat ทุกใบ
-// (span.stat-num ใน div.stat-label) ซึ่งจะกักคลิปเข้า needs_review ทั้งสาย
+// 0.6.99 ตกด่าน inspect ทั้งสองคลิปที่ทดสอบ ด้วย content_overlap ที่ span.stat-num
+// ใน div.stat-label · ทั้ง 0.6.70 และ 0.7.90 ไม่ฟ้อง จึงเชื่อว่าเป็น false positive (ยังไม่ได้เปิดเฟรมยืนยัน)
 const hyperframesVersion = "0.7.90"
 
 // CheckResult คือผลของด่านตรวจหนึ่งด่านในรูปที่บันทึกลง render_checks ได้
