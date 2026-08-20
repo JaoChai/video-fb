@@ -68,6 +68,12 @@ ENV PORT=8080
 # Tell Puppeteer (used by Hyperframes) to use the system Chromium, not download one.
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_DOWNLOAD=true
+# hyperframes ≥0.7 เลิกอ่าน PUPPETEER_EXECUTABLE_PATH แล้ว (grep ในบันเดิล 0.7.90: ศูนย์ครั้ง)
+# มันไล่หาเบราว์เซอร์ตามลำดับ PRODUCER_HEADLESS_SHELL_PATH → HYPERFRAMES_BROWSER_PATH →
+# แคช chrome-headless-shell → ดาวน์โหลดเอง · อิมเมจนี้ไม่มี unzip การดาวน์โหลดจึงตาย
+# ("Extraction failed: no zip archiver is available") และเรนเดอร์ล้มใน 9 วินาที
+# ตั้งตัวนี้เพื่อให้มันหยุดที่ chromium ที่เราตรึงเวอร์ชันไว้แล้ว ไม่ต้องออกเน็ตเลย
+ENV HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium
 # Absolute path main.go's EnableHyperframes passes to the composition builder.
 ENV FONTS_DIR=/app/assets/fonts
 
